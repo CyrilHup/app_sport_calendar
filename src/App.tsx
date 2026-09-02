@@ -7,6 +7,7 @@ import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
 import { GarminModal } from './components/GarminModal';
 import { GoogleCalendarModal } from './components/GoogleCalendarModal';
+import { QMTPlanOverview } from './components/QMTPlanOverview';
 import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
 import { getPeriodizationContext } from './services/periodizationEngine';
@@ -220,52 +221,7 @@ export const App: React.FC = () => {
       )}
 
       {activeTab === 'periodization' && (
-        <div className="glass-panel" style={{ padding: '20px' }}>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.25rem', fontWeight: 800, marginBottom: '8px' }}>
-            QMT-80 Periodization Blueprint (Québec Mega Trail)
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '16px', fontSize: '0.85rem' }}>
-            Complete training architecture targeting the 80 km ultra-trail race with 4,000 m elevation gain on July 3, 2027.
-          </p>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
-            <div className="glass-panel" style={{ padding: '14px', borderLeft: '3px solid var(--cyan)' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--cyan)', marginBottom: '4px' }}>
-                1. September 2026 Ramp-up
-              </h3>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Progressive 3-step build (55% ➔ 75% ➔ 90%) to safely resume post-break, consolidating at 85% Foundation Phase.
-              </p>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px', borderLeft: '3px solid var(--pink)' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--pink)', marginBottom: '4px' }}>
-                2. Winter Power & Incline Hills (Jan - Feb 2027)
-              </h3>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Indoor workouts at ÉTS Gym: 12-15% incline treadmill at 6 km/h, eccentric quad strength to withstand downhill battering.
-              </p>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px', borderLeft: '3px solid var(--orange)' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--orange)', marginBottom: '4px' }}>
-                3. Volume & Back-to-Back (Mar - May 2027)
-              </h3>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Shock weekends: Saturday 4h-5h trail long run on Mont-Royal + Sunday fatigued run 1h15 (Back-to-Back stimulus).
-              </p>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '14px', borderLeft: '3px solid #10b981' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#10b981', marginBottom: '4px' }}>
-                4. Mestashibo Technical & Tapering
-              </h3>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                Rocky trails and root simulations. Progressive 50% volume drop during final 3 weeks for full glycogen supercompensation.
-              </p>
-            </div>
-          </div>
-        </div>
+        <QMTPlanOverview currentContext={currentPeriodContext} />
       )}
 
       {/* Garmin Connect Modal */}
