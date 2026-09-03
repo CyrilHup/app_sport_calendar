@@ -51,7 +51,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <h1 className="brand-title">QMT-80 Performance Hub</h1>
               <span className="badge-tag" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
-                80 KM • +4,000M D+
+                77 KM • +3,370M D+ • 19H LIMIT
               </span>
             </div>
             <p className="brand-subtitle">

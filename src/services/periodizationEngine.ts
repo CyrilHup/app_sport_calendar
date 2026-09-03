@@ -147,9 +147,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber,
       isDeload,
       volumeFactor: isDeload ? 0.75 : (1.10 + weekInBlock * 0.05),
-      label: `W${weekNumber} [Mestashibo Peak] - ${isDeload ? '⚠️ Deload' : `Build (${weekInBlock}/3)`}`,
+      label: `W${weekNumber} [Mestachibo Peak] - ${isDeload ? '⚠️ Deload' : `Build (${weekInBlock}/3)`}`,
       daysToRace,
-      description: "Specific race simulations: technical rocky terrain, 60g carbs/h fuel testing and poles technique."
+      description: "Specific race simulations: technical boulder scrambling (Mestachibo simulation), running with poles stowed on 5L vest, 60g carbs/h race fueling."
     };
   }
 
