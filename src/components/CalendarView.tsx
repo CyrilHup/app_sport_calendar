@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ChevronLeft, ChevronRight, Filter, Clock, MapPin, ListFilter, LayoutGrid, Layers, Bus, CheckCircle2, ArrowRight } from 'lucide-react';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
+import { WeatherWidget } from './WeatherWidget';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -208,6 +209,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
           </button>
         </div>
       </div>
+
+      {/* Mont-Royal Meteorological & Trail Advisory Widget */}
+      <WeatherWidget />
 
       {/* Week Grid or List View */}
       {viewMode === 'grid' ? (
