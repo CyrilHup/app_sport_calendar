@@ -1,6 +1,5 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, ComparisonStatus, GarminActivity } from '../types/garmin';
-import { formatDateKey } from './icsParser';
 
 export interface WeeklyStatsSummary {
   plannedDurationMin: number;
@@ -19,63 +18,59 @@ export interface WeeklyStatsSummary {
   estimatedTss: number;
 }
 
+/**
+ * Compare les séances prévues avec les activités Garmin réelles.
+ */
 export function compareWorkoutsWithGarmin(
-  plannedWorkouts: CalendarEvent[],
+  plannedEvents: CalendarEvent[],
   garminActivities: GarminActivity[],
-  manualPairs?: Record<string, string>, // planId -> garminActivityId
-  asOfDate: Date = new Date('2026-09-02T23:59:59') // Current reference date
+  manualPairs: Record<string, string> = {},
+  asOfDate: Date = new Date()
 ): ActivityComparison[] {
-  const asOfKey = formatDateKey(asOfDate);
-
-  // Index garmin activities by date
-  const activitiesByDate = new Map<string, GarminActivity[]>();
-
-  for (const act of garminActivities) {
-    const actDate = new Date(act.startTimeLocal);
-    const dateKey = formatDateKey(actDate);
-    if (!activitiesByDate.has(dateKey)) activitiesByDate.set(dateKey, []);
-    activitiesByDate.get(dateKey)!.push(act);
-  }
-
-  // Filter only sport workouts (exclude commutes, classes, stretches)
-  const sportPlans = plannedWorkouts.filter(ev => ev.category === 'sport');
   const comparisons: ActivityComparison[] = [];
   const matchedGarminIds = new Set<string>();
 
+  const sportPlans = plannedEvents.filter(e => e.category === 'sport');
+
+  const formatDateKey = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const asOfKey = formatDateKey(asOfDate);
+
+  // Évaluation des séances prévues jusqu'à la date de référence
   for (const plan of sportPlans) {
     const planDate = new Date(plan.startDate);
     const dateKey = formatDateKey(planDate);
-    const dayActivities = activitiesByDate.get(dateKey) || [];
 
-    // Do not evaluate future sessions (only sessions up to current reference date)
+    // Ne pas évaluer les séances dans le futur
     if (dateKey > asOfKey) {
       continue;
     }
 
     let bestMatch: GarminActivity | undefined = undefined;
 
-    // Check manual override first
-    if (manualPairs && manualPairs[plan.id]) {
-      bestMatch = dayActivities.find(a => a.activityId === manualPairs[plan.id]);
+    // 1. Vérification d'un appairage manuel
+    if (manualPairs[plan.id]) {
+      const pairedActId = manualPairs[plan.id];
+      bestMatch = garminActivities.find(a => a.activityId === pairedActId);
     }
 
-    if (!bestMatch && dayActivities.length > 0) {
-      // 1. Try to find activity that matches plan type or is 'OTHER' with compatible duration
-      bestMatch = dayActivities.find(a =>
-        !matchedGarminIds.has(a.activityId) && isActivityTypeCompatible(plan.sportType, a.activityType)
-      );
+    // 2. Recherche automatique de correspondance le même jour
+    if (!bestMatch) {
+      const sameDayActivities = garminActivities.filter(act => {
+        if (matchedGarminIds.has(act.activityId)) return false;
+        const actDate = new Date(act.startTimeLocal);
+        return formatDateKey(actDate) === dateKey;
+      });
 
-      // 2. If not found, pick the closest unmatched activity by duration on that day
-      if (!bestMatch) {
-        const unmatched = dayActivities.filter(a => !matchedGarminIds.has(a.activityId));
-        if (unmatched.length > 0) {
-          unmatched.sort(
-            (a, b) =>
-              Math.abs(a.durationMinutes - plan.durationMinutes) -
-              Math.abs(b.durationMinutes - plan.durationMinutes)
-          );
-          bestMatch = unmatched[0];
-        }
+      if (sameDayActivities.length > 0) {
+        bestMatch = sameDayActivities.find(act =>
+          isActivityTypeCompatible(plan.sportType, act.activityType)
+        ) || sameDayActivities[0];
       }
     }
 
@@ -84,7 +79,7 @@ export function compareWorkoutsWithGarmin(
       const comparison = evaluateSingleWorkout(plan, bestMatch, dateKey);
       comparisons.push(comparison);
     } else if (dateKey === asOfKey) {
-      // Today's scheduled workout not yet uploaded
+      // Séance d'aujourd'hui pas encore téléversée
       comparisons.push({
         id: `comp-pending-${plan.id}`,
         date: dateKey,
@@ -94,12 +89,12 @@ export function compareWorkoutsWithGarmin(
         complianceScore: 100,
         heartRateCompliance: 'N/A',
         feedbackNotes: [
-          `Scheduled for today (${plan.durationMinutes} min target). Pending completion on Garmin.`,
-          "Record your session to view live compliance telemetry."
+          `Prévue aujourd'hui (${plan.durationMinutes} min prescrites). En attente de réalisation sur Garmin.`,
+          "Enregistre ta séance sur ta montre pour afficher la télémétrie en direct."
         ]
       });
     } else {
-      // Past days only: workout genuinely missed
+      // Séance passée non réalisée
       comparisons.push({
         id: `comp-missed-${plan.id}`,
         date: dateKey,
@@ -109,19 +104,18 @@ export function compareWorkoutsWithGarmin(
         complianceScore: 0,
         heartRateCompliance: 'N/A',
         feedbackNotes: [
-          `Past session not logged on Garmin Connect (${plan.durationMinutes} min prescribed).`,
-          "If recorded under the 'Other' profile on a different date, you can pair it manually."
+          `Séance passée non enregistrée sur Garmin Connect (${plan.durationMinutes} min prescrites).`,
+          "Si elle a été enregistrée sous le profil 'Autre' ou à une autre date, tu peux la lier manuellement."
         ]
       });
     }
   }
 
-  // Identify bonus / unplanned activities (only on or before asOfDate!)
+  // Identification des activités bonus / non planifiées (uniquement jusqu'à asOfDate)
   for (const act of garminActivities) {
     const actDate = new Date(act.startTimeLocal);
     const dateKey = formatDateKey(actDate);
 
-    // Reject any activity with an impossible future date
     if (dateKey > asOfKey) {
       continue;
     }
@@ -139,14 +133,14 @@ export function compareWorkoutsWithGarmin(
         heartRateCompliance: 'OPTIMAL',
         inferredType: inferred,
         feedbackNotes: [
-          `Garmin activity logged: ${act.activityName} (${act.durationMinutes} min)${act.activityType === 'OTHER' ? ` [Signature: ${inferred}]` : ''}.`,
-          "Bonus session completed."
+          `Activité Garmin enregistrée : ${act.activityName} (${act.durationMinutes} min)${act.activityType === 'OTHER' ? ` [Profil inféré : ${inferred}]` : ''}.`,
+          "Séance bonus réalisée."
         ]
       });
     }
   }
 
-  // Sort strictly from current day going back into the past (chronological descending)
+  // Tri chronologique décroissant (du plus récent au plus ancien)
   comparisons.sort((a, b) => b.date.localeCompare(a.date));
 
   return comparisons;
@@ -182,7 +176,7 @@ export function computeWeeklyTelemetry(
   for (const c of currentDays) {
     if (c.status === 'PENDING') {
       pendingCount++;
-      continue; // Don't penalize pending workouts scheduled for later today
+      continue;
     }
 
     if (!fullWeekTarget && c.plannedEvent) {
@@ -217,7 +211,7 @@ export function computeWeeklyTelemetry(
   const overallComplianceScore = scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 100;
   const avgHeartRate = hrCount > 0 ? Math.round(hrSum / hrCount) : 148;
 
-  // Estimated Training Stress Score (TSS) based on duration and intensity factor
+  // Calcul estimé du TSS basé sur la durée et le ratio d'intensité cardiaque
   const estimatedTss = Math.round((actualDurationMin / 60) * ((avgHeartRate / 203) ** 2) * 100);
 
   return {
@@ -247,36 +241,35 @@ function evaluateSingleWorkout(
   const feedbackNotes: string[] = [];
   let score = 100;
 
-  // Signature analysis if activity was recorded as OTHER
   const isOther = act.activityType === 'OTHER';
   let inferredType: string | undefined = undefined;
 
   if (isOther) {
     inferredType = inferOtherActivityCategory(act);
     feedbackNotes.push(
-      `🏷️ Recorded on Garmin watch under "Other" profile → Matched as: ${inferredType}.`
+      `🏷️ Enregistrée sous le profil "Autre" sur la montre → Détectée comme : ${inferredType}.`
     );
   }
 
-  // 1. Duration Evaluation
+  // 1. Évaluation de la durée
   const durationDiffPercent = Math.abs(durationDelta) / plan.durationMinutes;
   if (durationDiffPercent > 0.35) {
     score -= 25;
     feedbackNotes.push(
       durationDelta > 0
-        ? `Duration: +${durationDelta} min (${act.durationMinutes} min actual vs ${plan.durationMinutes} min planned).`
-        : `Duration: -${Math.abs(durationDelta)} min (${act.durationMinutes} min actual vs ${plan.durationMinutes} min planned).`
+        ? `Durée : +${durationDelta} min (${act.durationMinutes} min réelles vs ${plan.durationMinutes} min prévues).`
+        : `Durée : -${Math.abs(durationDelta)} min (${act.durationMinutes} min réelles vs ${plan.durationMinutes} min prévues).`
     );
   } else if (durationDiffPercent > 0.12) {
     score -= 10;
     feedbackNotes.push(
-      `Duration compliant (${act.durationMinutes} min actual vs ${plan.durationMinutes} min target, delta ${durationDelta > 0 ? '+' : ''}${durationDelta} min).`
+      `Durée conforme (${act.durationMinutes} min réelles vs ${plan.durationMinutes} min prévues, écart ${durationDelta > 0 ? '+' : ''}${durationDelta} min).`
     );
   } else {
-    feedbackNotes.push(`Prescribed workout duration strictly achieved (${act.durationMinutes} min).`);
+    feedbackNotes.push(`Durée prescrite strictement respectée (${act.durationMinutes} min).`);
   }
 
-  // 2. Heart Rate Evaluation (FCmax = 203 bpm)
+  // 2. Évaluation de la fréquence cardiaque (FCmax = 203 bpm)
   let hrCompliance: 'OPTIMAL' | 'TOO_HIGH' | 'TOO_LOW' | 'N/A' = 'OPTIMAL';
   const targetRange = plan.metadata?.targetHeartRateRange;
 
@@ -286,32 +279,32 @@ function evaluateSingleWorkout(
       hrCompliance = 'TOO_HIGH';
       score -= 20;
       feedbackNotes.push(
-        `⚠️ Heart rate elevated: avg ${act.avgHeartRate} bpm (target ceiling: ${maxTarget} bpm). Risk of premature fatigue.`
+        `⚠️ Fréquence cardiaque élevée : moy. ${act.avgHeartRate} bpm (plafond cible : ${maxTarget} bpm). Risque d'épuisement prématuré.`
       );
     } else if (act.avgHeartRate < minTarget - 12) {
       hrCompliance = 'TOO_LOW';
       score -= 10;
       feedbackNotes.push(
-        `Heart rate below target zone (${act.avgHeartRate} bpm vs target ${minTarget}-${maxTarget} bpm). Very relaxed recovery effort.`
+        `Fréquence cardiaque sous la zone cible (${act.avgHeartRate} bpm vs cible ${minTarget}-${maxTarget} bpm). Effort de récupération très doux.`
       );
     } else {
       hrCompliance = 'OPTIMAL';
       feedbackNotes.push(
-        `🎯 Optimal cardio: avg HR ${act.avgHeartRate} bpm perfectly locked in target zone (${minTarget}-${maxTarget} bpm).`
+        `🎯 Cardio optimal : FC moy. ${act.avgHeartRate} bpm parfaitement calée dans la zone cible (${minTarget}-${maxTarget} bpm).`
       );
     }
   }
 
-  // 3. Elevation Gain Evaluation (for Trail sessions)
+  // 3. Évaluation du dénivelé D+ (séances trail)
   let elevationDeltaM: number | undefined = undefined;
   if (plan.metadata?.targetElevationM && act.elevationGainM !== undefined) {
     elevationDeltaM = act.elevationGainM - plan.metadata.targetElevationM;
     if (Math.abs(elevationDeltaM) > 70) {
       feedbackNotes.push(
-        `Elevation D+: ${act.elevationGainM} m completed (${elevationDeltaM > 0 ? '+' : ''}${elevationDeltaM} m vs target ${plan.metadata.targetElevationM} m).`
+        `Dénivelé D+ : +${act.elevationGainM} m réalisés (${elevationDeltaM > 0 ? '+' : ''}${elevationDeltaM} m vs cible +${plan.metadata.targetElevationM} m).`
       );
     } else {
-      feedbackNotes.push(`Elevation D+ target met: +${act.elevationGainM} m (target ~${plan.metadata.targetElevationM} m).`);
+      feedbackNotes.push(`Cible de dénivelé D+ atteinte : +${act.elevationGainM} m (cible ~${plan.metadata.targetElevationM} m).`);
     }
   }
 
@@ -335,7 +328,6 @@ function evaluateSingleWorkout(
 
 function isActivityTypeCompatible(planType?: string, actType?: string): boolean {
   if (!planType || !actType) return false;
-  // If user records workouts under 'OTHER' on their Garmin watch, consider compatible for matching!
   if (actType === 'OTHER') return true;
   if ((planType === 'TRAIL_INTENSE' || planType === 'TRAIL_LONG') && actType === 'TRAIL_RUNNING') return true;
   if (planType === 'RUN_EASY' && (actType === 'RUNNING' || actType === 'TRAIL_RUNNING')) return true;
@@ -355,16 +347,16 @@ function inferOtherActivityCategory(act: GarminActivity): string {
   const dist = act.distanceKm || 0;
 
   if (dPlus > 120 || name.includes('mont-royal') || name.includes('côte') || name.includes('trail') || name.includes('hill')) {
-    return 'Trail / Hill Repeats (Mont-Royal)';
+    return 'Trail / Côtes (Mont-Royal)';
   }
   if (hr > 165 || name.includes('fractionné') || name.includes('interval') || name.includes('intense')) {
-    return 'High-Intensity Cardio (Zone 4/5)';
+    return 'Cardio Haute Intensité (Zone 4/5)';
   }
   if (dist > 3 || (act.avgCadence && act.avgCadence > 150) || name.includes('course') || name.includes('footing') || name.includes('run')) {
-    return 'Aerobic Base Running (Z2)';
+    return 'Endurance Fondamentale (Zone 2)';
   }
   if (name.includes('gym') || name.includes('calisth') || name.includes('dips') || name.includes('pull') || dist === 0) {
-    return 'Calisthenics / Strength (ÉTS Gym)';
+    return 'Calisthénie / Musculation (Gym ÉTS)';
   }
-  return 'General Training Session';
+  return 'Séance d\'Entraînement Générale';
 }

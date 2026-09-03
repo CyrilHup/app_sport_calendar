@@ -37,7 +37,7 @@ export const WeatherWidget: React.FC = () => {
         transition: 'all 0.2s ease'
       }}
     >
-      {/* Top compact bar */}
+      {/* Barre compacte supérieure */}
       <div
         style={{
           display: 'flex',
@@ -52,9 +52,9 @@ export const WeatherWidget: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.86rem', fontWeight: 700, color: '#fff' }}>
             <span style={{ fontSize: '1.1rem' }}>{weather.weatherEmoji}</span>
-            <span>Mont-Royal Live: {weather.currentTempC}°C</span>
+            <span>Mont-Royal : {weather.currentTempC}°C</span>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-              (feels {weather.feelsLikeC}°C)
+              (ressenti {weather.feelsLikeC}°C)
             </span>
           </div>
 
@@ -81,7 +81,7 @@ export const WeatherWidget: React.FC = () => {
             <Wind size={12} /> {weather.windSpeedKmh} km/h
           </span>
           <span>•</span>
-          <span>Sunset {weather.sunsetStr}</span>
+          <span>Coucher {weather.sunsetStr}</span>
           <button
             style={{
               background: 'none',
@@ -91,14 +91,14 @@ export const WeatherWidget: React.FC = () => {
               padding: 2,
               display: 'flex'
             }}
-            aria-label="Toggle details"
+            aria-label="Afficher les détails"
           >
             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
       </div>
 
-      {/* Expanded Trail & Gear Advisory Drawer */}
+      {/* Tiroir déroulant Sentiers & Matériel */}
       {isExpanded && (
         <div
           style={{

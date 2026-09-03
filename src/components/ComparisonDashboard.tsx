@@ -3,20 +3,30 @@ import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/ga
 import {
   Activity,
   AlertTriangle,
+  Award,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Compass,
   FileSpreadsheet,
   Filter,
+  Flame,
   Heart,
+  HelpCircle,
+  Info,
+  Layers,
   LayoutGrid,
   Link2,
   PlusCircle,
   RefreshCw,
-  Tag,
+  Sliders,
+  TrendingDown,
+  TrendingUp,
   Unlink,
   X,
-  XCircle
+  XCircle,
+  Zap
 } from 'lucide-react';
 
 interface ComparisonDashboardProps {
@@ -40,12 +50,12 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   onManualPair,
   onManualUnpair
 }) => {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [statusFilter, setStatusFilter] = useState<StatusFilterType>('ALL');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pairingForPlanId, setPairingForPlanId] = useState<string | null>(null);
 
-  // Counts for each status category
+  // Compteurs
   const countAll = comparisons.length;
   const countCompliant = comparisons.filter(c => c.status === 'COMPLIANT').length;
   const countPartial = comparisons.filter(c => c.status === 'PARTIAL').length;
@@ -53,7 +63,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   const countUnplanned = comparisons.filter(c => c.status === 'UNPLANNED').length;
   const countPending = comparisons.filter(c => c.status === 'PENDING').length;
 
-  // Filter comparisons according to active status chip
+  // Filtrage selon le statut actif
   const displayedComparisons = comparisons.filter(c => {
     if (statusFilter === 'ALL') return true;
     return c.status === statusFilter;
@@ -64,19 +74,19 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
       case 'COMPLIANT':
         return (
           <span className="status-pill status-compliant">
-            <CheckCircle2 size={12} /> Compliant ({score}%)
+            <CheckCircle2 size={12} /> Conforme ({score}%)
           </span>
         );
       case 'PARTIAL':
         return (
           <span className="status-pill status-partial">
-            <AlertTriangle size={12} /> Variance ({score}%)
+            <AlertTriangle size={12} /> Écart ({score}%)
           </span>
         );
       case 'MISSED':
         return (
           <span className="status-pill status-missed">
-            <XCircle size={12} /> Missed
+            <XCircle size={12} /> Non réalisée
           </span>
         );
       case 'UNPLANNED':
@@ -88,7 +98,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
       case 'PENDING':
         return (
           <span className="status-pill" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-            <Clock size={12} /> Today (Pending)
+            <Clock size={12} /> Aujourd'hui (En attente)
           </span>
         );
       default:
@@ -107,20 +117,20 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
       case 'RUNNING':
         return (
           <span className="badge-tag" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', fontSize: '0.65rem' }}>
-            Run
+            Course
           </span>
         );
       case 'STRENGTH_TRAINING':
       case 'FITNESS_EQUIPMENT':
         return (
           <span className="badge-tag" style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1', border: '1px solid rgba(148, 163, 184, 0.3)', fontSize: '0.65rem' }}>
-            Strength
+            Musculation
           </span>
         );
       case 'OTHER':
         return (
           <span className="other-badge">
-            Other
+            Autre
           </span>
         );
       default:
@@ -130,7 +140,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {/* Informative Header Bar */}
+      {/* Barre d'Informations Supérieure */}
       <div
         style={{
           display: 'flex',
@@ -148,7 +158,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Activity size={15} color="var(--primary)" />
           <span>
-            <strong style={{ color: '#fff' }}>Garmin Telemetry Log:</strong> Showing {displayedComparisons.length} of {countAll} evaluated session(s).
+            <strong style={{ color: '#fff' }}>Journal de Télémétrie Garmin :</strong> Affichage de {displayedComparisons.length} sur {countAll} séance(s) évaluée(s).
           </span>
         </div>
 
@@ -159,7 +169,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             style={{ padding: '4px 8px', fontSize: '0.74rem' }}
           >
             {viewMode === 'table' ? <LayoutGrid size={12} /> : <FileSpreadsheet size={12} />}
-            <span>{viewMode === 'table' ? 'Card View' : 'Pro Table View'}</span>
+            <span>{viewMode === 'table' ? 'Vue Cartes' : 'Vue Tableau Pro'}</span>
           </button>
 
           <button
@@ -168,15 +178,15 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             style={{ padding: '4px 8px', fontSize: '0.74rem' }}
           >
             <RefreshCw size={12} />
-            <span>Garmin Sync</span>
+            <span>Synchro Garmin</span>
           </button>
         </div>
       </div>
 
-      {/* Status Filter Chips */}
+      {/* Boutons de Filtre par Statut */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Filter size={12} /> Status:
+          <Filter size={12} /> Statut :
         </span>
 
         <button
@@ -184,7 +194,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           onClick={() => setStatusFilter('ALL')}
           style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'ALL' ? 'var(--primary)' : undefined }}
         >
-          All ({countAll})
+          Toutes ({countAll})
         </button>
 
         <button
@@ -192,7 +202,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           onClick={() => setStatusFilter('COMPLIANT')}
           style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'COMPLIANT' ? '#10b981' : undefined }}
         >
-          ✅ Compliant ({countCompliant})
+          ✅ Conformes ({countCompliant})
         </button>
 
         <button
@@ -200,7 +210,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           onClick={() => setStatusFilter('PARTIAL')}
           style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'PARTIAL' ? '#f59e0b' : undefined }}
         >
-          ⚠️ Variance ({countPartial})
+          ⚠️ Écarts ({countPartial})
         </button>
 
         <button
@@ -208,7 +218,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           onClick={() => setStatusFilter('MISSED')}
           style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'MISSED' ? '#ef4444' : undefined }}
         >
-          ❌ Missed ({countMissed})
+          ❌ Manquées ({countMissed})
         </button>
 
         <button
@@ -225,12 +235,12 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             onClick={() => setStatusFilter('PENDING')}
             style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'PENDING' ? '#818cf8' : undefined }}
           >
-            ⏳ Today ({countPending})
+            ⏳ Aujourd'hui ({countPending})
           </button>
         )}
       </div>
 
-      {/* Empty State when no workouts match filter */}
+      {/* État vide si aucune séance ne correspond */}
       {displayedComparisons.length === 0 ? (
         <div className="glass-panel" style={{ padding: '40px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
           <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(255, 87, 34, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -238,44 +248,44 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           </div>
           <div>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-              {statusFilter === 'ALL' ? 'No Activities Available' : `No ${statusFilter.toLowerCase()} sessions found`}
+              {statusFilter === 'ALL' ? 'Aucune activité disponible' : `Aucune séance trouvée avec le statut "${statusFilter.toLowerCase()}"`}
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto' }}>
               {statusFilter === 'ALL'
-                ? 'Synchronize with Garmin Connect or import a GPX track to start telemetry matching.'
-                : 'Try choosing another filter above or reset to "All".'}
+                ? 'Synchronise avec Garmin Connect ou importe une trace GPX pour activer la comparaison télémétrique.'
+                : 'Sélectionne un autre filtre ci-dessus ou réinitialise à "Toutes".'}
             </p>
           </div>
           {statusFilter !== 'ALL' ? (
             <button className="btn-secondary" onClick={() => setStatusFilter('ALL')} style={{ padding: '6px 12px', fontSize: '0.78rem' }}>
-              Reset Filter to All
+              Réinitialiser à Toutes
             </button>
           ) : (
             <button className="btn-primary" onClick={onOpenGarminSync} style={{ padding: '9px 16px', marginTop: 4 }}>
               <RefreshCw size={14} />
-              <span>⚡ Connect Garmin Account</span>
+              <span>⚡ Connecter un compte Garmin</span>
             </button>
           )}
         </div>
       ) : viewMode === 'table' ? (
-        /* Pro High-Density Table View */
+        /* Tableau Pro Haute Densité */
         <div className="pro-table-wrapper">
           <table className="pro-table">
             <thead>
               <tr>
-                <th>Date & Prescribed Session</th>
-                <th>Garmin Logged Activity</th>
-                <th>Duration</th>
-                <th>Heart Rate (bpm)</th>
-                <th>Elevation Gain</th>
-                <th>Compliance</th>
-                <th>Actions & Assessment</th>
+                <th>Date & Séance Prévue</th>
+                <th>Activité Enregistrée Garmin</th>
+                <th>Durée</th>
+                <th>Fréquence Cardiaque</th>
+                <th>Dénivelé D+</th>
+                <th>Concordance</th>
+                <th>Actions & Évaluation</th>
               </tr>
             </thead>
             <tbody>
               {displayedComparisons.map(comp => {
                 const dateObj = new Date(comp.date + 'T12:00:00');
-                const dateFormatted = dateObj.toLocaleDateString('en-US', {
+                const dateFormatted = dateObj.toLocaleDateString('fr-CA', {
                   weekday: 'short',
                   month: 'short',
                   day: 'numeric'
@@ -300,16 +310,16 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           </span>
                           <div>
                             <div style={{ fontWeight: 700, color: '#ffffff' }}>
-                              {comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Bonus Activity'}
+                              {comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Activité Bonus'}
                             </div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                              {dateFormatted} • {comp.plannedEvent?.durationMinutes || comp.actualActivity?.durationMinutes || '--'} min target
+                              {dateFormatted} • Objectif {comp.plannedEvent?.durationMinutes || comp.actualActivity?.durationMinutes || '--'} min
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      {/* Garmin Actual Activity */}
+                      {/* Activité Réelle Garmin */}
                       <td>
                         {comp.actualActivity ? (
                           <div>
@@ -321,27 +331,27 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                             </div>
                             {isOther && comp.inferredType && (
                               <div style={{ fontSize: '0.68rem', color: '#c084fc' }}>
-                                Inferred profile: {comp.inferredType}
+                                Profil inféré : {comp.inferredType}
                               </div>
                             )}
                             {isManuallyPaired && (
                               <span style={{ fontSize: '0.65rem', color: '#34d399', display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-                                <Link2 size={10} /> Paired manually
+                                <Link2 size={10} /> Appairé manuellement
                               </span>
                             )}
                           </div>
                         ) : comp.status === 'PENDING' ? (
                           <span style={{ fontSize: '0.74rem', color: 'var(--accent-blue)', fontStyle: 'italic' }}>
-                            Scheduled for today — Pending upload
+                            Prévue aujourd'hui — En attente d'import
                           </span>
                         ) : (
                           <span style={{ fontSize: '0.74rem', color: '#f87171', fontStyle: 'italic' }}>
-                            Not recorded on Garmin watch
+                            Non enregistrée sur la montre
                           </span>
                         )}
                       </td>
 
-                      {/* Duration Comparison */}
+                      {/* Durée */}
                       <td>
                         {comp.actualActivity && comp.plannedEvent ? (
                           <div>
@@ -374,7 +384,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         )}
                       </td>
 
-                      {/* Heart Rate */}
+                      {/* Fréquence Cardiaque */}
                       <td>
                         {comp.actualActivity?.avgHeartRate ? (
                           <div>
@@ -388,20 +398,20 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                             )}
                             {comp.plannedEvent?.metadata?.targetHeartRateRange && (
                               <div style={{ fontSize: '0.68rem', color: '#10b981' }}>
-                                Target: {comp.plannedEvent.metadata.targetHeartRateRange[0]}-{comp.plannedEvent.metadata.targetHeartRateRange[1]} bpm
+                                Cible : {comp.plannedEvent.metadata.targetHeartRateRange[0]}-{comp.plannedEvent.metadata.targetHeartRateRange[1]} bpm
                               </div>
                             )}
                           </div>
                         ) : comp.plannedEvent?.metadata?.targetHeartRate ? (
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                            Target: {comp.plannedEvent.metadata.targetHeartRate}
+                            Cible : {comp.plannedEvent.metadata.targetHeartRate}
                           </span>
                         ) : (
                           <span style={{ color: 'var(--text-muted)' }}>--</span>
                         )}
                       </td>
 
-                      {/* Elevation D+ */}
+                      {/* Dénivelé D+ */}
                       <td>
                         {comp.actualActivity?.elevationGainM !== undefined ? (
                           <div>
@@ -416,24 +426,24 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           </div>
                         ) : comp.plannedEvent?.metadata?.targetElevationM ? (
                           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            Target: +{comp.plannedEvent.metadata.targetElevationM}m
+                            Cible : +{comp.plannedEvent.metadata.targetElevationM}m
                           </span>
                         ) : (
                           <span style={{ color: 'var(--text-muted)' }}>--</span>
                         )}
                       </td>
 
-                      {/* Status */}
+                      {/* Statut */}
                       <td>{getStatusBadge(comp.status, comp.complianceScore)}</td>
 
-                      {/* Actions & Feedback snippet */}
+                      {/* Actions & Diagnostic */}
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
                             {comp.feedbackNotes[0]}
                           </div>
 
-                          {/* Manual Pairing Actions */}
+                          {/* Bouton Appairage Manuel */}
                           {planId && onManualPair && (
                             <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
                               {isManuallyPaired ? (
@@ -441,18 +451,18 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                                   className="btn-secondary"
                                   onClick={() => onManualUnpair && onManualUnpair(planId)}
                                   style={{ padding: '3px 6px', fontSize: '0.68rem', color: '#f87171' }}
-                                  title="Unpair manual link"
+                                  title="Délier l'appairage manuel"
                                 >
-                                  <Unlink size={11} /> Unpair
+                                  <Unlink size={11} /> Délier
                                 </button>
                               ) : (
                                 <button
                                   className="btn-secondary"
                                   onClick={() => setPairingForPlanId(pairingForPlanId === planId ? null : planId)}
                                   style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--accent-blue)' }}
-                                  title="Pair with a Garmin activity"
+                                  title="Associer avec une activité Garmin"
                                 >
-                                  <Link2 size={11} /> Pair
+                                  <Link2 size={11} /> Lier
                                 </button>
                               )}
                             </div>
@@ -461,13 +471,13 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                       </td>
                     </tr>
 
-                    {/* Expandable row detail */}
+                    {/* Ligne Déroulante de Détail */}
                     {isExpanded && (
                       <tr style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
                         <td colSpan={7} style={{ padding: '12px 18px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                             <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                              Detailed Breakdown & Coach Diagnostics:
+                              Détail & Diagnostics Coach :
                             </div>
                             <ul style={{ paddingLeft: '18px', fontSize: '0.8rem', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: '3px' }}>
                               {comp.feedbackNotes.map((n, i) => (
@@ -475,7 +485,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                               ))}
                             </ul>
 
-                            {/* Inline Manual Pairing Selector if active for this plan */}
+                            {/* Sélecteur d'appairage manuel */}
                             {pairingForPlanId === planId && (
                               <div
                                 onClick={e => e.stopPropagation()}
@@ -489,7 +499,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                               >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                                   <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#fff' }}>
-                                    Select Garmin Activity to pair with this session:
+                                    Sélectionner une activité Garmin à appairer avec cette séance :
                                   </span>
                                   <button
                                     onClick={() => setPairingForPlanId(null)}
@@ -501,7 +511,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
 
                                 {availableGarminActivities.length === 0 ? (
                                   <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                                    No Garmin activities available. Sync your watch first.
+                                    Aucune activité Garmin disponible. Synchronise ta montre d'abord.
                                   </div>
                                 ) : (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
@@ -547,7 +557,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           </table>
         </div>
       ) : (
-        /* Compact Card View */
+        /* Vue Cartes Compactes */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {displayedComparisons.map(comp => {
             const planId = comp.plannedEvent?.id;
@@ -574,7 +584,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         {getActivityTypeBadge(comp.actualActivity?.activityType)}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                        {comp.date} {comp.plannedEvent && `• Prescribed: ${comp.plannedEvent.title}`}
+                        {comp.date} {comp.plannedEvent && `• Prescrit : ${comp.plannedEvent.title}`}
                       </div>
                     </div>
                   </div>
@@ -595,7 +605,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           onClick={() => setPairingForPlanId(pairingForPlanId === planId ? null : planId)}
                           style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--accent-blue)' }}
                         >
-                          <Link2 size={11} /> Pair
+                          <Link2 size={11} /> Lier
                         </button>
                       )
                     )}
@@ -606,24 +616,24 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                   <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.04)', paddingTop: 6 }}>
                     <div>
                       <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
-                      Duration: <strong>{comp.actualActivity.durationMinutes} min</strong> {comp.plannedEvent && `(delta ${comp.durationDeltaMinutes > 0 ? '+' : ''}${comp.durationDeltaMinutes}m)`}
+                      Durée : <strong>{comp.actualActivity.durationMinutes} min</strong> {comp.plannedEvent && `(écart ${comp.durationDeltaMinutes > 0 ? '+' : ''}${comp.durationDeltaMinutes}m)`}
                     </div>
                     {comp.actualActivity.avgHeartRate && (
                       <div>
                         <Heart size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        Heart Rate: <strong>{comp.actualActivity.avgHeartRate} bpm</strong> (max {comp.actualActivity.maxHeartRate})
+                        Fréquence Cardiaque : <strong>{comp.actualActivity.avgHeartRate} bpm</strong> (max {comp.actualActivity.maxHeartRate})
                       </div>
                     )}
                     {comp.actualActivity.elevationGainM !== undefined && (
                       <div>
                         <Compass size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        Elevation Gain: <strong>+{comp.actualActivity.elevationGainM} m</strong>
+                        Dénivelé D+ : <strong>+{comp.actualActivity.elevationGainM} m</strong>
                       </div>
                     )}
                   </div>
                 ) : (
                   <div style={{ fontSize: '0.75rem', color: comp.status === 'MISSED' ? '#f87171' : 'var(--accent-blue)', fontStyle: 'italic' }}>
-                    {comp.status === 'MISSED' ? 'Session prescribed but no matching workout recorded.' : 'Scheduled for today — upload workout to compare.'}
+                    {comp.status === 'MISSED' ? 'Séance prescrite mais non enregistrée sur la montre.' : 'Prévue aujourd\'hui — synchroniser la montre après la séance.'}
                   </div>
                 )}
 

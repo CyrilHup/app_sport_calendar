@@ -31,6 +31,7 @@ interface QMTPlanOverviewProps {
 interface TrainingPhaseDetail {
   id: string;
   name: string;
+  shortTitle: string;
   period: string;
   weeks: string;
   volumePct: string;
@@ -55,276 +56,282 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
   const phases: TrainingPhaseDetail[] = [
     {
       id: 'ramp_up',
-      name: '1. Foundation & Ramp-Up (Post-Break Resumption)',
-      period: 'Sept 1 – Sept 20, 2026',
-      weeks: '3 Weeks (Weeks -18 to -16)',
+      name: '1. Reprise & Fondations (Post-Coupure Estivale)',
+      shortTitle: 'Reprise & Tendons',
+      period: '1er sept. – 20 sept. 2026',
+      weeks: '3 Semaines (Semaines -18 à -16)',
       volumePct: '55% ➔ 75% ➔ 90%',
-      focus: 'Tendon Adaptation & Aerobic Wake-up',
-      location: 'Mont-Royal & Local Trails / Gym',
-      why: 'Prevent tendonitis and patellofemoral pain after summer hiatus. Tendons and collagen structures take 3x longer to adapt than cardiovascular mitochondria. Zero maximal anaerobic spikes.',
+      focus: 'Adaptation tendineuse & réveil aérobie',
+      location: 'Mont-Royal, Parc Maisonneuve & Gym ÉTS',
+      why: 'Éviter impérativement les périostites et tendinopathies après la coupure. Les tendons et le collagène mettent 3 fois plus de temps à s\'adapter que le système cardiovasculaire. Aucun pic d\'intensité maximale.',
       whatHappens: [
-        'Week 1 (55%): Controlled 45 min hill run, 1h15 trail long run, full Sunday rest.',
-        'Week 2 (75%): Volume progressive step, introducing 40 min aerobic Sunday run.',
-        'Week 3 (90%): 1h50 weekend trail, 5 sessions stabilized with calisthenics upper-body conditioning.'
+        'Semaine 1 (55%) : Sortie de côte contrôlée 45 min, sortie longue trail 1h15, repos complet le dimanche.',
+        'Semaine 2 (75%) : Progression graduelle du volume avec ajout d\'un footing aérobie le dimanche (40 min).',
+        'Semaine 3 (90%) : Sortie trail weekend 1h50, 5 séances stabilisées avec renforcement calisthénie au Gym ÉTS.'
       ],
       keyWorkouts: [
         {
-          title: 'Hill Repeats D+ (Mont-Royal)',
-          desc: 'Smooth controlled hill climbs in Zone 3/4 with easy walking descents to minimize eccentric muscle tears.',
-          metrics: '45-55 min • +300-380m D+ • HR 165-175 bpm'
+          title: 'Répétitions de Côtes D+ (Mont-Royal)',
+          desc: 'Montées régulières en Zone 3/4 avec descentes marchées pour limiter les micro-lésions musculaires excentriques.',
+          metrics: '45-55 min • +300-380m D+ • FC 165-175 bpm'
         },
         {
-          title: 'Weekend Long Run (Mont-Royal Loops)',
-          desc: 'Continuous aerobic trail run on dirt tracks. Testing baseline hydration packs and shoes.',
-          metrics: '1h15 - 1h50 • +400-500m D+ • HR < 155 bpm'
+          title: 'Sortie Longue Weekend (Boucles Mont-Royal)',
+          desc: 'Course aérobie continue sur sentiers terreux. Test de base du sac et des chaussures.',
+          metrics: '1h15 - 1h50 • +400-500m D+ • FC < 155 bpm'
         },
         {
-          title: 'Calisthenics & Core (ÉTS Gym)',
-          desc: 'Pull-ups, dips, push-ups and isometric hollow body holds for spine stabilization under pack weight.',
-          metrics: '45-60 min • Neuromuscular tone'
+          title: 'Calisthénie & Gainage (Gym ÉTS)',
+          desc: 'Tractions, dips, pompes et gainage hollow body pour stabiliser la colonne sous le portage du sac.',
+          metrics: '45-60 min • Tonus postural'
         }
       ],
-      nutritionStrategy: 'Baseline hydration: 500 ml water/hour. 30g carbs/hour on weekend runs to maintain gastric tolerance.',
-      badge: 'Current Phase'
+      nutritionStrategy: 'Hydratation de base : 500 mL d\'eau/heure. 30g de glucides/h sur les sorties du weekend pour habituer l\'estomac.',
+      badge: 'Phase Actuelle'
     },
     {
       id: 'autumn_consolidation',
-      name: '2. Autumn Aerobic Consolidation & Strength Baseline',
-      period: 'Sept 21 – Dec 20, 2026',
-      weeks: 'Autumn Semester (13 Weeks)',
-      volumePct: '85% Steady Volume',
-      focus: 'Aerobic Base (Zone 2) & Structural Strength',
-      location: 'Mont-Royal Trails, Outdoor Stairs & ÉTS Gym',
-      why: 'Build a solid aerobic base (mitochondrial density in slow-twitch fibers) while balancing university semester exams. Fat oxidation efficiency is maximized below 155 bpm.',
+      name: '2. Consolidation Aérobie & Force Automnale',
+      shortTitle: 'Base Aérobie & Force',
+      period: '21 sept. – 20 déc. 2026',
+      weeks: 'Session d\'automne ÉTS (13 Semaines)',
+      volumePct: '85% Volume Régulier',
+      focus: 'Endurance de base (Zone 2) & Robustesse articulaire',
+      location: 'Mont-Royal, Escaliers & Gym ÉTS',
+      why: 'Développer la densité mitochondriale dans les fibres lentes tout en gérant les examens de l\'ÉTS. L\'oxydation des lipides est optimale sous 155 bpm.',
       whatHappens: [
-        'Stable weekly rhythm of 5 workouts tailored around university courses.',
-        'Stair climbing repeats at Mont-Royal (200-step stairs) to develop ankle and knee resilience.',
-        'Progressive long runs capped at 2h15 to avoid systemic immunosuppression during exam periods.'
+        'Rythme hebdomadaire stable de 5 séances calées autour des cours universitaires.',
+        'Montées d\'escaliers au Mont-Royal (escalier de 200 marches) pour blinder les chevilles et les genoux.',
+        'Sorties longues plafonnées à 2h15 pour éviter l\'immunosuppression pendant les périodes de mi-session.'
       ],
       keyWorkouts: [
         {
-          title: 'Stair & Steep Grade Climbs (Mont-Royal)',
-          desc: 'Climbing tempo on stairs with hands-on-knees ultra technique, power-hiking simulation.',
-          metrics: '60 min • +500m D+ • HR 168-180 bpm'
+          title: 'Montées d\'Escaliers & Pente Forte (Mont-Royal)',
+          desc: 'Tempo régulier en escaliers avec technique ultra (mains sur les cuisses), simulation de marche active en pente.',
+          metrics: '60 min • +500m D+ • FC 168-180 bpm'
         },
         {
-          title: 'Zone 2 Aerobic Foundation Run',
-          desc: 'Pure nasal breathing run. Teaches muscles to utilize fatty acids as primary fuel source.',
-          metrics: '50-60 min • Flat/rolling • HR < 148 bpm'
+          title: 'Sortie Aérobie Fondamentale Zone 2',
+          desc: 'Course en aisance respiratoire totale (respiration nasale). Enseigne aux muscles à brûler les graisses.',
+          metrics: '50-60 min • Plat/vallonné • FC < 148 bpm'
         },
         {
-          title: 'Eccentric Quad & Calves Strength',
-          desc: 'Bulgarian split squats, slow tempo goblet squats, weighted calf raises.',
-          metrics: '45 min • Quad bulletproofing'
+          title: 'Renforcement Excentrique Quadriceps & Mollets',
+          desc: 'Fentes bulgares, squats tempo lents, montées sur pointes de pieds avec charge.',
+          metrics: '45 min • Résistance aux descentes'
         }
       ],
-      nutritionStrategy: '40-50g carbs/hour on runs over 90 min. High protein intake post-strength sessions (1.6g/kg).',
-      badge: 'Autumn Base'
+      nutritionStrategy: '40-50g de glucides/heure sur les sorties de plus de 90 min. Apport protéique élevé post-renforcement (1,6g/kg).',
+      badge: 'Base Automne'
     },
     {
       id: 'winter_power',
-      name: '3. Winter Power & Hills (Incline Treadmill & Heavy Strength)',
-      period: 'Jan 11 – Feb 21, 2027',
-      weeks: 'Weeks 1 to 6 (Winter)',
-      volumePct: '80% ➔ 95% (W4 Deload 70%)',
-      focus: 'Specific Incline Power & Zero Winter Slips',
-      location: 'ÉTS Gym (Treadmill 15% D+) & Indoor Track',
-      why: 'Montreal winter snow and ice make outdoor mountain intervals dangerous. Incline treadmill sessions (12-15% grade) eliminate slip hazards while building massive aerobic power and VAM.',
+      name: '3. Puissance Hivernale & Pente (Tapis & Musculation)',
+      shortTitle: 'Puissance & D+ Hiver',
+      period: '11 janv. – 21 févr. 2027',
+      weeks: 'Semaines 1 à 6 (Hiver)',
+      volumePct: '80% ➔ 95% (S4 Décharge 70%)',
+      focus: 'Puissance ascensionnelle spécifique & Zéro risque de chute',
+      location: 'Gym ÉTS (Tapis Incliné 15% D+) & Piste',
+      why: 'La neige et le verglas montréalais rendent les intervalles de côte extérieurs risqués. Le tapis incliné à 12-15% supprime tout risque de glissade tout en développant la VAM et le souffle.',
       whatHappens: [
-        'Incline treadmill threshold repeats: 12-15% incline at 5.5 to 6.5 km/h.',
-        'Heavy posterior chain work: Romanian deadlifts, step-ups, walking lunges.',
-        'Week 4 is mandatory Deload: volume cut to 70% to absorb structural muscle trauma.'
+        'Intervalles au seuil sur tapis incliné : 12-15% de pente à 5,5 - 6,5 km/h.',
+        'Travail lourd de la chaîne postérieure : soulevés de terre roumains, step-ups sur banc, fentes marchées.',
+        'Semaine 4 en décharge obligatoire : volume réduit à 70% pour assimiler la charge musculaire.'
       ],
       keyWorkouts: [
         {
-          title: 'Incline Treadmill Hill Intervals (ÉTS Gym)',
-          desc: '15 min warm-up + 6x 3 min @ 15% incline (Z4 HR 172-185 bpm) + 2 min recovery.',
-          metrics: '55 min • +450m D+ simulated • High VAM'
+          title: 'Intervalles en Pente sur Tapis (Gym ÉTS)',
+          desc: '15 min échauffement + 6x 3 min @ 15% de pente (Z4 FC 172-185 bpm) avec 2 min de récupération.',
+          metrics: '55 min • +450m D+ simulé • VAM élevée'
         },
         {
-          title: 'Heavy Strength & Posterior Chain Bulletproofing',
-          desc: 'Trap bar deadlifts, weighted box step-ups (40cm), eccentric single-leg drops.',
-          metrics: '60 min • Maximum force recruitment'
+          title: 'Musculation Lourde & Chaîne Postérieure',
+          desc: 'Trap bar deadlifts, montées sur box lestées (40cm), descentes lentes sur une jambe.',
+          metrics: '60 min • Recrutement de force max'
         },
         {
-          title: 'Weekend Plowed Aerobic Long Run',
-          desc: 'Steady footing on plowed urban park loops (Maisonneuve).',
-          metrics: '1h45 - 2h15 • HR < 152 bpm'
+          title: 'Footing Long Aérobie Déneigé',
+          desc: 'Appuis sûrs sur boucles plates déneigées au Parc Maisonneuve.',
+          metrics: '1h45 - 2h15 • FC < 152 bpm'
         }
       ],
-      nutritionStrategy: 'Electrolytes mandatory even indoors due to high sweat rates on gym treadmills. 50g carbs/h.',
-      badge: 'Winter Power'
+      nutritionStrategy: 'Électrolytes obligatoires même en intérieur en raison de la forte transpiration sur tapis. 50g glucides/h.',
+      badge: 'Bloc Hiver'
     },
     {
       id: 'volume_wec',
-      name: '4. Volume & Back-to-Back Mountain Shocks (WEC)',
-      period: 'Feb 22 – May 2, 2027',
-      weeks: 'Weeks 7 to 16 (10 Weeks)',
-      volumePct: '95% ➔ 115% (W8, W12, W16 Deload)',
-      focus: 'Neuromuscular Fatigue Resistance & Back-to-Back Volume',
-      location: 'Mont-Royal & Regional Mountain Trails',
-      why: 'Ultra-trail running is won by legs that can keep moving efficiently after 10 hours of fatigue. Back-to-back weekend runs (long run Saturday + medium fatigued run Sunday) train this exact state.',
+      name: '4. Volume & Week-ends Chocs (WEC)',
+      shortTitle: 'Volume & Chocs WEC',
+      period: '22 févr. – 2 mai 2027',
+      weeks: 'Semaines 7 à 16 (10 Semaines)',
+      volumePct: '95% ➔ 115% (S8, S12, S16 Décharges)',
+      focus: 'Résistance à la fatigue neuromusculaire & Cumul WEC',
+      location: 'Mont-Royal & Massifs Régionaux',
+      why: 'En ultra-trail, la victoire appartient aux jambes capables de continuer à avancer efficacement après 10 heures d\'effort. Les week-ends chocs (grosse sortie samedi + sortie sur fatigue dimanche) créent cette adaptation.',
       whatHappens: [
-        'Progressive Saturday trail runs: 2h30 pushing to 4h30 on technical terrain.',
-        'Sunday fatigued runs: 60 to 80 min running strictly in Zone 2 on pre-fatigued quads.',
-        'Testing 5L pack with front flasks and mandatory gear under realistic race weight.'
+        'Sorties longues du samedi : de 2h30 jusqu\'à 4h30 sur terrain accidenté.',
+        'Sorties du dimanche : 60 à 80 min courues strictement en Zone 2 sur des quadriceps déjà entamés.',
+        'Test réel du sac de 5L avec flasques avant et matériel obligatoire au poids de course.'
       ],
       keyWorkouts: [
         {
-          title: 'Saturday Mountain Shock (Back-to-Back 1)',
-          desc: 'Continuous technical trail running with power hiking on steep slopes. Mandatory 5L race vest test.',
-          metrics: '3h00 - 4h30 • +800-1100m D+ • HR < 155 bpm'
+          title: 'Choc Montagne du Samedi (WEC 1)',
+          desc: 'Course continue en sentier technique avec marche active dans les fortes pentes. Test obligatoire du sac de 5L.',
+          metrics: '3h00 - 4h30 • +800-1100m D+ • FC < 155 bpm'
         },
         {
-          title: 'Sunday Fatigued Aerobic Run (Back-to-Back 2)',
-          desc: 'Aerobic running on tired legs. Simulates the psychological feel of KM 50 of QMT.',
-          metrics: '60-80 min • Rolling dirt tracks • HR < 148 bpm'
+          title: 'Footing Aérobie sur Fatigue (WEC 2)',
+          desc: 'Course sur jambes lourdes. Reproduit fidèlement les sensations musculaires du 50e kilomètre du QMT.',
+          metrics: '60-80 min • Sentiers roulants • FC < 148 bpm'
         },
         {
-          title: 'Midweek Mont-Royal Hill Repeats',
-          desc: 'Hill climbs with hands-on-knees power hike technique.',
-          metrics: '60 min • +500m D+ • Zone 4 threshold'
+          title: 'Répétitions de Côtes au Mont-Royal',
+          desc: 'Ascensions dynamiques avec technique des mains sur les genoux.',
+          metrics: '60 min • +500m D+ • Zone 4 au seuil'
         }
       ],
-      nutritionStrategy: 'Strict race simulation: 60g carbs/hour + 500-600 mL fluid/hour with 450 mg sodium.',
-      badge: 'Volume Block'
+      nutritionStrategy: 'Simulation stricte des conditions de course : 60g de glucides/h + 500-600 mL de liquide/h avec 450 mg de sodium.',
+      badge: 'Volume WEC'
     },
     {
       id: 'mestachibo_peak',
-      name: '5. Specific Peak & Mestachibo Canyon Conditioning',
-      period: 'May 3 – June 6, 2027',
-      weeks: 'Weeks 17 to 21 (5 Weeks)',
-      volumePct: '110% ➔ 125% Peak Volume',
-      focus: 'Extreme Technical Scrambling, Pole Stowage & Race Day Pace',
-      location: 'Technical Mountain Trails & Stair Loops',
-      why: 'The Sentier Mestachibo (KM 57 to 67 of QMT) is famous for its granite boulder hopping, chains, and suspension bridges where poles are forbidden. This block conditions lateral ankle stability and upper-body rock scrambling.',
+      name: '5. Pic Spécifique & Canyon du Mestachibo',
+      shortTitle: 'Spécifique Mestachibo',
+      period: '3 mai – 6 juin 2027',
+      weeks: 'Semaines 17 à 21 (5 Semaines)',
+      volumePct: '110% ➔ 125% Volume Pic',
+      focus: 'Passages rocheux extrêmes, rangement des bâtons & allure course',
+      location: 'Sentiers Techniques de Montagne & Escaliers',
+      why: 'Le sentier Mestachibo (KM 57 à 67 du QMT) est réputé pour ses dalles de granit glissantes, ses passerelles suspendues et ses échelles où les bâtons sont interdits. Ce bloc renforce la proprioception de cheville et le franchissement rocheux.',
       whatHappens: [
-        'Technical trail runs with frequent transition drills (stowing/unstowing poles on 5L vest).',
-        'Single-leg stability and proprioception drills to bulletproof ankles against rolling on wet granite.',
-        'Peak long run: 5h00 with full mandatory gear in 5L backpack.'
+        'Sorties techniques avec transitions rapides (plier et ranger ses bâtons sur le sac 5L tout en courant).',
+        'Exercices de proprioception sur une jambe pour prévenir toute entorse sur roche humide.',
+        'Sortie longue pic : 5h00 avec sac de 5L rempli de tout le matériel obligatoire.'
       ],
       keyWorkouts: [
         {
-          title: 'Technical Rocky Terrain & Boulder Simulation',
-          desc: 'Running over roots, rocky river beds, and steep technical switchbacks. Practicing running with poles stowed.',
-          metrics: '4h00 - 5h00 • +1200m D+ • Full race vest'
+          title: 'Terrain Rocheux Technique & Simulation Blocs',
+          desc: 'Franchissement de racines, lits de rivières asséchés et lacets raides. Entraînement au portage des bâtons pliés.',
+          metrics: '4h00 - 5h00 • +1200m D+ • Sac complet'
         },
         {
-          title: 'Ankle Stability & Agility Drills',
-          desc: 'Single-leg balance, lateral plyometrics, calf eccentric drops, and core anti-rotation.',
-          metrics: '45 min • Injury prevention'
+          title: 'Stabilité de Cheville & Agilité Dynamique',
+          desc: 'Équilibre monopodal, pliométrie latérale, descentes lentes sur mollets et gainage anti-rotation.',
+          metrics: '45 min • Prévention des blessures'
         },
         {
-          title: 'Mestachibo Specific Pace Practice',
-          desc: 'High cadence, short stride turnover over irregular terrain.',
+          title: 'Allure Spécifique Sentier Mestachibo',
+          desc: 'Cadence élevée, foulée courte et vive sur terrain chaotique.',
           metrics: '75 min • +400m D+'
         }
       ],
-      nutritionStrategy: '60-70g carbs/hour tested under digestive stress. Solid food digestion testing (bars, waffles, salted potatoes).',
-      badge: 'Peak Specific'
+      nutritionStrategy: '60 à 70g de glucides/h testés sous stress gastrique. Test d\'aliments solides (barres, gaufres, purées salées).',
+      badge: 'Pic Spécifique'
     },
     {
       id: 'tapering',
-      name: '6. Tapering, Freshness & Race Day Execution (QMT-80)',
-      period: 'June 7 – July 3, 2027',
-      weeks: 'Weeks 22 to 24 (3 Weeks)',
+      name: '6. Affûtage, Fraîcheur & Semaine de Course (QMT-80)',
+      shortTitle: 'Affûtage & Course QMT',
+      period: '7 juin – 3 juil. 2027',
+      weeks: 'Semaines 22 à 24 (3 Semaines)',
       volumePct: '60% ➔ 40% ➔ 25%',
-      focus: 'Peak Glycogen Supercompensation & Mental Freshness',
-      location: 'Gentle Park Trails & Active Recovery',
-      why: 'Reduce systemic fatigue by 80% while retaining 100% of neuromuscular fitness. Arrive at the Petite-Rivière-Saint-François start line with full muscle glycogen stores and undamaged muscle fibers.',
+      focus: 'Surcompensation glycogénique & Fraîcheur neuromusculaire',
+      location: 'Sentiers Souples & Récupération Active',
+      why: 'Éliminer 80% de la fatigue accumulée tout en conservant 100% de la capacité aérobie et de la force. Arriver au Quai de Petite-Rivière avec des stocks de glycogène saturés et des fibres musculaires intactes.',
       whatHappens: [
-        'Volume cut by 40% in W22, 60% in W23, and 75% on race week.',
-        'Short sharp 20-second strides maintained to keep fast-twitch neuromuscular pathways primed.',
-        'High-carbohydrate loading protocol (8-10g carbs/kg bodyweight in the final 48 hours).'
+        'Réduction drastique du volume : -40% en S22, -60% en S23 et -75% en semaine de course.',
+        'Maintien de lignes droites vives de 20 secondes pour préserver la réactivité nerveuse.',
+        'Protocole de recharge glucidique dans les 48 heures précédant le départ (8 à 10g de glucides/kg).'
       ],
       keyWorkouts: [
         {
-          title: 'Taper Maintenance Run with Strides',
-          desc: '35 min very easy aerobic flush + 4x 20s progressive accelerations on flat turf.',
-          metrics: '35 min • Pure freshness'
+          title: 'Footing d\'Affûtage avec Lignes Droites',
+          desc: '35 min de footing très lent de décrassage + 4x 20s d\'accélérations progressives sur herbe plate.',
+          metrics: '35 min • Pure fraîcheur'
         },
         {
-          title: 'Race Pack Shakeout & Mandatory Gear Final Check',
-          desc: '20 min jog with 5L vest packed with all mandatory gear, checking zero bounce.',
-          metrics: '20 min • Gear verification'
+          title: 'Dernière Vérification Sac de Course & Matériel',
+          desc: 'Footing de 20 min avec le sac de 5L chargé de tout le matériel obligatoire pour valider l\'absence totale de ballotement.',
+          metrics: '20 min • Validation matériel'
         },
         {
-          title: '🏁 QMT-80 RACE DAY (Saturday July 3, 2027)',
-          desc: '77 km • +3,370m D+ • Petite-Rivière ➔ Massif ➔ Caps ➔ Saint-Tite ➔ Mestachibo ➔ Mont-Sainte-Anne.',
-          metrics: '77 km • 19h Cut-off • Finish line glory'
+          title: '🏁 JOUR DE COURSE QMT-80 (Samedi 3 Juillet 2027)',
+          desc: '77 km • +3 370m D+ • Petite-Rivière ➔ Massif ➔ Caps ➔ Saint-Tite ➔ Mestachibo ➔ Mont-Sainte-Anne.',
+          metrics: '77 km • Limite 19h • Ligne d\'arrivée'
         }
       ],
-      nutritionStrategy: 'Carb-loading D-3 to D-1. Race day: 60g carbs/h, 500-750 mL fluid/h, salt tabs.',
-      badge: 'Race Week'
+      nutritionStrategy: 'Recharge glucidique de J-3 à J-1. Jour de course : 60g de glucides/h, 500-750 mL de liquide/h, capsules de sels.',
+      badge: 'Semaine de Course'
     }
   ];
 
   const currentPhase = phases[selectedPhaseIndex];
 
-  // Official QMT-80 Aid Stations Data
+  // Ravitaillements officiels du QMT-80
   const aidStations = [
     {
-      name: 'Start — Quai Petite-Rivière',
+      name: 'Départ — Quai de Petite-Rivière',
       km: 'KM 0',
       elevation: '0 m',
       elevationGain: '0 m',
-      crew: 'Allowed',
-      dropBag: 'No',
-      notes: 'Depart along St. Lawrence River. Shuttle leaves Mont-Sainte-Anne at 3:30 AM.'
+      crew: 'Assistance autorisée',
+      dropBag: 'Non',
+      notes: 'Départ au bord du fleuve Saint-Laurent. Navette obligatoire à 3h30 AM au Mont-Sainte-Anne.'
     },
     {
       name: 'R1 — Le Massif de Charlevoix',
-      km: 'KM 14.5',
+      km: 'KM 14,5',
       elevation: '721 m',
       elevationGain: '+750 m',
-      crew: 'Crew Allowed',
-      dropBag: 'No',
-      notes: 'Initial brutal sea-to-summit climb completed. First hydration & food refill.'
+      crew: 'Assistance autorisée',
+      dropBag: 'Non',
+      notes: 'Fin de la terrible ascension initiale mer-sommet. Premier plein d\'eau et de ravitaillement.'
     },
     {
       name: 'R2 — Cap du Salut',
-      km: 'KM 30.0',
+      km: 'KM 30,0',
       elevation: '573 m',
-      elevationGain: '+1,350 m',
-      crew: 'NO Crew (Isolated)',
-      dropBag: 'No',
-      notes: 'Sentier des Caps coastal cliff section. 100% self-sufficient runner zone.'
+      elevationGain: '+1 350 m',
+      crew: 'Isolé (Aucune assistance)',
+      dropBag: 'Non',
+      notes: 'Sentier des Caps, falaises côtières. Zone 100% sauvage en autonomie complète.'
     },
     {
       name: 'R3 — Cap Gribane',
-      km: 'KM 44.0',
+      km: 'KM 44,0',
       elevation: '568 m',
-      elevationGain: '+1,950 m',
-      crew: 'NO Crew (Isolated)',
-      dropBag: 'No',
-      notes: 'Technical granite slabs & continuous roots. Fill water before the 14km stretch to Saint-Tite.'
+      elevationGain: '+1 950 m',
+      crew: 'Isolé (Aucune assistance)',
+      dropBag: 'Non',
+      notes: 'Dalles de granit glissantes et racines denses. Bien faire le plein d\'eau avant les 13 km vers Saint-Tite.'
     },
     {
       name: 'R4 — Saint-Tite-des-Caps',
-      km: 'KM 57.0',
+      km: 'KM 57,0',
       elevation: '327 m',
-      elevationGain: '+2,400 m',
-      crew: 'Crew Allowed',
-      dropBag: 'DROP BAG ACCESS',
-      notes: 'MAJOR AID STATION. Mandatory headlamp inspection. Eat solid food and stow poles before Mestachibo.'
+      elevationGain: '+2 400 m',
+      crew: 'Assistance autorisée',
+      dropBag: 'SAC DE DÉLESTAGE (Drop Bag)',
+      notes: 'POSTE CHARNIÈRE. Contrôle obligatoire de la lampe frontale. Manger solide, changer de chaussettes et plier ses bâtons.'
     },
     {
       name: 'R5 — Sentier Mestachibo',
-      km: 'KM 67.0',
+      km: 'KM 67,0',
       elevation: '137 m',
-      elevationGain: '+2,750 m',
-      crew: 'NO Crew (Isolated)',
-      dropBag: 'No',
-      notes: 'Canyon floor, suspended bridges & boulder scrambling. ⚠️ POLES FORBIDDEN (must be stowed).'
+      elevationGain: '+2 750 m',
+      crew: 'Isolé (Aucune assistance)',
+      dropBag: 'Non',
+      notes: 'Gorges de la rivière, ponts suspendus, chaos rocheux. ⚠️ BÂTONS STRICTEMENT INTERDITS (doivent être rangés).'
     },
     {
-      name: 'Finish — Mont-Sainte-Anne',
-      km: 'KM 77.0',
+      name: 'Arrivée — Mont-Sainte-Anne',
+      km: 'KM 77,0',
       elevation: '177 m',
-      elevationGain: '+3,370 m',
-      crew: 'Finish Corral',
-      dropBag: 'Drop Bag Return',
-      notes: 'Final climb & descent to the base station. Official cut-off: 19 hours.'
+      elevationGain: '+3 370 m',
+      crew: 'Arche d\'Arrivée',
+      dropBag: 'Retour des sacs',
+      notes: 'Montée finale sur les flancs du MSA, passage sur la crête et descente vers l\'arche d\'arrivée. Barrière : 19h.'
     }
   ];
 
@@ -342,7 +349,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             fontWeight: 700
           }}
         >
-          <Layers size={14} /> 6-Phase Periodization Matrix
+          <Layers size={14} /> Matrice de Périodisation (6 Phases)
         </button>
 
         <button
@@ -355,7 +362,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             fontWeight: 700
           }}
         >
-          <Calendar size={14} /> Weekly Microcycle Schedule
+          <Calendar size={14} /> Planning Hebdo Type (Lun – Dim)
         </button>
 
         <button
@@ -368,7 +375,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             fontWeight: 700
           }}
         >
-          <Mountain size={14} /> Course Profile & Aid Stations (Ravitos)
+          <Mountain size={14} /> Profil & Ravitaillements (77 km)
         </button>
 
         <button
@@ -381,7 +388,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             fontWeight: 700
           }}
         >
-          <ShieldCheck size={14} /> 5L Backpack Strategy & Mandatory Gear
+          <ShieldCheck size={14} /> Stratégie Sac 5L & Matériel Obligatoire
         </button>
       </div>
 
@@ -403,14 +410,14 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                       PHASE {idx + 1}
                     </span>
                     <span style={{ fontSize: '0.66rem', color: isSelected ? '#fff' : 'var(--text-muted)' }}>
-                      {p.weeks}
+                      {p.weeks.split(' (')[0]}
                     </span>
                   </div>
-                  <div style={{ fontSize: '0.8rem', fontWeight: 700, marginTop: 3, color: isSelected ? '#ffffff' : 'var(--text-primary)' }}>
-                    {p.name.split('. ')[1] || p.name}
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, marginTop: 2, color: isSelected ? '#ffffff' : 'var(--text-primary)' }}>
+                    {p.shortTitle}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                    Vol: {p.volumePct}
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 1 }}>
+                    Vol : {p.volumePct}
                   </div>
                 </button>
               );
@@ -423,16 +430,16 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 4 }}>
                   <span className="badge-tag" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
-                    Phase {selectedPhaseIndex + 1} of 6
+                    Phase {selectedPhaseIndex + 1} sur 6
                   </span>
                   <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>
                     {currentPhase.name}
                   </h3>
                 </div>
                 <div style={{ display: 'flex', gap: '14px', fontSize: '0.76rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                  <span>📅 <strong>Timeline:</strong> {currentPhase.period} ({currentPhase.weeks})</span>
-                  <span>📍 <strong>Location:</strong> {currentPhase.location}</span>
-                  <span>📈 <strong>Volume Factor:</strong> {currentPhase.volumePct}</span>
+                  <span>📅 <strong>Période :</strong> {currentPhase.period} ({currentPhase.weeks})</span>
+                  <span>📍 <strong>Lieu :</strong> {currentPhase.location}</span>
+                  <span>📈 <strong>Facteur Volume :</strong> {currentPhase.volumePct}</span>
                 </div>
               </div>
 
@@ -446,7 +453,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                   color: 'var(--primary)'
                 }}
               >
-                Focus: {currentPhase.focus}
+                Objectif : {currentPhase.focus}
               </div>
             </div>
 
@@ -462,14 +469,14 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                 lineHeight: 1.55
               }}
             >
-              <strong style={{ color: 'var(--primary)' }}>🎯 Physiological Purpose & Adaptation:</strong>
+              <strong style={{ color: 'var(--primary)' }}>🎯 Rôle Physiologique & Adaptation Visée :</strong>
               <p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{currentPhase.why}</p>
             </div>
 
             {/* Benchmark Sessions Grid */}
             <div style={{ marginBottom: '14px' }}>
               <h4 style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
-                Benchmark Workouts in this Block:
+                Séances Clés de ce Bloc :
               </h4>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
                 {currentPhase.keyWorkouts.map((w, wIdx) => (
@@ -507,7 +514,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             >
               <span style={{ fontSize: '1.1rem' }}>🍌</span>
               <span style={{ color: 'var(--text-secondary)' }}>
-                <strong style={{ color: 'var(--primary)' }}>Fueling & Hydration Guidance:</strong> {currentPhase.nutritionStrategy}
+                <strong style={{ color: 'var(--primary)' }}>Consignes Ravitaillement & Hydratation :</strong> {currentPhase.nutritionStrategy}
               </span>
             </div>
           </div>
@@ -521,34 +528,34 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             <table className="pro-table">
               <thead>
                 <tr>
-                  <th style={{ width: '120px' }}>Day & Duration</th>
-                  <th>Session Protocol & Focus</th>
-                  <th>Location</th>
-                  <th style={{ width: '140px' }}>Target Zone</th>
+                  <th style={{ width: '120px' }}>Jour & Durée</th>
+                  <th>Protocole de Séance & Thématique</th>
+                  <th>Lieu</th>
+                  <th style={{ width: '140px' }}>Zone Cible</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Monday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Lundi</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 45 – 65 min</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🤸 Calisthenics 1 (Push & Core Strength)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Dips, Pike push-ups (handstand progression), gymnastics ring push-ups, hollow body holds. Zero leg impact post-weekend trail.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🤸 Calisthénie 1 (Poussée & Gainage)</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Dips, pompes pikes (renforcement épaules), pompes aux anneaux, gainage hollow body. Zéro impact sur les jambes après les sorties du weekend.</div>
                   </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 ÉTS Gym</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Recovery (Z1)</span></td>
+                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Gym ÉTS</td>
+                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Récupération (Z1)</span></td>
                 </tr>
 
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Tuesday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Mardi</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 65 – 85 min</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>⚡ Hill Repeats D+ & Leg Bulletproofing</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Mont-Royal short hill repeats (172-190 bpm) or winter incline treadmill (15% @ 6 km/h) chained with Bulgarian split squats and tempo squats for quad descent resistance.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>⚡ Côtes D+ & Renforcement Jambes</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Répétitions de côtes courtes au Mont-Royal (172-190 bpm) ou tapis incliné l'hiver (15% @ 6 km/h) enchaînées avec fentes bulgares et squats lents pour blinder les cuisses en descente.</div>
                   </td>
                   <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Mont-Royal / Gym</td>
                   <td><span className="badge-tag" style={{ background: 'rgba(255, 87, 34, 0.15)', border: '1px solid var(--primary-border)', color: 'var(--primary)' }}>❤️ Zone 4/5 (172-190)</span></td>
@@ -556,66 +563,66 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
 
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Wednesday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Mercredi</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 45 – 65 min</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏋️ Calisthenics 2 (Pull & Core - Zero Leg Impact)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Strict pull-ups, muscle-up progressions, horizontal rows, front lever work. Allows complete leg flushing post-Tuesday hills.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏋️ Calisthénie 2 (Tirage & Dos - Zéro Jambes)</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Tractions strictes, tractions horizontales aux anneaux, travail du front lever, suspensions à la barre. Permet une récupération complète des cuisses post-mardi.</div>
                   </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 ÉTS Gym</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Zone 1 (Strength)</span></td>
+                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Gym ÉTS</td>
+                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Zone 1 (Force)</span></td>
                 </tr>
 
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Thursday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Jeudi</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 35 – 50 min</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏃 Easy Aerobic Base Run Z2</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Pure conversational pace. HR strictly below 148 bpm. Dynamic cadence 170-175 spm with short light steps under the hips.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏃 Footing Aérobie Fondamentale Z2</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Aisance respiratoire absolue. Fréquence cardiaque strictement sous 148 bpm. Foulée légère et économique (170-175 pas/min sous les hanches).</div>
                   </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Neighborhood / Maisonneuve</td>
+                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Quartier / Maisonneuve</td>
                   <td><span className="badge-tag" style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}>❤️ Zone 1/2 (&lt; 148)</span></td>
                 </tr>
 
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Friday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Vendredi</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 40 – 60 min</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🤸 Calisthenics 3 (Handstand, Shoulder Mobility & Skills)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Handstand balance, shoulder active mobility, L-sit/V-sit. Chained straight after class at ÉTS Gym. Rest day for quads before the weekend shock.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🤸 Calisthénie 3 (Équilibre, Mobilité Épaules & Gainage)</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Équilibres sur les mains (Handstand), mobilité active des épaules, L-sit/V-sit. Enchaîné directement après les cours au Gym ÉTS. Repos pour les jambes avant le choc du weekend.</div>
                   </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 ÉTS Gym</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Zone 1 (Mobility)</span></td>
+                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Gym ÉTS</td>
+                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Zone 1 (Mobilité)</span></td>
                 </tr>
 
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Saturday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Samedi</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 1h45 – 4h30</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏔️ Main Mountain Shock Long Run (Back-to-Back 1)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>The cornerstone workout for QMT-80. Continuous D+ climbs, run-hike technique (power hike whenever slope &gt; 8-10%), downhill quad resilience. Fueling: 60g carbs/h.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏔️ Sortie Longue Choc en Montagne (WEC 1)</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>La séance pilier pour le QMT-80. Cumul de dénivelé continu, alternance course / marche active dès que la pente dépasse 8-10%, résistance musculaire en descente. Ravitaillement : 60g de glucides/h.</div>
                   </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Mont-Royal Trails</td>
+                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Sentiers Mont-Royal</td>
                   <td><span className="badge-tag" style={{ background: 'rgba(255, 87, 34, 0.15)', border: '1px solid var(--primary-border)', color: 'var(--primary)' }}>❤️ Zone 2 (&lt; 155)</span></td>
                 </tr>
 
                 <tr>
                   <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Sunday</div>
+                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Dimanche</div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 40 – 75 min</div>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏃 Fatigued Aerobic Run (Back-to-Back 2) + Mobility</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Executed directly on muscular fatigue from Saturday to train the nervous system to handle late-race fatigue (simulating KM 50-77 of QMT). Followed by full 20 min evening stretch routine.</div>
+                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏃 Footing sur Fatigue (WEC 2) + Mobilité</div>
+                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Couru directement sur la fatigue musculaire du samedi pour habituer le système nerveux à la fin de course (simulation des KM 50-77 du QMT). Suivi de 20 min d'étirements du bassin et des mollets.</div>
                   </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Mont-Royal / Home</td>
+                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Mont-Royal / Domicile</td>
                   <td><span className="badge-tag" style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}>❤️ Strict Z2 (&lt; 148)</span></td>
                 </tr>
               </tbody>
@@ -630,41 +637,41 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
           {/* Key Course Stats */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
             <div className="glass-panel" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Official Distance</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', marginTop: 2 }}>77.0 KM</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Distance Officielle</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', marginTop: 2 }}>77,0 KM</div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Petite-Rivière ➔ Mont-Sainte-Anne</div>
             </div>
 
             <div className="glass-panel" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Elevation D+ / D-</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', marginTop: 2 }}>+3,370 m / -3,200 m</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Technical Rating: 5/5</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Dénivelé D+ / D-</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', marginTop: 2 }}>+3 370 m / -3 200 m</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Niveau technique : 5 / 5</div>
             </div>
 
             <div className="glass-panel" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Maximum Cut-Off</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>19 Hours</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Shuttle 3:30 AM from Mont-Sainte-Anne</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Barrière Horaire Max</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>19 Heures</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Navette 3h30 AM depuis le Mont-Sainte-Anne</div>
             </div>
 
             <div className="glass-panel" style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Drop Bag Service</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Sac de Délestage (Drop Bag)</div>
               <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', marginTop: 2 }}>KM 57</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Saint-Tite-des-Caps Aid Station</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Ravitaillement de Saint-Tite-des-Caps</div>
             </div>
           </div>
 
           {/* Aid Stations Breakdown Table */}
           <div className="glass-panel" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Mountain size={16} color="var(--primary)" />
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
-                  Official Aid Stations & Section Breakdown (Ravitaillements)
+                  Postes de Ravitaillement & Découpage Officiel du Parcours
                 </h3>
               </div>
               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                Products: XACT Nutrition & Electrolytes at all aid stations
+                Fournisseur officiel : Produits XACT Nutrition & Électrolytes à tous les postes
               </span>
             </div>
 
@@ -672,10 +679,10 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
               <table className="pro-table">
                 <thead>
                   <tr>
-                    <th>Checkpoint / Aid Station</th>
-                    <th>Distance & Elevation</th>
-                    <th>Crew & Drop Bag</th>
-                    <th>Course Notes & Specific Strategy</th>
+                    <th>Ravitaillement / Poste</th>
+                    <th>Distance & Altitude</th>
+                    <th>Assistance & Drop Bag</th>
+                    <th>Spécificités & Stratégie de Course</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -686,19 +693,19 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                       </td>
                       <td>
                         <div style={{ fontWeight: 700, color: 'var(--primary)' }}>{station.km}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Alt: {station.elevation} • Cum: {station.elevationGain}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Alt: {station.elevation} • Cumul: {station.elevationGain}</div>
                       </td>
                       <td>
                         <span
                           className="badge-tag"
                           style={{
-                            background: station.dropBag.includes('DROP') ? 'rgba(16, 185, 129, 0.15)' : (station.crew.includes('NO') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(56, 189, 248, 0.1)'),
-                            color: station.dropBag.includes('DROP') ? '#10b981' : (station.crew.includes('NO') ? '#f87171' : '#38bdf8'),
+                            background: station.dropBag.includes('DROP') ? 'rgba(16, 185, 129, 0.15)' : (station.crew.includes('Isolé') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(56, 189, 248, 0.1)'),
+                            color: station.dropBag.includes('DROP') ? '#10b981' : (station.crew.includes('Isolé') ? '#f87171' : '#38bdf8'),
                             border: '1px solid var(--border-color)',
                             fontSize: '0.68rem'
                           }}
                         >
-                          {station.dropBag.includes('DROP') ? '🎒 DROP BAG + Crew' : station.crew}
+                          {station.dropBag.includes('DROP') ? '🎒 DROP BAG + Assistance' : station.crew}
                         </span>
                       </td>
                       <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
@@ -715,37 +722,37 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
             <div className="glass-panel" style={{ padding: '14px 16px' }}>
               <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--primary)', marginBottom: 6 }}>
-                1. KM 0 to 15: The Massif Wall
+                1. KM 0 à 15 : Le Mur du Massif
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Starting at sea level (0m) along the St. Lawrence river, the first 14 km climb 720m directly up Le Massif. Do NOT run the steep grades; power hike with high cadence to keep HR &lt; 155 bpm. Arrive at Le Massif aid station fresh.
+                Départ au niveau du fleuve (0 m). Les 14 premiers kilomètres avalent 720 m de D+ direct sur Le Massif. Interdiction formelle de courir les fortes pentes : marche active avec cadence régulière pour garder la FC sous 155 bpm. Arriver frais au sommet.
               </p>
             </div>
 
             <div className="glass-panel" style={{ padding: '14px 16px' }}>
               <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#38bdf8', marginBottom: 6 }}>
-                2. KM 15 to 57: Sentier des Caps
+                2. KM 15 à 57 : Le Sentier des Caps
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                42 km of relentless technical roots, muddy hollows, and granite cliffs (Cap du Salut, Cap Gribane). Completely isolated with zero crew access. Pace steadily and refill fluid to 1.0L minimum at Cap Gribane.
+                42 km de sous-bois sauvages, de racines denses, de boue et de dalles de falaise (Cap du Salut, Cap Gribane). Secteur totalement isolé sans aucune assistance. Bien faire le plein de 1,0 L d'eau à Cap Gribane avant la liaison de 13 km vers Saint-Tite.
               </p>
             </div>
 
             <div className="glass-panel" style={{ padding: '14px 16px' }}>
               <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#f59e0b', marginBottom: 6 }}>
-                3. KM 57 to 67: The Infamous Mestachibo
+                3. KM 57 à 67 : L'Enfer du Mestachibo
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                <strong>BÂTONS INTERDITS :</strong> You MUST stow your poles securely on your 5L vest at Saint-Tite. Speed drops to 3-4 km/h over suspended bridges, wet boulders and steel ladders. Focus on 100% footwork accuracy.
+                <strong>BÂTONS STRICTEMENT INTERDITS :</strong> Bâtons obligatoirement pliés et rangés sur le sac de 5L dès Saint-Tite. La vitesse chute à 3-4 km/h au milieu des blocs de granit, des passerelles et des échelles métalliques. Vigilance maximale sur chaque appui.
               </p>
             </div>
 
             <div className="glass-panel" style={{ padding: '14px 16px' }}>
               <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#10b981', marginBottom: 6 }}>
-                4. KM 67 to 77: Mont-Sainte-Anne Final Climb
+                4. KM 67 à 77 : Ascension Finale du Mont-Sainte-Anne
               </div>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                Exit the canyon and begin the final push up the flank of Mont-Sainte-Anne. Deploy poles again. Dig into glycogen reserves and power hike to the summit ridge before descending to the finish corral!
+                Sortie du canyon. Déploiement des bâtons pour gravir le flanc du Mont-Sainte-Anne. Puiser dans les réserves de glycogène, franchir la crête sommitale et savourer la descente vers l'arche d'arrivée !
               </p>
             </div>
           </div>
@@ -799,7 +806,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                 <li><strong>À l'Avant (Bretelles) :</strong> Achète <strong>2 flasques souples de 500 mL</strong> (1,0 Litre au total). C'est la capacité minimale exigée par le QMT. Remplissage en 30 secondes chrono sans retirer le sac !</li>
                 <li><strong>Flasque 1 :</strong> Eau pure (pour rincer la bouche, digérer les gels et s'asperger le visage).</li>
                 <li><strong>Flasque 2 :</strong> Boisson d'effort électrolytes/glucides (Tailwind ou XACT).</li>
-                <li><strong>À l'Arrière (Sac 5L) :</strong> Place ta <strong>poche de 1L vide ou remplie à 500 mL max</strong> uniquement sur le tronçon chaud de 14 km (Cap Gribane ➔ Saint-Tite). Le reste du temps, elle ne prend aucune place.</li>
+                <li><strong>À l'Arrière (Sac 5L) :</strong> Place ta <strong>poche de 1L vide ou remplie à 500 mL max</strong> uniquement sur le tronçon chaud de 13 km (Cap Gribane ➔ Saint-Tite). Le reste du temps, elle ne prend aucune place.</li>
               </ul>
             </div>
           </div>
@@ -841,13 +848,13 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
 
           {/* Official Mandatory Gear Interactive Checklist */}
           <div className="glass-panel" style={{ padding: '16px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
               <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <ShieldCheck size={16} color="#10b981" />
                 Matériel Obligatoire Officiel QMT-80 (Checklist de Contrôle)
               </h4>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                Vérifications aléatoires sur le parcours par les commissaires
+                Vérifications aléatoires sur le parcours par les commissaires de course
               </span>
             </div>
 
@@ -857,7 +864,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                 'Couverture de survie officielle (1,4 m x 2,0 m minimum)',
                 'Sifflet de sécurité intégré au sac ou attaché',
                 'Téléphone cellulaire chargé (enregistrer le numéro d’urgence QMT)',
-                'Bandage de compression auto-adhésif (3 pouces x 48 pouces / 7.5cm x 1.2m)',
+                'Bandage de compression auto-adhésif (3 pouces x 48 pouces / 7,5cm x 1,2m)',
                 'Lampe frontale (300+ lm) + batterie de rechange (exigée dès Saint-Tite)',
                 'Gobelet réutilisable ou Ecocup (aucun verre jetable aux ravitos)',
                 'Casquette, bandeau ou buff pour protection solaire',

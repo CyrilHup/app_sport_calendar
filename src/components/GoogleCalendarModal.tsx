@@ -47,12 +47,12 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
   };
 
   const handleDownload = () => {
-    downloadICSFile(events, 'qmt80_training_schedule.ics');
+    downloadICSFile(events, 'planning_entrainement_qmt80.ics');
   };
 
   const handleOAuthSync = async () => {
     if (!clientId) {
-      alert("Please provide a Google OAuth Client ID to connect directly via Google API.");
+      alert("Veuillez renseigner un ID Client Google OAuth pour vous connecter directement via l'API.");
       return;
     }
 
@@ -61,11 +61,10 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
       total: events.length,
       current: 0,
       status: 'SYNCING',
-      message: 'Requesting Google Calendar authorization...'
+      message: 'Demande d\'autorisation auprès de Google Agenda...'
     });
 
     try {
-      // Load Google Identity Services dynamically if needed
       if (!(window as any).google?.accounts?.oauth2) {
         const script = document.createElement('script');
         script.src = 'https://accounts.google.com/gsi/client';
@@ -83,7 +82,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
               total: events.length,
               current: 0,
               status: 'ERROR',
-              message: `Authorization failed: ${tokenResponse.error}`
+              message: `Échec de l'autorisation : ${tokenResponse.error}`
             });
             return;
           }
@@ -99,7 +98,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
         total: events.length,
         current: 0,
         status: 'ERROR',
-        message: err.message || 'OAuth error occurred'
+        message: err.message || 'Une erreur OAuth est survenue'
       });
     }
   };
@@ -125,10 +124,10 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
             </div>
             <div>
               <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800 }}>
-                Google Calendar Synchronization
+                Synchronisation Google Agenda
               </h2>
               <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                Sync your entire training schedule & classes directly to Google Calendar
+                Exporte ton planning d'entraînement et tes cours directement sur ton agenda Google
               </p>
             </div>
           </div>
@@ -155,7 +154,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 cursor: 'pointer'
               }}
             >
-              ⚡ 1-Click File Import
+              ⚡ Import 1-Clic (.ICS)
             </button>
 
             <button
@@ -172,7 +171,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 cursor: 'pointer'
               }}
             >
-              📡 Live URL Feed
+              📡 Lien d'Abonnement URL
             </button>
 
             <button
@@ -189,11 +188,11 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 cursor: 'pointer'
               }}
             >
-              🔑 Direct Google API
+              🔑 API Google Directe
             </button>
           </div>
 
-          {/* Tab 1: 1-Click File Import */}
+          {/* Tab 1: Import fichier .ics */}
           {activeTab === 'file' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div
@@ -206,9 +205,9 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                   lineHeight: 1.5
                 }}
               >
-                <strong>Fastest Zero-Setup Method:</strong>
+                <strong>Méthode la plus rapide et sans configuration :</strong>
                 <p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Download the generated calendar file and import it directly into your Google Calendar. It includes all <strong>{events.length} events</strong> (trail workouts with elevation targets, ÉTS courses, and commutes) perfectly formatted.
+                  Télécharge le fichier calendrier généré et importe-le directement dans ton Google Agenda. Il intègre l'ensemble des <strong>{events.length} événements</strong> (séances trail avec cibles de dénivelé D+, cours ÉTS et trajets calculés).
                 </p>
               </div>
 
@@ -219,7 +218,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                   style={{ flex: '1 1 200px', padding: '10px 14px', justifyContent: 'center' }}
                 >
                   <Download size={15} />
-                  <span>Download .ICS Calendar File</span>
+                  <span>Télécharger le Fichier .ICS</span>
                 </button>
 
                 <a
@@ -230,21 +229,21 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                   style={{ flex: '1 1 200px', padding: '10px 14px', justifyContent: 'center', textDecoration: 'none' }}
                 >
                   <ExternalLink size={15} />
-                  <span>Open Google Calendar Import Page</span>
+                  <span>Ouvrir l'Import Google Agenda</span>
                 </a>
               </div>
 
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.02)', padding: '8px 12px', borderRadius: 4 }}>
-                💡 <em>Steps:</em> Click "Download .ICS" ➔ Open Google Calendar Import Page ➔ Select the downloaded file and click "Import". You're done in 10 seconds!
+                💡 <em>Étapes :</em> Clique sur "Télécharger le Fichier .ICS" ➔ Ouvre la page d'import Google Agenda ➔ Sélectionne le fichier téléchargé et valide. C'est fait en 10 secondes !
               </div>
             </div>
           )}
 
-          {/* Tab 2: Live Subscription Feed */}
+          {/* Tab 2: Flux d'abonnement */}
           {activeTab === 'subscribe' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Subscribe to this live feed URL in Google Calendar or your smartphone. Any updates will automatically synchronize in the background:
+                Abonne-toi à cette URL de flux dynamique dans Google Agenda ou sur ton smartphone. Toute mise à jour se synchronisera automatiquement en arrière-plan :
               </p>
 
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -264,7 +263,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 />
                 <button className="btn-secondary" onClick={handleCopyUrl} style={{ padding: '8px 12px' }}>
                   {copied ? <CheckCircle2 size={15} color="#00e676" /> : <Copy size={15} />}
-                  <span>{copied ? 'Copied!' : 'Copy'}</span>
+                  <span>{copied ? 'Copié !' : 'Copier'}</span>
                 </button>
               </div>
 
@@ -276,29 +275,29 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 style={{ textDecoration: 'none', justifyContent: 'center', padding: '9px 12px' }}
               >
                 <ExternalLink size={14} />
-                <span>Open Google Calendar "Add by URL"</span>
+                <span>Ouvrir "Ajouter par URL" dans Google Agenda</span>
               </a>
 
               <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                📌 In Google Calendar, click <em>Other calendars (+)</em> ➔ <em>From URL</em> ➔ Paste the link.
+                📌 Dans Google Agenda, clique sur <em>Autres agendas (+)</em> ➔ <em>À partir de l'URL</em> ➔ Colle le lien.
               </div>
             </div>
           )}
 
-          {/* Tab 3: Direct Google API OAuth */}
+          {/* Tab 3: API Google OAuth */}
           {activeTab === 'direct' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                Connect directly using Google Calendar REST API. Pushes all events straight to your primary Google Calendar:
+                Connexion directe via l'API REST Google Calendar. Envoie tous les événements instantanément sur ton agenda principal :
               </p>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.76rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                  Google OAuth Client ID (from Google Cloud Console)
+                  ID Client Google OAuth (depuis la Google Cloud Console)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. 123456789-abc.apps.googleusercontent.com"
+                  placeholder="ex: 123456789-abc.apps.googleusercontent.com"
                   value={clientId}
                   onChange={e => setClientId(e.target.value)}
                   style={{
@@ -338,7 +337,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 style={{ padding: '10px 14px', justifyContent: 'center' }}
               >
                 <Sparkles size={15} />
-                <span>Authorize & Sync to Google Calendar</span>
+                <span>Autoriser et Synchroniser sur Google Agenda</span>
               </button>
             </div>
           )}
@@ -347,7 +346,7 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
         {/* Modal Footer */}
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onClose}>
-            Close
+            Fermer
           </button>
         </div>
       </div>

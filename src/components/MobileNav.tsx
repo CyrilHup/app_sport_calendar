@@ -14,7 +14,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentTab, onChangeTab })
         onClick={() => onChangeTab('calendar')}
       >
         <Calendar size={18} />
-        <span>Schedule</span>
+        <span>Planning</span>
       </button>
 
       <button
@@ -22,7 +22,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentTab, onChangeTab })
         onClick={() => onChangeTab('compare')}
       >
         <Activity size={18} />
-        <span>Garmin</span>
+        <span>Télémétrie</span>
       </button>
 
       <button
@@ -30,7 +30,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ currentTab, onChangeTab })
         onClick={() => onChangeTab('periodization')}
       >
         <TrendingUp size={18} />
-        <span>QMT-80 Plan</span>
+        <span>Plan QMT-80</span>
       </button>
     </nav>
   );

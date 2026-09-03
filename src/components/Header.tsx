@@ -32,8 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDateMode
 }) => {
   const formattedSyncTime = lastSyncTime
-    ? new Date(lastSyncTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-    : 'Live';
+    ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
+    : 'Direct';
 
   const formatHoursMin = (mins: number) => {
     const h = Math.floor(mins / 60);
@@ -51,11 +51,11 @@ export const Header: React.FC<HeaderProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <h1 className="brand-title">QMT-80 Performance Hub</h1>
               <span className="badge-tag" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
-                77 KM • +3,370M D+ • 19H LIMIT
+                77 KM • +3 370M D+ • LIMITE 19H
               </span>
             </div>
             <p className="brand-subtitle">
-              Ultra-Trail Periodization & Academic Commute Engine
+              Périodisation Ultra-Trail & Moteur de Trajets Universitaires (ÉTS)
             </p>
           </div>
         </div>
@@ -85,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
                 display: 'inline-block'
               }}
             />
-            <span>{isRecharging ? 'Syncing...' : `Synced (${formattedSyncTime})`}</span>
+            <span>{isRecharging ? 'Synchronisation...' : `Synchronisé (${formattedSyncTime})`}</span>
           </div>
 
           {onToggleDateMode && (
@@ -98,9 +98,9 @@ export const Header: React.FC<HeaderProps> = ({
                 color: dateMode === 'live' ? '#34d399' : 'var(--text-secondary)',
                 fontWeight: 700
               }}
-              title="Toggle between Real-time Today and Demo Training Block (Sept 2026)"
+              title="Basculer entre la date réelle d'aujourd'hui et la simulation d'entraînement (Sept 2026)"
             >
-              <span>{dateMode === 'live' ? '🟢 Live: Today' : '🧪 Demo: Sept 2026'}</span>
+              <span>{dateMode === 'live' ? '🟢 En direct : Aujourd\'hui' : '🧪 Démo : Sept 2026'}</span>
             </button>
           )}
 
@@ -108,22 +108,22 @@ export const Header: React.FC<HeaderProps> = ({
             className="btn-primary"
             onClick={onRefreshAll}
             disabled={isRecharging}
-            title="Refresh iCal and Garmin telemetry"
+            title="Rafraîchir les flux iCal ÉTS et la télémétrie Garmin"
           >
             <RefreshCw size={13} className={isRecharging ? 'spin-animation' : ''} />
-            <span>Sync Live</span>
+            <span>Synchro Directe</span>
           </button>
 
           <button
             className="btn-secondary"
             onClick={onOpenGoogleCalendar}
-            title="Export / Subscribe to Google Calendar"
+            title="Exporter ou s'abonner sur Google Agenda"
           >
             <Calendar size={13} color="var(--accent-blue)" />
-            <span>Google Calendar</span>
+            <span>Google Agenda</span>
           </button>
 
-          <button className="btn-garmin" onClick={onOpenGarmin} title="Manage Garmin telemetry & GPX imports">
+          <button className="btn-garmin" onClick={onOpenGarmin} title="Gérer la télémétrie Garmin Connect et imports GPX">
             <Activity size={13} />
             <span>Garmin</span>
           </button>
@@ -150,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({
                 color: 'var(--text-secondary)'
               }}
             >
-              Volume Target: <strong>{Math.round(periodContext.volumeFactor * 100)}%</strong>
+              Cible de Volume : <strong>{Math.round(periodContext.volumeFactor * 100)}%</strong>
             </span>
 
             {periodContext.isDeload && (
@@ -168,7 +168,7 @@ export const Header: React.FC<HeaderProps> = ({
                   fontWeight: 700
                 }}
               >
-                <ShieldAlert size={12} /> Recovery Deload
+                <ShieldAlert size={12} /> Semaine de Décharge
               </span>
             )}
 
@@ -180,7 +180,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="countdown-pill">
               <Flame size={13} color="var(--primary)" style={{ display: 'inline', marginRight: 4 }} />
-              <span>QMT-80 (July 3, 2027):</span> <strong style={{ color: 'var(--primary)' }}>D-{periodContext.daysToRace}</strong>
+              <span>QMT-80 (3 Juillet 2027) :</span> <strong style={{ color: 'var(--primary)' }}>J-{periodContext.daysToRace}</strong>
             </div>
 
             {onSelectPeriodizationTab && (
@@ -198,7 +198,7 @@ export const Header: React.FC<HeaderProps> = ({
                   gap: 2
                 }}
               >
-                Plan Roadmap <ChevronRight size={13} />
+                Voir le Plan <ChevronRight size={13} />
               </button>
             )}
           </div>
@@ -209,7 +209,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Weekly Volume */}
           <div className="telemetry-item">
             <div className="telemetry-label">
-              <span><Clock size={11} style={{ display: 'inline', marginRight: 3 }} /> Weekly Volume</span>
+              <span><Clock size={11} style={{ display: 'inline', marginRight: 3 }} /> Volume Hebdomadaire</span>
               <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>{weeklyStats.durationCompliancePct}%</span>
             </div>
             <div className="telemetry-value-row">
@@ -230,7 +230,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Elevation D+ */}
           <div className="telemetry-item">
             <div className="telemetry-label">
-              <span><Compass size={11} style={{ display: 'inline', marginRight: 3 }} /> Elevation Gain</span>
+              <span><Compass size={11} style={{ display: 'inline', marginRight: 3 }} /> Dénivelé Positif D+</span>
               <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{weeklyStats.elevationCompliancePct}%</span>
             </div>
             <div className="telemetry-value-row">
@@ -253,35 +253,35 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Average Heart Rate / TSS */}
           <div className="telemetry-item">
             <div className="telemetry-label">
-              <span><Zap size={11} style={{ display: 'inline', marginRight: 3 }} /> Aerobic Intensity</span>
-              <span style={{ color: 'var(--text-muted)' }}>HRmax 203</span>
+              <span><Zap size={11} style={{ display: 'inline', marginRight: 3 }} /> Intensité Cardiaque</span>
+              <span style={{ color: 'var(--text-muted)' }}>FCmax 203</span>
             </div>
             <div className="telemetry-value-row">
               <span className="telemetry-val">{weeklyStats.avgHeartRate}</span>
-              <span className="telemetry-sub">bpm avg • ~{weeklyStats.estimatedTss} TSS</span>
+              <span className="telemetry-sub">bpm moy. • ~{weeklyStats.estimatedTss} TSS</span>
             </div>
             <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 2 }}>
-              Zone 2 Base / Incline Threshold
+              Zone 2 Base / Seuil en Côte
             </div>
           </div>
 
           {/* Garmin Compliance */}
           <div className="telemetry-item">
             <div className="telemetry-label">
-              <span><Award size={11} style={{ display: 'inline', marginRight: 3 }} /> Telemetry Match</span>
+              <span><Award size={11} style={{ display: 'inline', marginRight: 3 }} /> Concordance Télémétrie</span>
               <span style={{ color: '#34d399', fontWeight: 700 }}>{weeklyStats.overallComplianceScore}%</span>
             </div>
             <div className="telemetry-value-row">
               <span className="telemetry-val" style={{ color: '#34d399' }}>
-                {weeklyStats.compliantCount} Done
+                {weeklyStats.compliantCount} Réalisées
               </span>
               <span className="telemetry-sub">
-                {weeklyStats.partialCount > 0 && `• ${weeklyStats.partialCount} variance`}
-                {weeklyStats.missedCount > 0 && `• ${weeklyStats.missedCount} missed`}
+                {weeklyStats.partialCount > 0 && `• ${weeklyStats.partialCount} écart`}
+                {weeklyStats.missedCount > 0 && `• ${weeklyStats.missedCount} manquée`}
               </span>
             </div>
             <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 2 }}>
-              "Other" signature analyzer active
+              Analyseur d'activité Garmin actif
             </div>
           </div>
         </div>

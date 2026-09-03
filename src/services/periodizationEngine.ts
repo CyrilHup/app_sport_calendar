@@ -62,9 +62,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
         weekNumber: 0,
         isDeload: false,
         volumeFactor: 0.55,
-        label: "Foundation: Ramp-up W1 (~55%)",
+        label: "Fondations : Reprise S1 (~55%)",
         daysToRace,
-        description: "Smooth progressive resumption post-rest. Zero excessive intensity; focus on aerobic base and tendon strengthening."
+        description: "Reprise progressive post-coupure. Zéro intensité excessive ; priorité à l'endurance de base et au renforcement tendineux."
       };
     }
     if (date < ramp2End) {
@@ -73,9 +73,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
         weekNumber: 0,
         isDeload: false,
         volumeFactor: 0.75,
-        label: "Foundation: Ramp-up W2 (~75%)",
+        label: "Fondations : Progression S2 (~75%)",
         daysToRace,
-        description: "Volume ramp-up. Introduction of controlled hill climb repeats."
+        description: "Montée en charge progressive du volume. Introduction des répétitions de côtes contrôlées."
       };
     }
     if (date < ramp3End) {
@@ -84,9 +84,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
         weekNumber: 0,
         isDeload: false,
         volumeFactor: 0.90,
-        label: "Foundation: Ramp-up W3 (~90%)",
+        label: "Fondations : Stabilisation S3 (~90%)",
         daysToRace,
-        description: "Consolidation of full autumn volume. Weekend long runs stabilized."
+        description: "Consolidation du volume automnal. Sorties longues du weekend bien stabilisées."
       };
     }
     return {
@@ -94,9 +94,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber: 0,
       isDeload: false,
       volumeFactor: 0.85,
-      label: "Foundation Phase (Autumn 2026)",
+      label: "Phase Fondations (Automne 2026)",
       daysToRace,
-      description: "Solid aerobic engine, calisthenics upper body strength and regular Mont-Royal elevation gain."
+      description: "Moteur aérobie solide, calisthénie au Gym ÉTS et dénivelé régulier au Mont-Royal."
     };
   }
 
@@ -107,9 +107,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber: 24,
       isDeload: true,
       volumeFactor: 0.30,
-      label: "Race Week — QMT-80 🏁",
+      label: "Semaine de Course — QMT-80 🏁",
       daysToRace,
-      description: "Active recovery, peak freshness, high carb loading protocol and mandatory gear check."
+      description: "Récupération active, pic de fraîcheur, recharge glucidique et validation finale du sac de course."
     };
   }
 
@@ -123,9 +123,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber,
       isDeload,
       volumeFactor: isDeload ? 0.70 : (0.80 + weekInBlock * 0.05),
-      label: `W${weekNumber} [Winter Power & Hills] - ${isDeload ? '⚠️ Deload' : `Build (${weekInBlock}/3)`}`,
+      label: `S${weekNumber} [Puissance Hivernale] - ${isDeload ? '⚠️ Décharge' : `Charge (${weekInBlock}/3)`}`,
       daysToRace,
-      description: "Winter block: incline treadmill hill repeats (ÉTS Gym) and posterior chain eccentric quad bulletproofing."
+      description: "Bloc hivernal : intervalles sur tapis incliné (Gym ÉTS) et renforcement excentrique des quadriceps pour la descente."
     };
   }
 
@@ -135,9 +135,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber,
       isDeload,
       volumeFactor: isDeload ? 0.75 : (0.95 + weekInBlock * 0.05),
-      label: `W${weekNumber} [Volume & Back-to-Back] - ${isDeload ? '⚠️ Deload' : `Build (${weekInBlock}/3)`}`,
+      label: `S${weekNumber} [Volume & Chocs WEC] - ${isDeload ? '⚠️ Décharge' : `Charge (${weekInBlock}/3)`}`,
       daysToRace,
-      description: "Back-to-back weekend shocks (WEC) to condition neuromuscular tolerance to ultra-trail fatigue."
+      description: "Week-ends chocs (WEC) consécutifs pour développer la résistance neuromusculaire à la fatigue de l'ultra-trail."
     };
   }
 
@@ -147,9 +147,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber,
       isDeload,
       volumeFactor: isDeload ? 0.75 : (1.10 + weekInBlock * 0.05),
-      label: `W${weekNumber} [Mestachibo Peak] - ${isDeload ? '⚠️ Deload' : `Build (${weekInBlock}/3)`}`,
+      label: `S${weekNumber} [Pic Mestachibo] - ${isDeload ? '⚠️ Décharge' : `Charge (${weekInBlock}/3)`}`,
       daysToRace,
-      description: "Specific race simulations: technical boulder scrambling (Mestachibo simulation), running with poles stowed on 5L vest, 60g carbs/h race fueling."
+      description: "Simulations de course : franchissement de blocs rocheux (simulation Mestachibo), portage des bâtons pliés sur sac 5L et nutrition à 60g glucides/h."
     };
   }
 
@@ -158,9 +158,9 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
     weekNumber,
     isDeload: true,
     volumeFactor: weekNumber === 22 ? 0.65 : 0.45,
-    label: `W${weekNumber} [Tapering D-${daysToRace}]`,
+    label: `S${weekNumber} [Affûtage J-${daysToRace}]`,
     daysToRace,
-    description: "Drastic 50% volume drop while maintaining sharp neuromuscular turnover for maximum glycogen storage."
+    description: "Baisse drastique de 50% du volume tout en maintenant la tonicité neuromusculaire pour maximiser les réserves de glycogène."
   };
 }
 

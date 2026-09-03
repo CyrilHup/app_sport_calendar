@@ -29,7 +29,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
   const handleAPISync = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsProcessing(true);
-    setSyncMessage({ text: 'Connecting to Garmin API and fetching activities...', isError: false });
+    setSyncMessage({ text: 'Connexion à l\'API Garmin Connect et extraction des activités...', isError: false });
 
     const creds = email && password ? { email, password } : undefined;
     const result = await syncWithGarminAPI(creds);
@@ -40,13 +40,13 @@ export const GarminModal: React.FC<GarminModalProps> = ({
       onUpdateState({
         connected: true,
         lastSyncTime: new Date().toISOString(),
-        accountEmail: email || 'Garmin Account',
+        accountEmail: email || 'Compte Garmin',
         activitiesCount: result.count,
         isSyncing: false,
         mode: 'LIVE'
       });
       setSyncMessage({
-        text: `✅ Successfully synchronized ${result.count} real workout(s) directly from Garmin Connect!`,
+        text: `✅ ${result.count} activité(s) synchronisée(s) avec succès depuis Garmin Connect !`,
         isError: false
       });
     } else {
@@ -65,7 +65,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
     const reader = new FileReader();
 
     setIsProcessing(true);
-    setSyncMessage({ text: 'Parsing GPX activity track...', isError: false });
+    setSyncMessage({ text: 'Analyse de la trace GPX...', isError: false });
 
     reader.onload = event => {
       const text = event.target?.result as string;
@@ -75,12 +75,12 @@ export const GarminModal: React.FC<GarminModalProps> = ({
           onActivitiesSynced([parsed]);
           setIsProcessing(false);
           setSyncMessage({
-            text: `✅ Successfully imported "${parsed.activityName}" (${parsed.durationMinutes} min, +${parsed.elevationGainM || 0}m D+).`,
+            text: `✅ Activité "${parsed.activityName}" importée avec succès (${parsed.durationMinutes} min, +${parsed.elevationGainM || 0}m D+).`,
             isError: false
           });
         } catch {
           setIsProcessing(false);
-          setSyncMessage({ text: '❌ Error parsing GPX file. Verify track format.', isError: true });
+          setSyncMessage({ text: '❌ Erreur lors de l\'analyse du fichier GPX. Vérifie le format.', isError: true });
         }
       }
     };
@@ -109,10 +109,10 @@ export const GarminModal: React.FC<GarminModalProps> = ({
             </div>
             <div>
               <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800 }}>
-                Garmin API Telemetry Sync
+                Synchronisation Télémétrie Garmin
               </h2>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                Live synchronization with Garmin Connect — Zero hardcoded data
+                Connexion directe avec Garmin Connect — Télémétrie réelle et import GPX
               </p>
             </div>
           </div>
@@ -137,7 +137,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
             </div>
           )}
 
-          {/* Sub-tabs */}
+          {/* Sous-onglets */}
           <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.04)', borderRadius: 'var(--radius-xs)', padding: 3, gap: 4 }}>
             <button
               onClick={() => setActiveSubTab('api')}
@@ -153,7 +153,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                 cursor: 'pointer'
               }}
             >
-              ⚡ Live Garmin API
+              ⚡ API Garmin Directe
             </button>
 
             <button
@@ -170,7 +170,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                 cursor: 'pointer'
               }}
             >
-              📁 Drop GPX File
+              📁 Fichier GPX
             </button>
 
             <button
@@ -187,11 +187,11 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                 cursor: 'pointer'
               }}
             >
-              🔑 Auto-Sync (.env)
+              🔑 Config Auto (.env)
             </button>
           </div>
 
-          {/* TAB 1: LIVE GARMIN API */}
+          {/* TAB 1: API GARMIN */}
           {activeSubTab === 'api' && (
             <form onSubmit={handleAPISync} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div
@@ -205,12 +205,12 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                   color: 'var(--text-secondary)'
                 }}
               >
-                Connects directly to your <strong>Garmin Connect</strong> account via the internal Garmin API and pulls your real activities (runs, trail sessions, workouts, HR telemetry, and elevation D+).
+                Connexion directe à ton compte <strong>Garmin Connect</strong> pour extraire tes activités réelles (footings, sorties trail, dénivelé D+ et fréquence cardiaque).
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                  Garmin Connect Email / Username
+                  Courriel ou Nom d'utilisateur Garmin Connect
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Mail size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
@@ -218,7 +218,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                     type="text"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="your-email@example.com (or leave empty if in .env)"
+                    placeholder="ton-courriel@exemple.com (ou laisser vide si dans .env)"
                     style={{
                       width: '100%',
                       padding: '9px 10px 9px 32px',
@@ -234,7 +234,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                  Garmin Connect Password
+                  Mot de passe Garmin Connect
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Lock size={14} style={{ position: 'absolute', left: 10, top: 11, color: 'var(--text-muted)' }} />
@@ -242,7 +242,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                     type="password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Password (or leave empty if in .env)"
+                    placeholder="Mot de passe (ou laisser vide si dans .env)"
                     style={{
                       width: '100%',
                       padding: '9px 10px 9px 32px',
@@ -263,12 +263,12 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                 style={{ justifyContent: 'center', padding: '11px', marginTop: 4 }}
               >
                 <RefreshCw size={14} className={isProcessing ? 'spin-animation' : ''} />
-                <span>{isProcessing ? 'Connecting & Fetching Activities...' : '⚡ Synchronize Live with Garmin API'}</span>
+                <span>{isProcessing ? 'Connexion et extraction en cours...' : '⚡ Lancer la Synchronisation Garmin'}</span>
               </button>
             </form>
           )}
 
-          {/* TAB 2: GPX FILE DROP */}
+          {/* TAB 2: GLISSER-DÉPOSER GPX */}
           {activeSubTab === 'upload' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               <label
@@ -288,39 +288,39 @@ export const GarminModal: React.FC<GarminModalProps> = ({
               >
                 <FileUp size={28} color="var(--primary)" />
                 <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#fff' }}>
-                  Drop your activity file (.gpx) or click to browse
+                  Glisse ton fichier d'activité (.gpx) ou clique pour parcourir
                 </span>
                 <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Exported directly from Garmin Connect or your GPS watch
+                  Exporté directement depuis Garmin Connect ou ta montre GPS
                 </span>
                 <input type="file" accept=".gpx" onChange={handleFileUpload} style={{ display: 'none' }} />
               </label>
 
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                💡 <em>Export from Garmin Connect:</em> Open the activity ➔ Click the gear icon ⚙️ ➔ Click <strong>"Export to GPX"</strong>.
+                💡 <em>Pour exporter depuis Garmin Connect :</em> Ouvre l'activité ➔ Clique sur l'icône engrenage ⚙️ ➔ Clique sur <strong>"Exporter au format GPX"</strong>.
               </div>
             </div>
           )}
 
-          {/* TAB 3: AUTO-SYNC .ENV CONFIG */}
+          {/* TAB 3: CONFIGURATION AUTO .ENV */}
           {activeSubTab === 'env' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
               <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', padding: '12px', borderRadius: 'var(--radius-xs)' }}>
                 <strong style={{ color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Key size={14} color="var(--primary)" /> Zero-Click Automatic Startup Sync:
+                  <Key size={14} color="var(--primary)" /> Synchronisation automatique au démarrage :
                 </strong>
                 <p style={{ marginTop: 4 }}>
-                  You can configure your Garmin credentials in your local <code>.env</code> file. The app will automatically synchronize with Garmin Connect on page load without needing manual password entry:
+                  Tu peux renseigner tes identifiants Garmin dans le fichier local <code>.env</code>. L'application synchronisera automatiquement tes données à chaque rechargement sans saisie manuelle :
                 </p>
                 <pre style={{ background: 'rgba(0,0,0,0.4)', padding: '8px 10px', borderRadius: 4, color: '#e2e8f0', fontSize: '0.75rem', overflowX: 'auto', marginTop: 6 }}>
-{`# Add to your .env file:
-GARMIN_EMAIL="your-garmin-email@example.com"
-GARMIN_PASSWORD="your-garmin-password"`}
+{`# À ajouter dans ton fichier .env :
+GARMIN_EMAIL="ton-courriel-garmin@exemple.com"
+GARMIN_PASSWORD="ton-mot-de-passe"`}
                 </pre>
               </div>
 
               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                🔒 Your credentials remain stored locally on your machine and are never pushed to git.
+                🔒 Tes identifiants restent stockés localement sur ta machine et ne sont jamais transmis sur git.
               </div>
             </div>
           )}
@@ -328,7 +328,7 @@ GARMIN_PASSWORD="your-garmin-password"`}
 
         <div className="modal-footer">
           <button className="btn-secondary" onClick={onClose}>
-            Close
+            Fermer
           </button>
         </div>
       </div>

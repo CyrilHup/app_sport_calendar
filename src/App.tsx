@@ -238,14 +238,14 @@ export const App: React.FC = () => {
           className={`nav-tab-btn ${activeTab === 'calendar' ? 'active' : ''}`}
           onClick={() => setActiveTab('calendar')}
         >
-          <Calendar size={15} /> Schedule
+          <Calendar size={15} /> Planning
         </button>
 
         <button
           className={`nav-tab-btn ${activeTab === 'compare' ? 'active' : ''}`}
           onClick={() => setActiveTab('compare')}
         >
-          <Activity size={15} /> Garmin Telemetry
+          <Activity size={15} /> Télémétrie Garmin
           {comparisons.length > 0 && (
             <span
               style={{
@@ -266,7 +266,7 @@ export const App: React.FC = () => {
           className={`nav-tab-btn ${activeTab === 'periodization' ? 'active' : ''}`}
           onClick={() => setActiveTab('periodization')}
         >
-          <TrendingUp size={15} /> QMT-80 Plan
+          <TrendingUp size={15} /> Plan QMT-80
         </button>
       </div>
 

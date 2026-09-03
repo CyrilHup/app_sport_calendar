@@ -11,30 +11,26 @@ interface TrainingLoadCardProps {
 export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats, comparisons }) => {
   const tss = weeklyStats.estimatedTss || 0;
 
-  let tssLevel = 'Optimal Baseline';
+  let tssLevel = 'Base Aérobie Optimale';
   let tssColor = '#10b981';
-  let tssAdvice = 'Sustainable endurance volume. Mitochondria aerobic development.';
+  let tssAdvice = 'Charge d\'endurance soutenable. Développement aérobie et mitochondrial.';
 
   if (tss > 400) {
-    tssLevel = 'Peak Overload Shock';
+    tssLevel = 'Choc de Surcharge Élevé';
     tssColor = '#ef4444';
-    tssAdvice = 'High neuromuscular fatigue. Strict recovery sleep & hydration mandatory.';
+    tssAdvice = 'Forte fatigue neuromusculaire. Sommeil réparateur et hydratation stricts obligatoires.';
   } else if (tss > 280) {
-    tssLevel = 'High Functional Overreach';
+    tssLevel = 'Surmenage Fonctionnel';
     tssColor = 'var(--primary)';
-    tssAdvice = 'Solid progressive training stimulus for QMT-80 ultra endurance.';
+    tssAdvice = 'Stimulus d\'entraînement progressif et solide pour l\'ultra QMT-80.';
   } else if (tss < 120) {
-    tssLevel = 'Deload / Active Recovery';
+    tssLevel = 'Décharge / Récupération Active';
     tssColor = '#38bdf8';
-    tssAdvice = 'Glycogen replenishment and structural collagen/tendon regeneration.';
+    tssAdvice = 'Recharge glycogénique et régénération tendineuse/collagène.';
   }
 
   const durationHours = (weeklyStats.actualDurationMin / 60).toFixed(1);
   const plannedHours = (weeklyStats.plannedDurationMin / 60).toFixed(1);
-
-  // Group last 4 microcycle weeks to show a 4-week TSS progression mini-chart
-  const dates = [...new Set(comparisons.map(c => c.date))].sort();
-  const recentComparisons = comparisons.slice(0, 28); // 4 weeks
 
   return (
     <div
@@ -66,10 +62,10 @@ export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats,
           </div>
           <div>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.95rem', fontWeight: 800, color: '#fff' }}>
-              Training Stress Score & Microcycle Load
+              Score de Stress d'Entraînement (TSS) & Charge du Microcycle
             </h3>
             <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-              Intervals.icu physiological load calculation based on HR intensity and volume
+              Calcul de charge physiologique inspiré d'Intervals.icu selon l'intensité cardiaque et le volume
             </p>
           </div>
         </div>
@@ -91,7 +87,7 @@ export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats,
         </div>
       </div>
 
-      {/* 3 Metrics Cards Strip */}
+      {/* 3 Cartes de Métriques Clés */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
         <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -122,15 +118,15 @@ export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats,
             <Flame size={12} /> Fréquence Cardiaque Moyenne
           </div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
-            {weeklyStats.avgHeartRate} bpm <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>(Z2 cible: 138-155)</span>
+            {weeklyStats.avgHeartRate} bpm <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>(Z2 cible : 138-155)</span>
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-            Compliance globale : <strong>{weeklyStats.overallComplianceScore}%</strong>
+            Concordance globale : <strong>{weeklyStats.overallComplianceScore}%</strong>
           </div>
         </div>
       </div>
 
-      {/* Physiological advice banner */}
+      {/* Bandeau de conseil physiologique */}
       <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '8px 12px', borderRadius: 4, fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
         <Zap size={13} color="var(--primary)" />
         <span><strong>Conseil Télémétrie :</strong> {tssAdvice}</span>

@@ -20,7 +20,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [weekOffset, setWeekOffset] = useState<number>(0);
 
-  // Group schedules into weeks of 7 days
+  // Découpage en blocs de 7 jours
   const currentWeekStartIdx = weekOffset * 7;
   const displayedDays = schedules.slice(
     Math.max(0, currentWeekStartIdx),
@@ -29,15 +29,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
   };
 
-  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
-  // Current real-world today or passed reference date
+  // Clé du jour courant
   const todayKey = referenceDateStr || new Date().toISOString().slice(0, 10);
 
-  // Event counts for current displayed week
+  // Compteurs pour la semaine affichée
   const currentWeekEvents = displayedDays.flatMap(d => d.events);
   const countAll = currentWeekEvents.length;
   const countSport = currentWeekEvents.filter(e => e.category === 'sport').length;
@@ -47,14 +47,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
 
   return (
     <div className="calendar-layout">
-      {/* View & Filter Controls */}
+      {/* Contrôles de Vue & Filtres */}
       <div className="view-controls">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <button
             className="btn-secondary"
             onClick={() => setWeekOffset(prev => Math.max(0, prev - 1))}
             disabled={weekOffset === 0}
-            title="Previous week"
+            title="Semaine précédente"
           >
             <ChevronLeft size={16} />
           </button>
@@ -64,14 +64,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             onClick={() => setWeekOffset(0)}
             style={{ fontWeight: weekOffset === 0 ? 800 : 500 }}
           >
-            Current Week
+            Semaine Actuelle
           </button>
 
           <button
             className="btn-secondary"
             onClick={() => setWeekOffset(prev => prev + 1)}
             disabled={currentWeekStartIdx + 7 >= schedules.length}
-            title="Next week"
+            title="Semaine suivante"
           >
             <ChevronRight size={16} />
           </button>
@@ -80,7 +80,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             {displayedDays.length > 0 && `${displayedDays[0].date} — ${displayedDays[displayedDays.length - 1].date}`}
           </span>
 
-          {/* Fused Card Mode Toggle */}
+          {/* Bascule Mode Cartes Fusionnées */}
           <button
             onClick={() => setIsFusedMode(!isFusedMode)}
             style={{
@@ -97,13 +97,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
               cursor: 'pointer',
               marginLeft: 4
             }}
-            title="Toggle between fused cards (classes + journeys) or separate cards"
+            title="Basculer entre cartes fusionnées (cours + trajets intégrés) ou cartes séparées"
           >
             <Layers size={13} />
-            <span>{isFusedMode ? 'Fused Cards: ON' : 'Separate Cards'}</span>
+            <span>{isFusedMode ? 'Cartes Fusionnées : OUI' : 'Cartes Séparées'}</span>
           </button>
 
-          {/* View mode toggle (Grid vs List) */}
+          {/* Bascule Mode d'Affichage (Grille vs Liste) */}
           <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.04)', borderRadius: 'var(--radius-sm)', padding: 2, marginLeft: '6px' }}>
             <button
               onClick={() => setViewMode('grid')}
@@ -120,9 +120,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                 fontSize: '0.74rem',
                 fontWeight: 600
               }}
-              title="7-Day Grid View"
+              title="Affichage en Grille Hebdomadaire"
             >
-              <LayoutGrid size={13} /> Grid
+              <LayoutGrid size={13} /> Grille
             </button>
             <button
               onClick={() => setViewMode('list')}
@@ -139,9 +139,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                 fontSize: '0.74rem',
                 fontWeight: 600
               }}
-              title="Detailed List View"
+              title="Affichage en Liste Détaillée"
             >
-              <ListFilter size={13} /> List
+              <ListFilter size={13} /> Liste
             </button>
           </div>
 
@@ -155,17 +155,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                 fontWeight: 600,
                 color: 'var(--accent-blue)'
               }}
-              title="Sync with Google Calendar"
+              title="Synchroniser avec Google Agenda"
             >
-              <span>📅 Google Calendar Sync</span>
+              <span>📅 Google Agenda</span>
             </button>
           )}
         </div>
 
-        {/* Category Filters */}
+        {/* Filtres par Catégorie */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Filter size={12} /> Filter:
+            <Filter size={12} /> Filtrer :
           </span>
 
           <button
@@ -173,7 +173,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             onClick={() => setFilter('all')}
             style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'all' ? 'var(--primary)' : undefined }}
           >
-            All ({countAll})
+            Tous ({countAll})
           </button>
 
           <button
@@ -181,7 +181,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             onClick={() => setFilter('sport')}
             style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'sport' ? 'var(--primary)' : undefined }}
           >
-            🏔️ Sport ({countSport})
+            🏔️ Séances ({countSport})
           </button>
 
           <button
@@ -189,7 +189,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             onClick={() => setFilter('course')}
             style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'course' ? '#3b82f6' : undefined }}
           >
-            🏛️ ÉTS Classes ({countCourse})
+            🏛️ Cours ÉTS ({countCourse})
           </button>
 
           <button
@@ -197,7 +197,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             onClick={() => setFilter('trajet')}
             style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'trajet' ? '#94a3b8' : undefined }}
           >
-            🚌 Commutes ({countTrajet})
+            🚌 Trajets ({countTrajet})
           </button>
 
           <button
@@ -205,15 +205,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
             onClick={() => setFilter('mobility')}
             style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'mobility' ? '#10b981' : undefined }}
           >
-            🧘 Mobility ({countMobility})
+            🧘 Mobilité ({countMobility})
           </button>
         </div>
       </div>
 
-      {/* Mont-Royal Meteorological & Trail Advisory Widget */}
+      {/* Widget Météo & Sentiers du Mont-Royal */}
       <WeatherWidget />
 
-      {/* Week Grid or List View */}
+      {/* Grille Hebdomadaire ou Vue Liste */}
       {viewMode === 'grid' ? (
         <div className="calendar-scroll-wrapper">
           <div className="week-grid">
@@ -221,8 +221,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
               const dateObj = new Date(day.date + 'T12:00:00');
               const isToday = day.date === todayKey;
 
-              // In fused mode, when viewing 'all', we hide standalone commute and mobility cards from main stack
-              // because they are fused directly into course/sport cards or rendered as a compact chip.
               const eventsToDisplay = day.events.filter(e => {
                 if (filter !== 'all') return e.category === filter;
                 if (isFusedMode) {
@@ -241,18 +239,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                       <div className="day-number">
                         {dateObj.getDate()}{' '}
                         <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-                          {dateObj.toLocaleDateString('en-US', { month: 'short' })}
+                          {dateObj.toLocaleDateString('fr-CA', { month: 'short' })}
                         </span>
                       </div>
                     </div>
-                    {isToday && <span className="today-indicator">Today</span>}
+                    {isToday && <span className="today-indicator">Aujourd'hui</span>}
                   </div>
 
-                  {/* Day workouts & courses */}
+                  {/* Séances et cours du jour */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
                     {eventsToDisplay.length === 0 && (!isFusedMode || !mobilityEvent) ? (
                       <div style={{ textAlign: 'center', padding: '24px 8px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                        Rest / No scheduled events
+                        Repos / Aucun événement
                       </div>
                     ) : (
                       eventsToDisplay.map(ev => {
@@ -302,18 +300,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
 
                             {ev.metadata?.conflictRescheduled && (
                               <div style={{ fontSize: '0.66rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                <span>🔄 Shifted for classes</span>
+                                <span>🔄 Décalé pour cours</span>
                               </div>
                             )}
 
-                            {/* Fused Journey Strip (Commute to & from class/workout) */}
+                            {/* Bandeau de Trajet Intégré (Aller / Retour) */}
                             {isFusedMode && (hasAller || hasRetour) && (
                               <div className="journey-strip">
                                 <Bus size={11} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                                 <span>
-                                  {hasAller && `Leave: ${formatTime(hasAller.departureTime)} (${hasAller.durationMinutes}m)`}
+                                  {hasAller && `Départ : ${formatTime(hasAller.departureTime)} (${hasAller.durationMinutes}m)`}
                                   {hasAller && hasRetour && ' • '}
-                                  {hasRetour && `Return ~${formatTime(hasRetour.arrivalTime)}`}
+                                  {hasRetour && `Retour ~${formatTime(hasRetour.arrivalTime)}`}
                                 </span>
                               </div>
                             )}
@@ -323,16 +321,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                     )}
                   </div>
 
-                  {/* Compact Evening Mobility Indicator (Fused mode) */}
+                  {/* Indicateur compact de mobilité du soir */}
                   {isFusedMode && mobilityEvent && filter === 'all' && (
                     <div
                       className="mobility-daily-chip"
                       onClick={() => setSelectedEvent(mobilityEvent)}
-                      title="20 min evening stretch & mobility routine"
+                      title="20 min d'étirements et de mobilité du soir"
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <span>🧘</span>
-                        <span>Mobility 22:00 (20m)</span>
+                        <span>Mobilité 22h00 (20m)</span>
                       </div>
                       <CheckCircle2 size={12} color="#10b981" />
                     </div>
@@ -343,7 +341,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
           </div>
         </div>
       ) : (
-        /* Detailed List View */
+        /* Vue Liste Détaillée */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {displayedDays.map(day => {
             const dateObj = new Date(day.date + 'T12:00:00');
@@ -363,18 +361,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1rem' }}>
-                      {dayNames[day.dayOfWeek]}, {dateObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      {dayNames[day.dayOfWeek]}, {dateObj.toLocaleDateString('fr-CA', { month: 'long', day: 'numeric', year: 'numeric' })}
                     </span>
-                    {isToday && <span className="today-indicator">Today</span>}
+                    {isToday && <span className="today-indicator">Aujourd'hui</span>}
                   </div>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                    {filteredEvents.length} event(s)
+                    {filteredEvents.length} événement(s)
                   </span>
                 </div>
 
                 {filteredEvents.length === 0 ? (
                   <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    Rest / No scheduled events.
+                    Repos / Aucun événement prévu.
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px' }}>
@@ -402,7 +400,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                         {ev.metadata?.commuteAller && (
                           <div className="journey-strip">
                             <Bus size={11} />
-                            <span>Commute: {formatTime(ev.metadata.commuteAller.departureTime)} ➔ {formatTime(ev.metadata.commuteAller.arrivalTime)} ({ev.metadata.commuteAller.durationMinutes}m)</span>
+                            <span>Trajet : {formatTime(ev.metadata.commuteAller.departureTime)} ➔ {formatTime(ev.metadata.commuteAller.arrivalTime)} ({ev.metadata.commuteAller.durationMinutes}m)</span>
                           </div>
                         )}
                       </div>
@@ -415,7 +413,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
         </div>
       )}
 
-      {/* Detail Modal */}
+      {/* Modale de Détail de Séance */}
       <WorkoutDetailModal
         event={selectedEvent}
         onClose={() => setSelectedEvent(null)}

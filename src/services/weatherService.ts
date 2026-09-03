@@ -22,20 +22,20 @@ export interface MontRoyalWeather {
   lastUpdated: string;
 }
 
-const WEATHER_STORAGE_KEY = 'mont_royal_weather_cache_v1';
+const WEATHER_STORAGE_KEY = 'mont_royal_weather_cache_v2';
 const CACHE_DURATION_MS = 25 * 60 * 1000; // 25 minutes
 
 function getWeatherEmojiAndDesc(code: number): { emoji: string; desc: string } {
-  if (code === 0) return { emoji: '☀️', desc: 'Clear Skies' };
-  if (code === 1 || code === 2) return { emoji: '🌤️', desc: 'Partly Cloudy' };
-  if (code === 3) return { emoji: '☁️', desc: 'Overcast' };
-  if (code === 45 || code === 48) return { emoji: '🌫️', desc: 'Foggy' };
-  if (code >= 51 && code <= 55) return { emoji: '🌦️', desc: 'Light Drizzle' };
-  if (code >= 61 && code <= 65) return { emoji: '🌧️', desc: 'Rain' };
-  if (code >= 71 && code <= 77) return { emoji: '❄️', desc: 'Snowfall' };
-  if (code >= 80 && code <= 82) return { emoji: '🌧️', desc: 'Rain Showers' };
-  if (code >= 85 && code <= 86) return { emoji: '🌨️', desc: 'Snow Showers' };
-  if (code >= 95) return { emoji: '⛈️', desc: 'Thunderstorm' };
+  if (code === 0) return { emoji: '☀️', desc: 'Ciel Dégagé' };
+  if (code === 1 || code === 2) return { emoji: '🌤️', desc: 'Partiellement Nuageux' };
+  if (code === 3) return { emoji: '☁️', desc: 'Couvert' };
+  if (code === 45 || code === 48) return { emoji: '🌫️', desc: 'Brumeux / Brouillard' };
+  if (code >= 51 && code <= 55) return { emoji: '🌦️', desc: 'Bruine Légère' };
+  if (code >= 61 && code <= 65) return { emoji: '🌧️', desc: 'Pluie' };
+  if (code >= 71 && code <= 77) return { emoji: '❄️', desc: 'Chutes de Neige' };
+  if (code >= 80 && code <= 82) return { emoji: '🌧️', desc: 'Averses de Pluie' };
+  if (code >= 85 && code <= 86) return { emoji: '🌨️', desc: 'Averses de Neige' };
+  if (code >= 95) return { emoji: '⛈️', desc: 'Orage' };
   return { emoji: '⛅', desc: 'Variable' };
 }
 
@@ -73,48 +73,48 @@ export async function fetchMontRoyalWeather(): Promise<MontRoyalWeather> {
     const code = cur.weather_code ?? 0;
     const { emoji, desc } = getWeatherEmojiAndDesc(code);
 
-    const sunrise = daily.sunrise?.[0] ? new Date(daily.sunrise[0]).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : '06:15';
+    const sunrise = daily.sunrise?.[0] ? new Date(daily.sunrise[0]).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false }) : '06:15';
     const sunsetDate = daily.sunset?.[0] ? new Date(daily.sunset[0]) : new Date();
-    const sunset = sunsetDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const sunset = sunsetDate.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
 
-    // Check sunset proximity
+    // Proximité du coucher du soleil (45 min)
     const nowMs = Date.now();
     const sunsetMs = sunsetDate.getTime();
     const isSunsetNear = nowMs >= (sunsetMs - 45 * 60 * 1000);
 
-    // Determine trail condition
+    // Évaluation des conditions de sentier
     let condition: TrailCondition;
 
     if (snow > 0.2 || temp <= -2) {
       condition = {
         status: 'ICE_SNOW',
-        headline: '❄️ Winter Conditions & Packed Snow on Mont-Royal',
-        advice: 'Trails may feature hard-packed snow or black ice on northern stair slopes.',
-        gearRecommendation: 'Traction micro-spikes (Kahtoola/Yaktrax) recommended or switch to ÉTS treadmill incline power block.',
+        headline: '❄️ Conditions Hivernales & Neige sur le Mont-Royal',
+        advice: 'Sentiers possiblement damés ou verglacés sur les escaliers du versant nord. Attention aux appuis.',
+        gearRecommendation: 'Micro-crampons de trail (Kahtoola/Yaktrax) recommandés ou repli sur tapis incliné au Gym ÉTS.',
         badgeColor: '#38bdf8'
       };
     } else if (precip > 2.5 || code >= 61) {
       condition = {
         status: 'WET_MUD',
-        headline: '🌧️ Wet & Muddy Trails (Limestone Slopes)',
-        advice: 'Slippery roots and slick mud on Olmsted bypass trails. Watch your footing on descents.',
-        gearRecommendation: 'Aggressive trail lugs (Vibram Megagrip) + breathable waterproof shell jacket.',
+        headline: '🌧️ Sentiers Humides & Boueux (Dalles Glissantes)',
+        advice: 'Racines glissantes et boue sur les sentiers de traverse d\'Olmsted. Vigilance dans les descentes raides.',
+        gearRecommendation: 'Chaussures de trail à crampons profonds (Vibram Megagrip) + veste imperméable respirante.',
         badgeColor: '#f59e0b'
       };
     } else if (isSunsetNear) {
       condition = {
         status: 'HEADLAMP_ALERT',
-        headline: '🔦 Twilight / Night Trail Advisory',
-        advice: 'Mont-Royal summit paths get completely dark once the sun drops below the tree line.',
-        gearRecommendation: 'Mandatory headlamp (300+ lumens, Petzl/Black Diamond) + reflective ultra vest.',
+        headline: '🔦 Alerte Crépuscule / Pénombre',
+        advice: 'Les sous-bois du Mont-Royal deviennent très sombres dès la disparition du soleil derrière la crête.',
+        gearRecommendation: 'Lampe frontale obligatoire (300+ lumens) + éléments réfléchissants sur le sac.',
         badgeColor: '#c084fc'
       };
     } else {
       condition = {
         status: 'OPTIMAL',
-        headline: '☀️ Prime Mont-Royal Trail Conditions',
-        advice: 'Dry dirt paths, optimal grip and high visibility for hill repeats and aerobic base volume.',
-        gearRecommendation: 'Standard trail pack, 500ml water flasque with electrolytes, light technical tee.',
+        headline: '☀️ Sentiers du Mont-Royal Optimaux',
+        advice: 'Sol sec, excellente adhérence et visibilité parfaite pour les séances de côtes et de volume aérobie.',
+        gearRecommendation: 'Sac de trail 5L, 2 flasques 500 mL d\'eau/électrolytes, tenue technique légère.',
         badgeColor: '#10b981'
       };
     }
@@ -141,7 +141,7 @@ export async function fetchMontRoyalWeather(): Promise<MontRoyalWeather> {
 
     return result;
   } catch {
-    // Fallback if offline
+    // Secours hors ligne
     return {
       currentTempC: 15,
       feelsLikeC: 14,
@@ -149,15 +149,15 @@ export async function fetchMontRoyalWeather(): Promise<MontRoyalWeather> {
       snowfallCm: 0,
       windSpeedKmh: 12,
       weatherCode: 1,
-      weatherDesc: 'Clear',
+      weatherDesc: 'Ciel Dégagé',
       weatherEmoji: '☀️',
       sunriseStr: '06:15',
       sunsetStr: '19:30',
       trailCondition: {
         status: 'OPTIMAL',
-        headline: '☀️ Good Trail Running Conditions',
-        advice: 'Optimal ground grip for training sessions.',
-        gearRecommendation: 'Trail footwear and hydration pack.',
+        headline: '☀️ Bonnes Conditions de Sentier',
+        advice: 'Adhérence optimale pour les séances d\'entraînement.',
+        gearRecommendation: 'Chaussures de trail et 2 flasques souples.',
         badgeColor: '#10b981'
       },
       isSunsetNear: false,
