@@ -1,115 +1,38 @@
-import { GarminActivity, GarminSyncState } from '../types/garmin';
+import { GarminActivity, GarminActivityType, GarminSyncState } from '../types/garmin';
 
-const GARMIN_STORAGE_KEY = 'garmin_activities_v1';
-const GARMIN_STATE_KEY = 'garmin_sync_state_v1';
+const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
+const GARMIN_STATE_KEY = 'garmin_sync_state';
 
-export function getSampleGarminActivities(): GarminActivity[] {
-  return [
-    {
-      activityId: "garmin-101",
-      activityName: "Autre - Mont-Royal Côte & Escaliers D+",
-      activityType: "OTHER",
-      startTimeLocal: "2026-09-01T11:15:00",
-      durationMinutes: 58,
-      distanceKm: 9.4,
-      elevationGainM: 395,
-      avgHeartRate: 176,
-      maxHeartRate: 189,
-      avgCadence: 172,
-      avgPaceMinKm: "6:10",
-      calories: 680,
-      aerobicTrainingEffect: 4.2,
-      anaerobicTrainingEffect: 2.5,
-      source: "SAMPLE_DATA"
-    },
-    {
-      activityId: "garmin-102",
-      activityName: "Autre - Calisthénie Haut du Corps - ÉTS Gym",
-      activityType: "OTHER",
-      startTimeLocal: "2026-09-02T11:45:00",
-      durationMinutes: 62,
-      avgHeartRate: 118,
-      maxHeartRate: 145,
-      calories: 390,
-      source: "SAMPLE_DATA"
-    },
-    {
-      activityId: "garmin-103",
-      activityName: "Autre - Footing V1 Aisance - Parc Maisonneuve",
-      activityType: "OTHER",
-      startTimeLocal: "2026-09-03T07:30:00",
-      durationMinutes: 44,
-      distanceKm: 7.8,
-      elevationGainM: 45,
-      avgHeartRate: 142,
-      maxHeartRate: 149,
-      avgCadence: 174,
-      avgPaceMinKm: "5:38",
-      calories: 490,
-      aerobicTrainingEffect: 3.1,
-      anaerobicTrainingEffect: 0.2,
-      source: "SAMPLE_DATA"
-    },
-    {
-      activityId: "garmin-104",
-      activityName: "Autre - Handstand & Anneaux - ÉTS Gym",
-      activityType: "OTHER",
-      startTimeLocal: "2026-09-04T17:15:00",
-      durationMinutes: 42,
-      avgHeartRate: 112,
-      maxHeartRate: 135,
-      calories: 270,
-      source: "SAMPLE_DATA"
-    },
-    {
-      activityId: "garmin-105",
-      activityName: "Autre - Sortie Longue D+ Mont-Royal",
-      activityType: "OTHER",
-      startTimeLocal: "2026-09-05T08:30:00",
-      durationMinutes: 92,
-      distanceKm: 15.2,
-      elevationGainM: 520,
-      avgHeartRate: 151,
-      maxHeartRate: 164,
-      avgCadence: 168,
-      avgPaceMinKm: "6:03",
-      calories: 1140,
-      aerobicTrainingEffect: 4.5,
-      anaerobicTrainingEffect: 1.1,
-      source: "SAMPLE_DATA"
-    },
-    {
-      activityId: "garmin-106",
-      activityName: "Autre - Footing Régénérant Dimanche",
-      activityType: "OTHER",
-      startTimeLocal: "2026-09-06T10:00:00",
-      durationMinutes: 41,
-      distanceKm: 6.9,
-      elevationGainM: 30,
-      avgHeartRate: 137,
-      maxHeartRate: 145,
-      avgCadence: 172,
-      avgPaceMinKm: "5:56",
-      calories: 410,
-      source: "SAMPLE_DATA"
-    }
-  ];
-}
-
+/**
+ * Loads real synchronized Garmin activities from persistent local storage.
+ * Returns an EMPTY array if no activities have been synchronized yet (NO hardcoded mock data).
+ */
 export function loadStoredGarminActivities(): GarminActivity[] {
   try {
+    // Purge any legacy mock storage keys
+    localStorage.removeItem('garmin_activities_v1');
+    localStorage.removeItem('garmin_sync_state_v1');
+    localStorage.removeItem('garmin_activities_v2');
+    localStorage.removeItem('garmin_sync_state_v2');
+    localStorage.removeItem('garmin_activities_v3');
+    localStorage.removeItem('garmin_sync_state_v3');
+
     const raw = localStorage.getItem(GARMIN_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed: GarminActivity[] = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
     }
   } catch (e) {
-    console.error("Failed to load garmin activities", e);
+    console.error("Failed to load stored garmin activities", e);
   }
-  const samples = getSampleGarminActivities();
-  saveGarminActivities(samples);
-  return samples;
+  return [];
 }
 
+/**
+ * Persists synchronized Garmin activities.
+ */
 export function saveGarminActivities(activities: GarminActivity[]): void {
   try {
     localStorage.setItem(GARMIN_STORAGE_KEY, JSON.stringify(activities));
@@ -118,6 +41,9 @@ export function saveGarminActivities(activities: GarminActivity[]): void {
   }
 }
 
+/**
+ * Loads Garmin connection state.
+ */
 export function loadGarminSyncState(): GarminSyncState {
   try {
     const raw = localStorage.getItem(GARMIN_STATE_KEY);
@@ -126,15 +52,18 @@ export function loadGarminSyncState(): GarminSyncState {
     console.error("Failed to load garmin state", e);
   }
   return {
-    connected: true,
-    lastSyncTime: new Date().toISOString(),
-    accountEmail: "athlete@example.com",
-    activitiesCount: 6,
+    connected: false,
+    lastSyncTime: undefined,
+    accountEmail: undefined,
+    activitiesCount: 0,
     isSyncing: false,
-    mode: "DEMO"
+    mode: "LIVE"
   };
 }
 
+/**
+ * Saves Garmin connection state.
+ */
 export function saveGarminSyncState(state: GarminSyncState): void {
   try {
     localStorage.setItem(GARMIN_STATE_KEY, JSON.stringify(state));
@@ -144,7 +73,61 @@ export function saveGarminSyncState(state: GarminSyncState): void {
 }
 
 /**
- * Simple GPX text parser for dropzone imports
+ * Calls the backend /api/garmin-sync endpoint to authenticate with Garmin Connect
+ * and retrieve actual logged activities via the Garmin API.
+ */
+export async function syncWithGarminAPI(credentials?: {
+  email?: string;
+  password?: string;
+}): Promise<{ success: boolean; activities: GarminActivity[]; count: number; error?: string }> {
+  try {
+    const response = await fetch('/api/garmin-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(credentials || {})
+    });
+
+    const data = await response.json();
+
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        activities: [],
+        count: 0,
+        error: data.error || 'Failed to authenticate and fetch activities from Garmin Connect.'
+      };
+    }
+
+    const activities: GarminActivity[] = data.activities || [];
+    saveGarminActivities(activities);
+
+    const newState: GarminSyncState = {
+      connected: true,
+      lastSyncTime: new Date().toISOString(),
+      accountEmail: credentials?.email || "Synced Account",
+      activitiesCount: activities.length,
+      isSyncing: false,
+      mode: "LIVE"
+    };
+    saveGarminSyncState(newState);
+
+    return {
+      success: true,
+      activities,
+      count: activities.length
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      activities: [],
+      count: 0,
+      error: err.message || 'Network error while connecting to Garmin API proxy.'
+    };
+  }
+}
+
+/**
+ * GPX text parser for manual watch exports
  */
 export function parseGPXString(gpxText: string, fileName: string): GarminActivity {
   // Extract name
@@ -158,64 +141,77 @@ export function parseGPXString(gpxText: string, fileName: string): GarminActivit
   // Extract trackpoints and compute distance & elevation gain
   const trkptRegex = /<trkpt[^>]*lat="([^"]+)"[^>]*lon="([^"]+)"[^>]*>[\s\S]*?<ele>([^<]+)<\/ele>(?:[\s\S]*?<time>([^<]+)<\/time>)?[\s\S]*?<\/trkpt>/gi;
   let match;
+  let totalDistM = 0;
+  let totalEleGainM = 0;
   let prevLat: number | null = null;
   let prevLon: number | null = null;
   let prevEle: number | null = null;
-  let totalDistanceM = 0;
-  let elevationGainM = 0;
-  let pointCount = 0;
+  let firstTime: Date | null = null;
+  let lastTime: Date | null = null;
 
   while ((match = trkptRegex.exec(gpxText)) !== null) {
     const lat = parseFloat(match[1]);
     const lon = parseFloat(match[2]);
     const ele = parseFloat(match[3]);
+    const timeStr = match[4];
 
-    if (prevLat !== null && prevLon !== null) {
-      const dist = haversineDistance(prevLat, prevLon, lat, lon);
-      totalDistanceM += dist;
+    if (timeStr) {
+      const t = new Date(timeStr);
+      if (!firstTime) firstTime = t;
+      lastTime = t;
     }
 
+    if (prevLat !== null && prevLon !== null) {
+      totalDistM += haversineDistance(prevLat, prevLon, lat, lon);
+    }
     if (prevEle !== null && ele > prevEle) {
-      const diff = ele - prevEle;
-      if (diff > 0.5) elevationGainM += diff;
+      totalEleGainM += ele - prevEle;
     }
 
     prevLat = lat;
     prevLon = lon;
     prevEle = ele;
-    pointCount++;
   }
 
-  const distanceKm = Math.round((totalDistanceM / 1000) * 10) / 10;
-  const durMin = Math.max(30, Math.round(distanceKm * 6)); // estimate 6 min/km if duration not embedded
+  let durationMin = 45;
+  if (firstTime && lastTime) {
+    durationMin = Math.max(1, Math.round((lastTime.getTime() - firstTime.getTime()) / 60000));
+  }
+
+  const distKm = parseFloat((totalDistM / 1000).toFixed(2));
+  const eleGain = Math.round(totalEleGainM);
+
+  // Infer sport type from activity name or elevation
+  let inferredType: GarminActivityType = 'TRAIL_RUNNING';
+  if (name.toLowerCase().includes('stairs') || name.toLowerCase().includes('escalier')) {
+    inferredType = 'OTHER';
+  } else if (name.toLowerCase().includes('gym') || name.toLowerCase().includes('calisth')) {
+    inferredType = 'STRENGTH_TRAINING';
+  } else if (eleGain < 50 && distKm > 3) {
+    inferredType = 'RUNNING';
+  }
 
   return {
-    activityId: `gpx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    activityId: `gpx-${Date.now()}`,
     activityName: name,
-    activityType: elevationGainM > 100 ? "TRAIL_RUNNING" : "RUNNING",
+    activityType: inferredType,
     startTimeLocal: startTime,
-    durationMinutes: durMin,
-    distanceKm: distanceKm || 8.5,
-    elevationGainM: Math.round(elevationGainM) || 120,
-    avgHeartRate: 154,
-    maxHeartRate: 172,
-    avgCadence: 170,
-    calories: Math.round(durMin * 11),
-    source: "GPX_IMPORT"
+    durationMinutes: durationMin,
+    distanceKm: distKm > 0 ? distKm : undefined,
+    elevationGainM: eleGain > 0 ? eleGain : undefined,
+    calories: Math.round(durationMin * 8.5),
+    source: 'GPX_IMPORT'
   };
 }
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // metres
-  const phi1 = (lat1 * Math.PI) / 180;
-  const phi2 = (lat2 * Math.PI) / 180;
-  const deltaPhi = ((lat2 - lat1) * Math.PI) / 180;
-  const deltaLambda = ((lon2 - lon1) * Math.PI) / 180;
-
+  const R = 6371e3; // Earth radius in meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
   const a =
-    Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-    Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
   return R * c;
 }

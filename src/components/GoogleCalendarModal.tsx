@@ -148,8 +148,8 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 padding: '6px 10px',
                 borderRadius: 4,
                 border: 'none',
-                background: activeTab === 'file' ? 'rgba(0, 242, 254, 0.15)' : 'transparent',
-                color: activeTab === 'file' ? 'var(--cyan)' : 'var(--text-secondary)',
+                background: activeTab === 'file' ? 'var(--primary-subtle)' : 'transparent',
+                color: activeTab === 'file' ? 'var(--primary)' : 'var(--text-secondary)',
                 fontWeight: 700,
                 fontSize: '0.76rem',
                 cursor: 'pointer'
@@ -165,8 +165,8 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 padding: '6px 10px',
                 borderRadius: 4,
                 border: 'none',
-                background: activeTab === 'subscribe' ? 'rgba(0, 242, 254, 0.15)' : 'transparent',
-                color: activeTab === 'subscribe' ? 'var(--cyan)' : 'var(--text-secondary)',
+                background: activeTab === 'subscribe' ? 'var(--primary-subtle)' : 'transparent',
+                color: activeTab === 'subscribe' ? 'var(--primary)' : 'var(--text-secondary)',
                 fontWeight: 700,
                 fontSize: '0.76rem',
                 cursor: 'pointer'
@@ -182,8 +182,8 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
                 padding: '6px 10px',
                 borderRadius: 4,
                 border: 'none',
-                background: activeTab === 'direct' ? 'rgba(0, 242, 254, 0.15)' : 'transparent',
-                color: activeTab === 'direct' ? 'var(--cyan)' : 'var(--text-secondary)',
+                background: activeTab === 'direct' ? 'var(--primary-subtle)' : 'transparent',
+                color: activeTab === 'direct' ? 'var(--primary)' : 'var(--text-secondary)',
                 fontWeight: 700,
                 fontSize: '0.76rem',
                 cursor: 'pointer'
@@ -198,8 +198,8 @@ export const GoogleCalendarModal: React.FC<GoogleCalendarModalProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div
                 style={{
-                  background: 'rgba(0, 242, 254, 0.05)',
-                  border: '1px solid rgba(0, 242, 254, 0.2)',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border-color)',
                   borderRadius: 'var(--radius-xs)',
                   padding: '12px 14px',
                   fontSize: '0.8rem',

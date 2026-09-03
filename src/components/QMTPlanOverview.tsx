@@ -1,13 +1,11 @@
 import React, { useState } from 'react';
 import { PeriodizationContext } from '../types/calendar';
 import {
-  Activity,
-  Award,
   Calendar,
+  CheckCircle2,
   ChevronRight,
   Clock,
   Compass,
-  Dumbbell,
   Flame,
   Heart,
   Layers,
@@ -28,7 +26,6 @@ interface TrainingPhaseDetail {
   name: string;
   period: string;
   weeks: string;
-  daysSpan: string;
   volumePct: string;
   focus: string;
   location: string;
@@ -36,23 +33,21 @@ interface TrainingPhaseDetail {
   whatHappens: string[];
   keyWorkouts: { title: string; desc: string; metrics: string }[];
   nutritionStrategy: string;
-  color: string;
   badge: string;
 }
 
 export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext }) => {
-  const [selectedPhaseId, setSelectedPhaseId] = useState<string>('all');
-  const [activeSubTab, setActiveSubTab] = useState<'timeline' | 'weekly' | 'raceStrategy'>('timeline');
+  const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(0);
+  const [activeSubTab, setActiveSubTab] = useState<'roadmap' | 'weekly' | 'raceStrategy'>('roadmap');
 
   const phases: TrainingPhaseDetail[] = [
     {
       id: 'ramp_up',
       name: '1. Foundation & Ramp-Up (Post-Break Resumption)',
       period: 'Sept 1 – Sept 20, 2026',
-      weeks: 'Weeks -18 to -16 (3 Weeks)',
-      daysSpan: 'Day 1 to 21',
+      weeks: '3 Weeks (Weeks -18 to -16)',
       volumePct: '55% ➔ 75% ➔ 90%',
-      focus: 'Tendon Re-conditioning & Aerobic Wake-up',
+      focus: 'Tendon Adaptation & Aerobic Wake-up',
       location: 'Mont-Royal & Local Trails / Gym',
       why: 'Prevent tendonitis and patellofemoral pain after summer hiatus. Tendons and collagen structures take 3x longer to adapt than cardiovascular mitochondria. Zero maximal anaerobic spikes.',
       whatHappens: [
@@ -72,13 +67,12 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
           metrics: '1h15 - 1h50 • +400-500m D+ • HR < 155 bpm'
         },
         {
-          title: 'Calisthenics & Core (Gym)',
-          desc: 'Pull-ups, dips, push-ups and isometric hollow body holds for spine stabilization under backpack weight.',
+          title: 'Calisthenics & Core (ÉTS Gym)',
+          desc: 'Pull-ups, dips, push-ups and isometric hollow body holds for spine stabilization under pack weight.',
           metrics: '45-60 min • Neuromuscular tone'
         }
       ],
       nutritionStrategy: 'Baseline hydration: 500 ml water/hour. 30g carbs/hour on weekend runs to maintain gastric tolerance.',
-      color: '#00f2fe',
       badge: 'Current Phase'
     },
     {
@@ -86,11 +80,10 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
       name: '2. Autumn Aerobic Consolidation & Strength Baseline',
       period: 'Sept 21 – Dec 20, 2026',
       weeks: 'Autumn Semester (13 Weeks)',
-      daysSpan: 'Weeks -15 to -3',
       volumePct: '85% Steady Volume',
       focus: 'Aerobic Base (Zone 2) & Structural Strength',
-      location: 'Mont-Royal Trails, Outdoor Stairs & Gym',
-      why: 'Build a monstrous aerobic base (mitochondrial density in slow-twitch fibers) while balancing university semester exams. Fat oxidation efficiency is maximized below 155 bpm.',
+      location: 'Mont-Royal Trails, Outdoor Stairs & ÉTS Gym',
+      why: 'Build a solid aerobic base (mitochondrial density in slow-twitch fibers) while balancing university semester exams. Fat oxidation efficiency is maximized below 155 bpm.',
       whatHappens: [
         'Stable weekly rhythm of 5 workouts tailored around university courses.',
         'Stair climbing repeats at Mont-Royal (200-step stairs) to develop ankle and knee resilience.',
@@ -109,7 +102,6 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
         }
       ],
       nutritionStrategy: '40g carbs/hour on runs > 90 min. High antioxidant meals post-training for cellular recovery.',
-      color: '#4cc9f0',
       badge: 'Base Engine'
     },
     {
@@ -117,10 +109,9 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
       name: '3. Winter Power & Incline Treadmill Armor',
       period: 'Jan 11 – Feb 21, 2027',
       weeks: 'Weeks 1 to 6 (Official Plan Start)',
-      daysSpan: 'D-173 to D-132',
       volumePct: '80% ➔ 95% (Deload W4: 70%)',
       focus: 'High-Incline VO2max & Eccentric Quad Bulletproofing',
-      location: 'Indoor Gym (Treadmills 15% incline & Weight Room)',
+      location: 'ÉTS Gym (Treadmills 15% incline & Weight Room)',
       why: 'Montreal sub-zero winter weather and icy trails create high fall and groin strain risks. The incline treadmill allows steep 15% power climbing at 6 km/h with zero downhill joint stress, paired with heavy eccentric quad exercises in the gym.',
       whatHappens: [
         'Tuesday sessions move indoors: 12-15% incline power hiking & uphill intervals.',
@@ -140,15 +131,13 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
         }
       ],
       nutritionStrategy: 'Increased vitamin D3 and zinc intake. 50g carbs/hour on treadmill long sessions.',
-      color: '#f72585',
-      badge: 'Power & Armor'
+      badge: 'Power Block'
     },
     {
       id: 'volume_shock',
       name: '4. Ultra Volume & Back-to-Back Shock Weekends (WEC)',
       period: 'Feb 22 – May 9, 2027',
       weeks: 'Weeks 7 to 16 (10 Weeks)',
-      daysSpan: 'D-131 to D-55',
       volumePct: '95% ➔ 115% (Peak Volume, Deload W8 & W12)',
       focus: 'Cumulative Fatigue Tolerance & Gut Training',
       location: 'Mont-Royal & Regional Mountain Trail Camps',
@@ -160,7 +149,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
       ],
       keyWorkouts: [
         {
-          title: 'Saturday Shock Trail Run (Mont-Royal / Mont Saint-Hilaire)',
+          title: 'Saturday Shock Trail Run (Mont-Royal / Saint-Hilaire)',
           desc: 'Continuous mountain loops with poles. Mandatory 60g carbohydrates consumed every 60 minutes.',
           metrics: '3h30 - 4h30 • +1,000-1,400m D+ • HR 148-162 bpm'
         },
@@ -170,8 +159,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
           metrics: '1h15 - 1h30 • Rolling hills • HR < 150 bpm'
         }
       ],
-      nutritionStrategy: 'Target race fueling: 60 to 75g carbs/hour (mix of isotonic drink, energy gels, and real food like dates/salted potatoes). 600-800 ml fluid + 400 mg sodium/hour.',
-      color: '#ff6b35',
+      nutritionStrategy: 'Target race fueling: 60 to 75g carbs/hour (isotonic mix + real food). 600-800 ml fluid + 400 mg sodium/hour.',
       badge: 'Peak Volume'
     },
     {
@@ -179,14 +167,13 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
       name: '5. Mestashibo Peak Specificity & Technical Terrain',
       period: 'May 10 – June 13, 2027',
       weeks: 'Weeks 17 to 21 (5 Weeks)',
-      daysSpan: 'D-54 to D-20',
-      volumePct: '110% High Specificity (Deload W20: 75%)',
+      volumePct: '110% Specificity (Deload W20: 75%)',
       focus: 'Mestashibo Technical Trails, Boulders & Night Running',
       location: 'Massif de Charlevoix / Sentier des Caps / Mont-Sainte-Anne',
-      why: 'The Mestashibo river gorge in QMT-80 is known as the "rocky meat grinder": wet roots, huge granite boulders, wooden ladders, and technical suspension bridges. Pure speed is useless here; nimble foot placement, pole agility, and mental toughness are everything.',
+      why: 'The Mestashibo river gorge in QMT-80 is known as the "rocky meat grinder": wet roots, huge granite boulders, wooden ladders, and suspension bridges. Nimble foot placement, pole agility, and mental toughness are critical.',
       whatHappens: [
         'Reconnaissance camp on actual QMT-80 terrain (Massif de Charlevoix ➔ Mont-Sainte-Anne).',
-        'Night running practice with headlamp (Petzl Nao+ / Iko Core) to adapt eyesight to trail shadows.',
+        'Night running practice with headlamp to adapt eyesight to trail shadows.',
         'Downhill pounding adaptation: controlled high-cadence descents to test quad resistance.'
       ],
       keyWorkouts: [
@@ -198,19 +185,17 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
         {
           title: 'Night Trail Simulation',
           desc: 'Departing 2 hours before sunrise with headlamp to master dark trail navigation.',
-          metrics: '2h00 • Night trail • Focus on foot strike accuracy'
+          metrics: '2h00 • Night trail • Foot strike accuracy'
         }
       ],
       nutritionStrategy: 'Simulation of aid station foods (broth, watermelon, salty chips) alongside personal nutrition pack.',
-      color: '#10b981',
-      badge: 'Race Specificity'
+      badge: 'Specificity'
     },
     {
       id: 'tapering',
-      name: '6. Tapering, Glycogen Supercompensation & Race Day',
+      name: '6. Tapering, Glycogen Loading & Race Day',
       period: 'June 14 – July 3, 2027',
       weeks: 'Weeks 22 to 24 (3 Weeks)',
-      daysSpan: 'D-19 to D-Day',
       volumePct: '65% ➔ 45% ➔ 30% (Sharp Drop)',
       focus: 'Peak Freshening, Glycogen Storage & Race Execution',
       location: 'Easy Local Trails & QMT-80 Course (Petite-Rivière-St-François)',
@@ -233,7 +218,6 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
         }
       ],
       nutritionStrategy: 'Carb load D-3 to D-1 (white rice, oats, sweet potatoes). Race day: 65-80g carbs/hr from minute 30 onwards.',
-      color: '#e63946',
       badge: 'Race Day 🏁'
     }
   ];
@@ -242,25 +226,25 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
     {
       day: 'Monday',
       title: '🤸 Calisthenics 1 (Push & Core Armor)',
-      duration: '45 - 65 min',
-      location: 'Gym / Home',
+      duration: '45 – 65 min',
+      location: 'ÉTS Gym / Home',
       focus: 'Upper Body & Spinal Core',
-      details: 'Dips (weighted or strict bodyweight), Pike push-ups / HSPU progression, gymnastic ring push-ups, hollow body holds (3x45s), hanging leg raises. Protects posture under race backpack weight.',
+      details: 'Dips, Pike push-ups / HSPU progression, gymnastic ring push-ups, hollow body holds (3x45s), hanging leg raises. Protects posture under race backpack weight.',
       hrZone: 'Zone 1-2 (Neuromuscular)'
     },
     {
       day: 'Tuesday',
       title: '⚡ Trail Incline Repeats (D+) + Leg Strength',
-      duration: '70 - 85 min',
+      duration: '70 – 85 min',
       location: 'Mont-Royal (Winter: ÉTS Gym Incline Treadmill)',
       focus: 'Uphill VO2max & Quad Resilience',
-      details: '15 min warm-up, 4-6 hill repeats at 12-15% incline (Target HR: 172-190 bpm). Followed immediately by 20 min leg strength: tempo squats (3s descent), Bulgarian split squats, and single-leg calf raises.',
-      hrZone: 'Zone 4/5 (172 - 190 bpm)'
+      details: '15 min warm-up, 4-6 hill repeats at 12-15% incline (Target HR: 172-190 bpm). Followed immediately by 20 min leg strength: tempo squats (3s descent), Bulgarian split squats, and calf raises.',
+      hrZone: 'Zone 4/5 (172 – 190 bpm)'
     },
     {
       day: 'Wednesday',
       title: '🧘 Active Recovery & Deep Mobility',
-      duration: '30 - 40 min',
+      duration: '30 – 40 min',
       location: 'Home',
       focus: 'Tissue Regeneration & Joint ROM',
       details: 'Couch stretch (quads & hip flexors), pigeon pose, 90/90 hip mobility, foam rolling IT bands and thoracic spine decompression. Zero cardio stress.',
@@ -269,15 +253,15 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
     {
       day: 'Thursday',
       title: '🏃 Aerobic Base Running + Calisthenics 2 (Pull & Grip)',
-      duration: '75 - 90 min',
-      location: 'Parc / Gym',
+      duration: '75 – 90 min',
+      location: 'Parc Maisonneuve / ÉTS Gym',
       focus: 'Mitochondrial Density & Climbing Grip',
-      details: '45-50 min continuous Zone 2 aerobic run (<155 bpm) chained directly with 30 min pull workout: strict pull-ups, horizontal ring rows, dead hangs, and wrist curls for trekking pole endurance.',
+      details: '45-50 min continuous Zone 2 aerobic run (<155 bpm) chained with 30 min pull workout: strict pull-ups, horizontal ring rows, dead hangs, and wrist curls for trekking pole endurance.',
       hrZone: 'Zone 2 (< 155 bpm)'
     },
     {
       day: 'Friday',
-      title: '🛌 Rest Day or Evening Stretch',
+      title: '🛌 Rest Day or Evening Mobility',
       duration: '20 min optional',
       location: 'Home',
       focus: 'Full Glycogen Replenishment',
@@ -291,12 +275,12 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
       location: 'Mont-Royal Trails or Regional Peaks',
       focus: 'Endurance, Technical D+ & Nutrition Testing',
       details: 'The cornerstone workout. Steep trail ascents, power hiking with poles, technical singletrack descents. Rigorous testing of race pack, gels, electrolytes, and footwear.',
-      hrZone: 'Zone 2-3 (145 - 165 bpm)'
+      hrZone: 'Zone 2-3 (145 – 165 bpm)'
     },
     {
       day: 'Sunday',
       title: '🏃 Fatigued Aerobic Run (Back-to-Back 2) + Mobility',
-      duration: '50 - 75 min',
+      duration: '50 – 75 min',
       location: 'Local Rolling Trails',
       focus: 'Neuromuscular Fatigue Resistance',
       details: 'Run executed on tired legs from Saturday. Simulates km 50-80 of QMT. Kept at relaxed conversational pace, followed by 15 min hip and ankle stretching.',
@@ -304,441 +288,311 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
     }
   ];
 
+  const currentPhase = phases[selectedPhaseIndex];
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-      {/* Top Banner with Countdown & Live Status */}
-      <div
-        className="glass-panel"
-        style={{
-          padding: '18px 22px',
-          background: 'linear-gradient(135deg, rgba(255, 107, 53, 0.12), rgba(0, 242, 254, 0.08))',
-          border: '1px solid rgba(255, 107, 53, 0.3)',
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '16px'
-        }}
-      >
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-            <span style={{ fontSize: '1.4rem' }}>🏔️</span>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.3rem', fontWeight: 900 }}>
-              QMT-80 Master Periodization Architecture
-            </h2>
-            <span
-              style={{
-                fontSize: '0.72rem',
-                padding: '2px 8px',
-                borderRadius: 4,
-                background: 'rgba(255, 107, 53, 0.2)',
-                color: '#ff6b35',
-                fontWeight: 800,
-                border: '1px solid rgba(255, 107, 53, 0.4)'
-              }}
-            >
-              80 KM • +4,000M D+
-            </span>
-          </div>
-          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', maxWidth: 700 }}>
-            Complete 24-week endurance blueprint for the Québec Mega Trail on <strong>July 3, 2027</strong>.
-            Harmonizes academic timetables, transit commutes, and high-volume training blocks.
-          </p>
-        </div>
-
-        {/* Status badges */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <div
-            style={{
-              padding: '8px 14px',
-              borderRadius: 'var(--radius-xs)',
-              background: 'rgba(0, 0, 0, 0.4)',
-              border: '1px solid var(--border-color)',
-              textAlign: 'center'
-            }}
-          >
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>RACE COUNTDOWN</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.25rem', fontWeight: 900, color: '#ff6b35' }}>
-              D-{currentContext.daysToRace}
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: '8px 14px',
-              borderRadius: 'var(--radius-xs)',
-              background: 'rgba(0, 0, 0, 0.4)',
-              border: '1px solid rgba(0, 242, 254, 0.3)',
-              textAlign: 'center'
-            }}
-          >
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>CURRENT PHASE</div>
-            <div style={{ fontFamily: 'var(--font-heading)', fontSize: '0.9rem', fontWeight: 800, color: 'var(--cyan)' }}>
-              {currentContext.label}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sub-Navigation Buttons */}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      {/* Sub-Navigation Tabs */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
         <button
-          className={`btn-secondary ${activeSubTab === 'timeline' ? 'active' : ''}`}
-          onClick={() => setActiveSubTab('timeline')}
+          className={`btn-secondary ${activeSubTab === 'roadmap' ? 'active' : ''}`}
+          onClick={() => setActiveSubTab('roadmap')}
           style={{
-            borderColor: activeSubTab === 'timeline' ? 'var(--cyan)' : undefined,
-            color: activeSubTab === 'timeline' ? 'var(--cyan)' : undefined,
-            fontSize: '0.82rem',
+            borderColor: activeSubTab === 'roadmap' ? 'var(--primary)' : undefined,
+            color: activeSubTab === 'roadmap' ? 'var(--primary)' : undefined,
+            fontSize: '0.8rem',
             fontWeight: 700
           }}
         >
-          <Layers size={15} /> All 6 Training Phases (When, Where & Why)
+          <Layers size={14} /> Interactive Season Stepper (All 6 Phases)
         </button>
 
         <button
           className={`btn-secondary ${activeSubTab === 'weekly' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('weekly')}
           style={{
-            borderColor: activeSubTab === 'weekly' ? 'var(--cyan)' : undefined,
-            color: activeSubTab === 'weekly' ? 'var(--cyan)' : undefined,
-            fontSize: '0.82rem',
+            borderColor: activeSubTab === 'weekly' ? 'var(--primary)' : undefined,
+            color: activeSubTab === 'weekly' ? 'var(--primary)' : undefined,
+            fontSize: '0.8rem',
             fontWeight: 700
           }}
         >
-          <Calendar size={15} /> Day-by-Day Weekly Routine (Mon - Sun)
+          <Calendar size={14} /> 7-Day Microcycle Routine (Mon – Sun)
         </button>
 
         <button
           className={`btn-secondary ${activeSubTab === 'raceStrategy' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('raceStrategy')}
           style={{
-            borderColor: activeSubTab === 'raceStrategy' ? 'var(--cyan)' : undefined,
-            color: activeSubTab === 'raceStrategy' ? 'var(--cyan)' : undefined,
-            fontSize: '0.82rem',
+            borderColor: activeSubTab === 'raceStrategy' ? 'var(--primary)' : undefined,
+            color: activeSubTab === 'raceStrategy' ? 'var(--primary)' : undefined,
+            fontSize: '0.8rem',
             fontWeight: 700
           }}
         >
-          <Compass size={15} /> QMT-80 Race Profile & Fueling Matrix
+          <Compass size={14} /> QMT-80 Race Profile & Fueling Matrix
         </button>
       </div>
 
-      {/* TAB 1: ALL 6 TRAINING PHASES */}
-      {activeSubTab === 'timeline' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Quick filter pills */}
-          <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '4px' }}>
-            <button
-              className={`btn-secondary ${selectedPhaseId === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedPhaseId('all')}
-              style={{ fontSize: '0.76rem', padding: '4px 10px', whiteSpace: 'nowrap' }}
-            >
-              ✨ Full Roadmap (All 6 Phases)
-            </button>
-            {phases.map(p => (
-              <button
-                key={p.id}
-                className={`btn-secondary ${selectedPhaseId === p.id ? 'active' : ''}`}
-                onClick={() => setSelectedPhaseId(p.id)}
-                style={{
-                  fontSize: '0.76rem',
-                  padding: '4px 10px',
-                  whiteSpace: 'nowrap',
-                  borderColor: selectedPhaseId === p.id ? p.color : undefined,
-                  color: selectedPhaseId === p.id ? p.color : undefined
-                }}
-              >
-                {p.name.split('.')[0]}. {p.period.split('–')[0]}
-              </button>
-            ))}
-          </div>
-
-          {/* Render Phases Cards */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {phases
-              .filter(p => selectedPhaseId === 'all' || selectedPhaseId === p.id)
-              .map(phase => (
-                <div
-                  key={phase.id}
-                  className="glass-panel"
-                  style={{
-                    padding: '20px',
-                    borderLeft: `4px solid ${phase.color}`,
-                    background: 'rgba(13, 17, 23, 0.7)'
-                  }}
+      {/* TAB 1: INTERACTIVE SEASON STEPPER (FUSED ROADMAP) */}
+      {activeSubTab === 'roadmap' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* Horizontal Roadmap Stepper Bar */}
+          <div className="roadmap-stepper">
+            {phases.map((p, idx) => {
+              const isSelected = idx === selectedPhaseIndex;
+              return (
+                <button
+                  key={p.id}
+                  className={`roadmap-step-btn ${isSelected ? 'active' : ''}`}
+                  onClick={() => setSelectedPhaseIndex(idx)}
                 >
-                  {/* Phase Header */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      flexWrap: 'wrap',
-                      gap: '10px',
-                      marginBottom: '14px',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-                      paddingBottom: '12px'
-                    }}
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 4 }}>
-                        <span
-                          style={{
-                            fontSize: '0.68rem',
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            background: `${phase.color}22`,
-                            color: phase.color,
-                            fontWeight: 800,
-                            border: `1px solid ${phase.color}44`
-                          }}
-                        >
-                          {phase.badge}
-                        </span>
-                        <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, color: '#fff' }}>
-                          {phase.name}
-                        </h3>
-                      </div>
-                      <div style={{ display: 'flex', gap: '14px', fontSize: '0.78rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
-                        <span>📅 <strong>Timeline:</strong> {phase.period} ({phase.weeks})</span>
-                        <span>📍 <strong>Location:</strong> {phase.location}</span>
-                        <span>📈 <strong>Volume Factor:</strong> {phase.volumePct}</span>
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: 'var(--radius-xs)',
-                        background: 'rgba(255, 255, 255, 0.04)',
-                        fontSize: '0.75rem',
-                        fontWeight: 700,
-                        color: phase.color
-                      }}
-                    >
-                      Focus: {phase.focus}
-                    </div>
-                  </div>
-
-                  {/* Why this phase matters */}
-                  <div
-                    style={{
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      padding: '12px 14px',
-                      borderRadius: 'var(--radius-xs)',
-                      marginBottom: '14px',
-                      fontSize: '0.82rem',
-                      lineHeight: 1.6
-                    }}
-                  >
-                    <strong style={{ color: 'var(--cyan)' }}>🎯 Physiological Purpose (Why & Adaptation):</strong>
-                    <p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{phase.why}</p>
-                  </div>
-
-                  {/* What happens during this phase */}
-                  <div style={{ marginBottom: '14px' }}>
-                    <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase' }}>
-                      📋 What Happens Week-by-Week:
-                    </h4>
-                    <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                      {phase.whatHappens.map((item, idx) => (
-                        <li key={idx}>{item}</li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Key Workout Protocols */}
-                  <div style={{ marginBottom: '14px' }}>
-                    <h4 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase' }}>
-                      ⚡ Benchmark Training Sessions:
-                    </h4>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
-                      {phase.keyWorkouts.map((w, wIdx) => (
-                        <div
-                          key={wIdx}
-                          style={{
-                            background: 'rgba(255, 255, 255, 0.03)',
-                            border: '1px solid var(--border-color)',
-                            borderRadius: 'var(--radius-xs)',
-                            padding: '10px 12px'
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                            <strong style={{ fontSize: '0.82rem', color: '#fff' }}>{w.title}</strong>
-                            <span style={{ fontSize: '0.7rem', color: phase.color, fontWeight: 700 }}>{w.metrics}</span>
-                          </div>
-                          <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: 0 }}>{w.desc}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Fueling & Nutrition strategy */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '8px 12px',
-                      borderRadius: 'var(--radius-xs)',
-                      background: 'rgba(255, 107, 53, 0.06)',
-                      border: '1px solid rgba(255, 107, 53, 0.2)',
-                      fontSize: '0.78rem'
-                    }}
-                  >
-                    <span style={{ fontSize: '1rem' }}>🍌</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>
-                      <strong style={{ color: '#ff6b35' }}>Nutrition & Fueling Strategy:</strong> {phase.nutritionStrategy}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                    <span style={{ fontSize: '0.74rem', fontWeight: 800 }}>Phase {idx + 1}</span>
+                    <span style={{ fontSize: '0.65rem', color: isSelected ? 'var(--primary)' : 'var(--text-muted)' }}>
+                      {p.volumePct.split(' ')[0]}
                     </span>
                   </div>
+                  <div style={{ fontSize: '0.78rem', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {p.name.replace(/^[0-9.]*\s*/, '').split('(')[0]}
+                  </div>
+                  <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+                    {p.period.split('–')[0]}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Single Fused Active Phase Detail Panel */}
+          <div
+            className="glass-panel"
+            style={{
+              padding: '20px',
+              borderLeft: '4px solid var(--primary)',
+              background: 'var(--bg-surface)'
+            }}
+          >
+            {/* Phase Header */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                flexWrap: 'wrap',
+                gap: '12px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                paddingBottom: '12px',
+                marginBottom: '14px'
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 4 }}>
+                  <span
+                    className="badge-tag"
+                    style={{
+                      background: 'var(--primary-subtle)',
+                      color: 'var(--primary)',
+                      border: '1px solid var(--primary-border)'
+                    }}
+                  >
+                    {currentPhase.badge}
+                  </span>
+                  <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>
+                    {currentPhase.name}
+                  </h3>
                 </div>
-              ))}
+                <div style={{ display: 'flex', gap: '14px', fontSize: '0.76rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                  <span>📅 <strong>Timeline:</strong> {currentPhase.period} ({currentPhase.weeks})</span>
+                  <span>📍 <strong>Location:</strong> {currentPhase.location}</span>
+                  <span>📈 <strong>Volume Factor:</strong> {currentPhase.volumePct}</span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-xs)',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  color: 'var(--primary)'
+                }}
+              >
+                Focus: {currentPhase.focus}
+              </div>
+            </div>
+
+            {/* Physiological Purpose */}
+            <div
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--border-color)',
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-xs)',
+                marginBottom: '14px',
+                fontSize: '0.82rem',
+                lineHeight: 1.55
+              }}
+            >
+              <strong style={{ color: 'var(--primary)' }}>🎯 Physiological Purpose & Adaptation:</strong>
+              <p style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{currentPhase.why}</p>
+            </div>
+
+            {/* Benchmark Sessions Grid */}
+            <div style={{ marginBottom: '14px' }}>
+              <h4 style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>
+                Benchmark Workouts in this Block:
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '10px' }}>
+                {currentPhase.keyWorkouts.map((w, wIdx) => (
+                  <div
+                    key={wIdx}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.025)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-xs)',
+                      padding: '10px 12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <strong style={{ fontSize: '0.82rem', color: '#ffffff' }}>{w.title}</strong>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 700 }}>{w.metrics}</span>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.4 }}>{w.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Fueling Strategy */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-xs)',
+                background: 'rgba(255, 87, 34, 0.06)',
+                border: '1px solid rgba(255, 87, 34, 0.25)',
+                fontSize: '0.78rem'
+              }}
+            >
+              <span style={{ fontSize: '1.1rem' }}>🍌</span>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                <strong style={{ color: 'var(--primary)' }}>Fueling & Hydration Guidance:</strong> {currentPhase.nutritionStrategy}
+              </span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: DAY-BY-DAY WEEKLY SCHEDULE */}
+      {/* TAB 2: DAY-BY-DAY WEEKLY SCHEDULE TABLE */}
       {activeSubTab === 'weekly' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <div
-            style={{
-              padding: '12px 16px',
-              background: 'rgba(0, 242, 254, 0.05)',
-              border: '1px solid rgba(0, 242, 254, 0.2)',
-              borderRadius: 'var(--radius-xs)',
-              fontSize: '0.82rem',
-              color: 'var(--text-secondary)'
-            }}
-          >
-            <strong>Synchronized Microcycle:</strong> Every weekly microcycle follows a 7-day polarized pattern designed to balance neuromuscular strength, lactate threshold climbs, and deep aerobic endurance while accommodating academic course commitments.
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {weeklyScheduleTemplate.map((item, idx) => (
-              <div
-                key={idx}
-                className="glass-panel"
-                style={{
-                  padding: '14px 18px',
-                  display: 'grid',
-                  gridTemplateColumns: '120px 1fr 180px',
-                  alignItems: 'center',
-                  gap: '16px'
-                }}
-              >
-                <div>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
-                    {item.day}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                    ⏱️ {item.duration}
-                  </div>
-                </div>
-
-                <div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--cyan)', marginBottom: 2 }}>
-                    {item.title}
-                  </div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                    {item.details}
-                  </div>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                    📍 {item.location}
-                  </div>
-                  <div
-                    style={{
-                      display: 'inline-block',
-                      marginTop: 4,
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      background: 'rgba(255, 107, 53, 0.15)',
-                      color: '#ff6b35',
-                      fontSize: '0.7rem',
-                      fontWeight: 700
-                    }}
-                  >
-                    ❤️ {item.hrZone}
-                  </div>
-                </div>
-              </div>
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="pro-table-wrapper">
+            <table className="pro-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '120px' }}>Day & Duration</th>
+                  <th>Session Protocol & Focus</th>
+                  <th>Location</th>
+                  <th style={{ width: '140px' }}>Target Zone</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weeklyScheduleTemplate.map((item, idx) => (
+                  <tr key={idx}>
+                    <td>
+                      <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>{item.day}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ {item.duration}</div>
+                    </td>
+                    <td>
+                      <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>{item.title}</div>
+                      <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{item.details}</div>
+                    </td>
+                    <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                      📍 {item.location}
+                    </td>
+                    <td>
+                      <span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                        ❤️ {item.hrZone}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
       {/* TAB 3: RACE PROFILE & STRATEGY */}
       {activeSubTab === 'raceStrategy' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '12px' }}>
           {/* Key Course Metrics */}
-          <div className="glass-panel" style={{ padding: '18px' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, marginBottom: '12px', color: '#ff6b35' }}>
+          <div className="glass-panel" style={{ padding: '16px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, marginBottom: '10px', color: 'var(--primary)' }}>
               🏔️ QMT-80 Race Profile
             </h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.8rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border-color)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Total Distance:</span>
                 <strong>80.0 KM</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border-color)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Elevation Gain (D+):</span>
-                <strong>+4,000 M</strong>
+                <strong style={{ color: 'var(--primary)' }}>+4,000 M</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Elevation Loss (D-):</span>
-                <strong>-4,000 M</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border-color)' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Maximum Cut-Off Time:</span>
                 <strong>18 Hours</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Start Location:</span>
-                <strong>Petite-Rivière-Saint-François</strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid var(--border-color)' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Start Point:</span>
+                <span>Petite-Rivière-Saint-François</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Finish Location:</span>
-                <strong>Mont-Sainte-Anne</strong>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Finish Line:</span>
+                <span>Mont-Sainte-Anne</span>
               </div>
             </div>
           </div>
 
-          {/* Pacing & Cardio Ceilings */}
-          <div className="glass-panel" style={{ padding: '18px' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, marginBottom: '12px', color: 'var(--cyan)' }}>
-              ❤️ Physiological Ceilings (HRmax = 203 bpm)
+          {/* Pacing & Cardio */}
+          <div className="glass-panel" style={{ padding: '16px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, marginBottom: '10px', color: 'var(--accent-blue)' }}>
+              ❤️ Physiological Pacing (FCmax = 203 bpm)
             </h3>
-            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-              <li><strong>KM 0 to 45 (Massif & Coastal Hills):</strong> Strict aerobic ceiling of 155-160 bpm on climbs. Power-hike early, never run steep grades.</li>
-              <li><strong>KM 45 to 65 (Mestashibo River Canyon):</strong> Highly technical terrain where HR fluctuates wildly due to scrambles. Focus on foot placement and pole placement rather than pace.</li>
-              <li><strong>KM 65 to 80 (Mont-Sainte-Anne final ascent):</strong> The hardest physical section (+800m continuous). Rely on glycogen reserves and mental grit.</li>
+            <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <li><strong>KM 0 to 45 (Massif & Coastal Hills):</strong> Strict aerobic ceiling of 155-160 bpm on climbs. Power-hike early.</li>
+              <li><strong>KM 45 to 65 (Mestashibo Canyon):</strong> Extremely technical river gorge. Focus on foot placement and pole agility.</li>
+              <li><strong>KM 65 to 80 (Mont-Sainte-Anne Final Climb):</strong> Continuous +800m push. Rely on stored glycogen and mental resilience.</li>
             </ul>
           </div>
 
-          {/* Hourly Fueling Protocol */}
-          <div className="glass-panel" style={{ padding: '18px' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, marginBottom: '12px', color: '#10b981' }}>
-              🍌 Hourly Fueling & Electrolyte Protocol
+          {/* Fueling Protocol */}
+          <div className="glass-panel" style={{ padding: '16px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, marginBottom: '10px', color: '#10b981' }}>
+              🍌 Hourly Fueling & Electrolytes
             </h3>
-            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-              <li><strong>Carbohydrates:</strong> 60 to 75g carbs per hour (maltodextrin/fructose mix + real food). Start taking carbs at minute 25.</li>
+            <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              <li><strong>Carbohydrates:</strong> 60 to 75g carbs per hour (maltodextrin mix + real food). Start taking carbs at min 25.</li>
               <li><strong>Fluids:</strong> 500 to 750 ml water/electrolyte solution per hour depending on ambient heat.</li>
               <li><strong>Sodium & Salts:</strong> 350 to 500 mg sodium per hour to prevent hyponatremia and quad cramping.</li>
-              <li><strong>Solid Food:</strong> Salted potatoes, pretzels, dates at aid stations to prevent palate fatigue.</li>
             </ul>
           </div>
 
-          {/* Mandatory Gear Checklist */}
-          <div className="glass-panel" style={{ padding: '18px' }}>
-            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, marginBottom: '12px', color: '#f59e0b' }}>
-              🎒 Mandatory Gear & Kit
+          {/* Mandatory Gear */}
+          <div className="glass-panel" style={{ padding: '16px' }}>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, marginBottom: '10px', color: 'var(--accent-amber)' }}>
+              🎒 Mandatory Gear Checklist
             </h3>
-            <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
+            <ul style={{ margin: 0, paddingLeft: '16px', fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               <li><strong>Running Vest:</strong> 12L capacity with 1.5L minimum fluid capacity.</li>
               <li><strong>Trekking Poles:</strong> Carbon folding poles (tested in Mestashibo block).</li>
-              <li><strong>Headlamp:</strong> 300+ lumens with backup battery for early morning start.</li>
-              <li><strong>Safety Kit:</strong> Survival blanket, whistle, waterproof taped seam jacket (10,000 Schmerber), self-adherent elastic bandage.</li>
+              <li><strong>Headlamp:</strong> 300+ lumens with backup battery.</li>
+              <li><strong>Survival Kit:</strong> Survival blanket, whistle, waterproof taped seam jacket (10,000 Schmerber).</li>
             </ul>
           </div>
         </div>

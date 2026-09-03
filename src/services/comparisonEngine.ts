@@ -45,14 +45,13 @@ export function compareWorkoutsWithGarmin(
   for (const plan of sportPlans) {
     const planDate = new Date(plan.startDate);
     const dateKey = formatDateKey(planDate);
+    const dayActivities = activitiesByDate.get(dateKey) || [];
 
-    // CRITICAL: Do NOT evaluate future sessions (makes no sense to find future workouts on Garmin!)
-    // Only evaluate from current date going back into the past.
+    // Do not evaluate future sessions (only sessions up to current reference date)
     if (dateKey > asOfKey) {
       continue;
     }
 
-    const dayActivities = activitiesByDate.get(dateKey) || [];
     let bestMatch: GarminActivity | undefined = undefined;
 
     // Check manual override first
@@ -85,7 +84,7 @@ export function compareWorkoutsWithGarmin(
       const comparison = evaluateSingleWorkout(plan, bestMatch, dateKey);
       comparisons.push(comparison);
     } else if (dateKey === asOfKey) {
-      // Today's workout scheduled but not yet uploaded to Garmin
+      // Today's scheduled workout not yet uploaded
       comparisons.push({
         id: `comp-pending-${plan.id}`,
         date: dateKey,
@@ -96,7 +95,7 @@ export function compareWorkoutsWithGarmin(
         heartRateCompliance: 'N/A',
         feedbackNotes: [
           `Scheduled for today (${plan.durationMinutes} min target). Pending completion on Garmin.`,
-          "Upload your activity after your session to view compliance analysis."
+          "Record your session to view live compliance telemetry."
         ]
       });
     } else {
@@ -117,12 +116,17 @@ export function compareWorkoutsWithGarmin(
     }
   }
 
-  // Identify bonus / unplanned activities (only up to current date)
+  // Identify bonus / unplanned activities (only on or before asOfDate!)
   for (const act of garminActivities) {
     const actDate = new Date(act.startTimeLocal);
     const dateKey = formatDateKey(actDate);
 
-    if (dateKey <= asOfKey && !matchedGarminIds.has(act.activityId)) {
+    // Reject any activity with an impossible future date
+    if (dateKey > asOfKey) {
+      continue;
+    }
+
+    if (!matchedGarminIds.has(act.activityId)) {
       const inferred = inferOtherActivityCategory(act);
 
       comparisons.push({
@@ -135,8 +139,8 @@ export function compareWorkoutsWithGarmin(
         heartRateCompliance: 'OPTIMAL',
         inferredType: inferred,
         feedbackNotes: [
-          `Garmin activity logged: ${act.activityName} (${act.durationMinutes} min)${act.activityType === 'OTHER' ? ` [Garmin Profile: Other → Inferred Signature: ${inferred}]` : ''}.`,
-          "Bonus session not originally in training plan."
+          `Garmin activity logged: ${act.activityName} (${act.durationMinutes} min)${act.activityType === 'OTHER' ? ` [Signature: ${inferred}]` : ''}.`,
+          "Bonus session completed."
         ]
       });
     }
@@ -150,13 +154,19 @@ export function compareWorkoutsWithGarmin(
 
 export function computeWeeklyTelemetry(
   comparisons: ActivityComparison[],
-  targetDaysCount: number = 7
+  targetDaysCountOrRange: number | { start: string; end: string } = 7,
+  fullWeekTarget?: { plannedDurationMin: number; plannedElevationM: number }
 ): WeeklyStatsSummary {
-  const currentDays = comparisons.slice(0, targetDaysCount);
+  let currentDays: ActivityComparison[];
+  if (typeof targetDaysCountOrRange === 'object' && targetDaysCountOrRange.start && targetDaysCountOrRange.end) {
+    currentDays = comparisons.filter(c => c.date >= targetDaysCountOrRange.start && c.date <= targetDaysCountOrRange.end);
+  } else {
+    currentDays = comparisons.slice(0, typeof targetDaysCountOrRange === 'number' ? targetDaysCountOrRange : 7);
+  }
 
-  let plannedDurationMin = 0;
+  let plannedDurationMin = fullWeekTarget?.plannedDurationMin || 0;
   let actualDurationMin = 0;
-  let plannedElevationM = 0;
+  let plannedElevationM = fullWeekTarget?.plannedElevationM || 0;
   let actualElevationM = 0;
   let hrSum = 0;
   let hrCount = 0;
@@ -175,9 +185,12 @@ export function computeWeeklyTelemetry(
       continue; // Don't penalize pending workouts scheduled for later today
     }
 
-    if (c.plannedEvent) {
+    if (!fullWeekTarget && c.plannedEvent) {
       plannedDurationMin += c.plannedEvent.durationMinutes;
       plannedElevationM += c.plannedEvent.metadata?.targetElevationM || 0;
+    }
+
+    if (c.plannedEvent) {
       scoreSum += c.complianceScore;
       scoreCount++;
     }

@@ -35,6 +35,16 @@ export interface CalendarEvent {
     chainedAfterCourse?: boolean;
     transitFrom?: string;
     transitTo?: string;
+    commuteAller?: {
+      departureTime: string;
+      arrivalTime: string;
+      durationMinutes: number;
+    };
+    commuteRetour?: {
+      departureTime: string;
+      arrivalTime: string;
+      durationMinutes: number;
+    };
     isDistanciel?: boolean;
     isExam?: boolean;
   };

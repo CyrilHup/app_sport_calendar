@@ -1,13 +1,17 @@
 import { CalendarEvent, PeriodizationContext, SportType } from '../types/calendar';
 
+const getEnvVal = (key: string, fallback: string = ''): string => {
+  return (import.meta as any).env?.[key] || (globalThis as any).process?.env?.[key] || fallback;
+};
+
 export const GLOBAL_APP_CONFIG = {
-  HOME_ADDRESS: (import.meta as any).env?.VITE_HOME_ADDRESS || "Home",
-  ETS_ADDRESS: (import.meta as any).env?.VITE_CAMPUS_ADDRESS || "Campus",
-  MOUNT_ROYAL_ADDRESS: (import.meta as any).env?.VITE_TRAIL_ADDRESS || "Trail Park",
-  ICAL_URL: (import.meta as any).env?.VITE_ICAL_FEED_URL || "",
-  SPORT_START_DATE: (import.meta as any).env?.VITE_SPORT_START_DATE || "2026-09-01",
-  PLAN_START_DATE: (import.meta as any).env?.VITE_PLAN_START_DATE || "2027-01-11",
-  RACE_DATE: (import.meta as any).env?.VITE_TARGET_RACE_DATE || "2027-07-03",
+  HOME_ADDRESS: getEnvVal('VITE_HOME_ADDRESS', 'Home'),
+  ETS_ADDRESS: getEnvVal('VITE_CAMPUS_ADDRESS', 'Campus'),
+  MOUNT_ROYAL_ADDRESS: getEnvVal('VITE_TRAIL_ADDRESS', 'Trail Park'),
+  ICAL_URL: getEnvVal('VITE_ICAL_FEED_URL', ''),
+  SPORT_START_DATE: getEnvVal('VITE_SPORT_START_DATE', '2026-09-01'),
+  PLAN_START_DATE: getEnvVal('VITE_PLAN_START_DATE', '2027-01-11'),
+  RACE_DATE: getEnvVal('VITE_TARGET_RACE_DATE', '2027-07-03'),
   TIMEZONE: "America/Toronto",
   TARGET_HOME_RETURN_HOUR: 13,
   TARGET_HOME_RETURN_MIN: 0,

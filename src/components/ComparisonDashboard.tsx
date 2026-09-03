@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ActivityComparison, GarminSyncState } from '../types/garmin';
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -28,7 +29,8 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const otherCount = comparisons.filter(c => c.actualActivity?.activityType === 'OTHER' || c.inferredType).length;
+  // Show only already done sessions (sessions with recorded actualActivity)
+  const displayedComparisons = comparisons.filter(c => c.actualActivity !== undefined);
 
   const getStatusBadge = (status: string, score: number) => {
     switch (status) {
@@ -56,10 +58,36 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             <PlusCircle size={12} /> Bonus
           </span>
         );
-      case 'PENDING':
+      default:
+        return null;
+    }
+  };
+
+  const getActivityTypeBadge = (type?: string) => {
+    switch (type) {
+      case 'TRAIL_RUNNING':
         return (
-          <span className="status-pill" style={{ background: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-            <Clock size={12} /> Scheduled (Pending)
+          <span className="badge-tag" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', border: '1px solid var(--primary-border)', fontSize: '0.65rem' }}>
+            Trail
+          </span>
+        );
+      case 'RUNNING':
+        return (
+          <span className="badge-tag" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)', fontSize: '0.65rem' }}>
+            Run
+          </span>
+        );
+      case 'STRENGTH_TRAINING':
+      case 'FITNESS_EQUIPMENT':
+        return (
+          <span className="badge-tag" style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1', border: '1px solid rgba(148, 163, 184, 0.3)', fontSize: '0.65rem' }}>
+            Strength
+          </span>
+        );
+      case 'OTHER':
+        return (
+          <span className="other-badge">
+            Other
           </span>
         );
       default:
@@ -69,7 +97,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {/* Informative 'OTHER' category bar */}
+      {/* Informative Header Bar */}
       <div
         style={{
           display: 'flex',
@@ -77,17 +105,17 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           justifyContent: 'space-between',
           flexWrap: 'wrap',
           gap: '10px',
-          padding: '8px 14px',
-          background: 'rgba(168, 85, 247, 0.08)',
-          border: '1px solid rgba(168, 85, 247, 0.25)',
+          padding: '10px 16px',
+          background: 'rgba(255, 255, 255, 0.02)',
+          border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-sm)',
           fontSize: '0.78rem'
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Tag size={15} color="#c084fc" />
+          <Activity size={15} color="var(--primary)" />
           <span>
-            <strong>Garmin "Other" Profile Parsing:</strong> {otherCount} session(s) logged under Garmin's generic "Other" profile were matched using physiological signatures (elevation D+, duration, heart rate).
+            <strong style={{ color: '#fff' }}>Garmin Telemetry Log:</strong> Showing {displayedComparisons.length} completed workout(s) evaluated against prescribed training targets.
           </span>
         </div>
 
@@ -112,8 +140,26 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
         </div>
       </div>
 
-      {/* Pro High-Density Table View */}
-      {viewMode === 'table' ? (
+      {displayedComparisons.length === 0 ? (
+        <div className="glass-panel" style={{ padding: '40px 20px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: 46, height: 46, borderRadius: '50%', background: 'rgba(255, 87, 34, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Activity size={22} color="var(--primary)" />
+          </div>
+          <div>
+            <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, color: '#fff', marginBottom: 4 }}>
+              No Garmin Activities Synchronized Yet
+            </h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto' }}>
+              Connect your Garmin Connect account or enter your credentials to pull your real training telemetry directly via the Garmin API.
+            </p>
+          </div>
+          <button className="btn-primary" onClick={onOpenGarminSync} style={{ padding: '9px 16px', marginTop: 4 }}>
+            <RefreshCw size={14} />
+            <span>⚡ Synchronize with Garmin API</span>
+          </button>
+        </div>
+      ) : viewMode === 'table' ? (
+        /* Pro High-Density Table View */
         <div className="pro-table-wrapper">
           <table className="pro-table">
             <thead>
@@ -128,7 +174,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
               </tr>
             </thead>
             <tbody>
-              {comparisons.map(comp => {
+              {displayedComparisons.map(comp => {
                 const dateObj = new Date(comp.date + 'T12:00:00');
                 const dateFormatted = dateObj.toLocaleDateString('en-US', {
                   weekday: 'short',
@@ -156,7 +202,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                               {comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Free Activity'}
                             </div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                              {dateFormatted} • {comp.plannedEvent?.durationMinutes || '--'} min target
+                              {dateFormatted} • {comp.plannedEvent?.durationMinutes || comp.actualActivity?.durationMinutes || '--'} min target
                             </div>
                           </div>
                         </div>
@@ -164,28 +210,20 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
 
                       {/* Garmin Actual Activity */}
                       <td>
-                        {comp.actualActivity ? (
+                        {comp.actualActivity && (
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                                 {comp.actualActivity.activityName}
                               </span>
-                              {isOther && (
-                                <span className="other-badge">
-                                  Other
-                                </span>
-                              )}
+                              {getActivityTypeBadge(comp.actualActivity.activityType)}
                             </div>
-                            {comp.inferredType && (
+                            {isOther && comp.inferredType && (
                               <div style={{ fontSize: '0.68rem', color: '#c084fc' }}>
-                                Signature: {comp.inferredType}
+                                Inferred profile: {comp.inferredType}
                               </div>
                             )}
                           </div>
-                        ) : (
-                          <span style={{ color: '#f87171', fontSize: '0.75rem', fontWeight: 600 }}>
-                            Not recorded
-                          </span>
                         )}
                       </td>
 
@@ -205,7 +243,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                                 marginLeft: 6,
                                 fontSize: '0.7rem',
                                 fontWeight: 700,
-                                color: Math.abs(comp.durationDeltaMinutes) <= 5 ? '#00e676' : (comp.durationDeltaMinutes > 0 ? '#38bdf8' : '#fbbf24')
+                                color: Math.abs(comp.durationDeltaMinutes) <= 5 ? '#10b981' : (comp.durationDeltaMinutes > 0 ? '#38bdf8' : '#f59e0b')
                               }}
                             >
                               ({comp.durationDeltaMinutes > 0 ? '+' : ''}{comp.durationDeltaMinutes}m)
@@ -225,11 +263,13 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                             <span style={{ fontWeight: 700 }}>
                               {comp.actualActivity.avgHeartRate} bpm
                             </span>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 4 }}>
-                              (Max {comp.actualActivity.maxHeartRate || '--'})
-                            </span>
+                            {comp.actualActivity.maxHeartRate && (
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 4 }}>
+                                (Max {comp.actualActivity.maxHeartRate})
+                              </span>
+                            )}
                             {comp.plannedEvent?.metadata?.targetHeartRateRange && (
-                              <div style={{ fontSize: '0.68rem', color: comp.heartRateCompliance === 'OPTIMAL' ? '#00e676' : '#fbbf24' }}>
+                              <div style={{ fontSize: '0.68rem', color: '#10b981' }}>
                                 Target: {comp.plannedEvent.metadata.targetHeartRateRange[0]}-{comp.plannedEvent.metadata.targetHeartRateRange[1]} bpm
                               </div>
                             )}
@@ -243,7 +283,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                       <td>
                         {comp.actualActivity?.elevationGainM !== undefined ? (
                           <div>
-                            <span style={{ fontWeight: 700, color: '#ff8c5a' }}>
+                            <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
                               +{comp.actualActivity.elevationGainM} m
                             </span>
                             {comp.plannedEvent?.metadata?.targetElevationM && (
@@ -294,7 +334,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
       ) : (
         /* Compact Card View */
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {comparisons.map(comp => (
+          {displayedComparisons.map(comp => (
             <div
               key={comp.id}
               className="glass-panel"
@@ -304,11 +344,12 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: '1.3rem' }}>{comp.plannedEvent?.emoji || '⌚'}</span>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
-                      {comp.plannedEvent?.title || comp.actualActivity?.activityName}
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{comp.actualActivity?.activityName || comp.plannedEvent?.title}</span>
+                      {getActivityTypeBadge(comp.actualActivity?.activityType)}
                     </div>
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      {comp.date} {comp.actualActivity && `• ${comp.actualActivity.activityName}`}
+                      {comp.date} {comp.plannedEvent && `• Prescribed: ${comp.plannedEvent.title}`}
                     </div>
                   </div>
                 </div>
@@ -319,7 +360,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.04)', paddingTop: 6 }}>
                   <div>
                     <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
-                    Duration: <strong>{comp.actualActivity.durationMinutes} min</strong> (delta {comp.durationDeltaMinutes > 0 ? '+' : ''}{comp.durationDeltaMinutes}m)
+                    Duration: <strong>{comp.actualActivity.durationMinutes} min</strong> {comp.plannedEvent && `(delta ${comp.durationDeltaMinutes > 0 ? '+' : ''}${comp.durationDeltaMinutes}m)`}
                   </div>
                   {comp.actualActivity.avgHeartRate && (
                     <div>

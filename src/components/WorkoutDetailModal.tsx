@@ -58,7 +58,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
               <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: 3 }}>
                 {formatTime(startDate)} - {formatTime(endDate)}
               </div>
-              <span style={{ fontSize: '0.72rem', color: 'var(--cyan)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--accent-blue)' }}>
                 {event.durationMinutes} minutes
               </span>
             </div>
@@ -71,7 +71,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
                 {event.location}
               </div>
               {event.metadata?.room && (
-                <span style={{ fontSize: '0.72rem', color: '#ff6b35' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--primary)' }}>
                   Room: {event.metadata.room}
                 </span>
               )}
@@ -82,7 +82,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Compass size={11} /> Target D+
                 </span>
-                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#ff6b35', marginTop: 3 }}>
+                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--primary)', marginTop: 3 }}>
                   +{event.metadata.targetElevationM} m
                 </div>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
@@ -94,8 +94,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
 
           {/* Cardio & Physiological Targets */}
           {event.metadata?.targetHeartRate && (
-            <div style={{ background: 'rgba(247, 37, 133, 0.08)', border: '1px solid rgba(247, 37, 133, 0.25)', padding: '12px', borderRadius: 'var(--radius-xs)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f72585', fontWeight: 700, marginBottom: '4px', fontSize: '0.82rem' }}>
+            <div style={{ background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)', padding: '12px', borderRadius: 'var(--radius-xs)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 700, marginBottom: '4px', fontSize: '0.82rem' }}>
                 <Heart size={14} />
                 <span>Cardio Target Zone (HRmax = 203 bpm)</span>
               </div>
@@ -132,12 +132,12 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
 
           {/* Nutrition Advice */}
           {event.metadata?.nutritionAdvice && (
-            <div style={{ background: 'rgba(0, 242, 254, 0.08)', border: '1px solid rgba(0, 242, 254, 0.25)', padding: '10px', borderRadius: 'var(--radius-xs)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--cyan)', fontWeight: 700, fontSize: '0.8rem' }}>
+            <div style={{ background: 'rgba(255, 87, 34, 0.06)', border: '1px solid rgba(255, 87, 34, 0.25)', padding: '10px', borderRadius: 'var(--radius-xs)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.8rem' }}>
                 <Zap size={14} />
-                <span>Ultra-Trail Nutrition Strategy</span>
+                <span>Ultra-Trail Fueling Strategy</span>
               </div>
-              <p style={{ fontSize: '0.78rem', marginTop: '3px' }}>
+              <p style={{ fontSize: '0.78rem', marginTop: '3px', color: 'var(--text-secondary)' }}>
                 {event.metadata.nutritionAdvice}
               </p>
             </div>

@@ -219,6 +219,23 @@ export function buildCompleteCalendar(
       const meta = analyzeETSEvent(raw);
       const dur = Math.round((raw.endDate.getTime() - raw.startDate.getTime()) / 60000);
 
+      const isFirstPresential = presentialCourses[0]?.uid === raw.uid;
+      const isLastPresential = presentialCourses[presentialCourses.length - 1]?.uid === raw.uid;
+      const transitMin = GLOBAL_APP_CONFIG.TRANSIT_TIMES.HOME_TO_ETS;
+
+      const commuteAller = (!meta.isDistanciel && isFirstPresential) ? {
+        departureTime: new Date(raw.startDate.getTime() - (GLOBAL_APP_CONFIG.BUFFER_BEFORE_CLASS_MIN + transitMin) * 60000).toISOString(),
+        arrivalTime: new Date(raw.startDate.getTime() - GLOBAL_APP_CONFIG.BUFFER_BEFORE_CLASS_MIN * 60000).toISOString(),
+        durationMinutes: transitMin
+      } : undefined;
+
+      const isReturnHandledByGym = Boolean(chainedCourse && workoutTemplate.chainedAfterCourse);
+      const commuteRetour = (!meta.isDistanciel && isLastPresential && !isReturnHandledByGym) ? {
+        departureTime: new Date(raw.endDate.getTime() + GLOBAL_APP_CONFIG.BUFFER_AFTER_CLASS_MIN * 60000).toISOString(),
+        arrivalTime: new Date(raw.endDate.getTime() + (GLOBAL_APP_CONFIG.BUFFER_AFTER_CLASS_MIN + transitMin) * 60000).toISOString(),
+        durationMinutes: transitMin
+      } : undefined;
+
       const courseEv: CalendarEvent = {
         id: `COURSE_${raw.uid}`,
         category: 'course',
@@ -235,7 +252,9 @@ export function buildCompleteCalendar(
           courseCode: meta.courseCode,
           room: meta.room,
           isDistanciel: meta.isDistanciel,
-          isExam: meta.isExam
+          isExam: meta.isExam,
+          commuteAller,
+          commuteRetour
         }
       };
       dayEvents.push(courseEv);
@@ -373,7 +392,17 @@ export function buildCompleteCalendar(
           targetCadence: workoutTemplate.targetCadence,
           targetElevationM: workoutTemplate.targetElevationM,
           nutritionAdvice: workoutTemplate.nutritionAdvice,
-          chainedAfterCourse: workoutTemplate.chainedAfterCourse
+          chainedAfterCourse: workoutTemplate.chainedAfterCourse,
+          commuteAller: transitAllerMinutes > 0 ? {
+            departureTime: new Date(workoutStart.getTime() - transitAllerMinutes * 60000).toISOString(),
+            arrivalTime: workoutStart.toISOString(),
+            durationMinutes: transitAllerMinutes
+          } : undefined,
+          commuteRetour: transitRetourMinutes > 0 ? {
+            departureTime: workoutEnd.toISOString(),
+            arrivalTime: new Date(workoutEnd.getTime() + transitRetourMinutes * 60000).toISOString(),
+            durationMinutes: transitRetourMinutes
+          } : undefined
         }
       };
       dayEvents.push(sportEvent);

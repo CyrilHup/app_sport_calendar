@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { CalendarEvent, DailySchedule, PeriodizationContext } from './types/calendar';
 import { GarminActivity, GarminSyncState, ActivityComparison } from './types/garmin';
 import { Header } from './components/Header';
-import { PeriodizationBar } from './components/PeriodizationBar';
 import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
 import { GarminModal } from './components/GarminModal';
@@ -11,7 +10,7 @@ import { QMTPlanOverview } from './components/QMTPlanOverview';
 import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
 import { getPeriodizationContext } from './services/periodizationEngine';
-import { loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState, getSampleGarminActivities } from './services/garminService';
+import { loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { Activity, Calendar, TrendingUp } from 'lucide-react';
 
@@ -35,8 +34,8 @@ export const App: React.FC = () => {
   const [isGarminModalOpen, setIsGarminModalOpen] = useState<boolean>(false);
   const [isGoogleCalendarModalOpen, setIsGoogleCalendarModalOpen] = useState<boolean>(false);
 
-  // Reference date: 2026-09-02 (Wednesday)
-  const referenceDate = new Date('2026-09-02T00:00:00');
+  // Reference date: default to 2026-09-02 for sample training block alignment
+  const referenceDate = new Date('2026-09-02T12:00:00');
   const currentPeriodContext = getPeriodizationContext(referenceDate);
 
   // Function to recharge both ÉTS iCal and Garmin Connect (only on page load or manual button click)
@@ -44,7 +43,7 @@ export const App: React.FC = () => {
     setIsRecharging(true);
     let rawCourses: RawIcsEvent[] = [];
 
-    // 1. Fetch ÉTS iCal feed
+    // 1. Fetch ÉTS iCal feed via proxy
     try {
       const res = await fetch('/api/ets-ical');
       if (res.ok) {
@@ -85,22 +84,37 @@ export const App: React.FC = () => {
       ];
     }
 
-    // Start calendar exactly on Monday of the current week (Monday August 31, 2026)
+    // Start calendar exactly on Monday of current week (Monday August 31, 2026)
     const calendarStartMonday = getMondayOfWeek(referenceDate);
     const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
       rawCourses,
       calendarStartMonday,
-      42 // 6 full weeks (Mon-Sun)
+      42 // 6 full weeks
     );
 
     setSchedules(builtSchedules);
     setAllEvents(builtEvents);
 
-    // 2. Load Garmin activities & evaluate comparisons
-    const storedActivities = loadStoredGarminActivities();
-    setGarminActivities(storedActivities);
+    // 2. Load stored real Garmin activities or attempt auto-sync via .env credentials
+    let loadedActivities = loadStoredGarminActivities();
+    if (loadedActivities.length === 0) {
+      try {
+        const garminRes = await fetch('/api/garmin-sync');
+        if (garminRes.ok) {
+          const garminData = await garminRes.json();
+          if (garminData.activities && garminData.activities.length > 0) {
+            loadedActivities = garminData.activities;
+            saveGarminActivities(loadedActivities);
+          }
+        }
+      } catch {
+        // Not configured in .env; remains empty until user connects
+      }
+    }
 
-    const compResults = compareWorkoutsWithGarmin(builtEvents, storedActivities, undefined, referenceDate);
+    setGarminActivities(loadedActivities);
+
+    const compResults = compareWorkoutsWithGarmin(builtEvents, loadedActivities, undefined, referenceDate);
     setComparisons(compResults);
 
     const nowIso = new Date().toISOString();
@@ -108,9 +122,9 @@ export const App: React.FC = () => {
 
     const updatedGarminState: GarminSyncState = {
       ...garminState,
-      connected: true,
-      lastSyncTime: nowIso,
-      activitiesCount: storedActivities.length,
+      connected: loadedActivities.length > 0,
+      lastSyncTime: loadedActivities.length > 0 ? nowIso : undefined,
+      activitiesCount: loadedActivities.length,
       isSyncing: false
     };
     setGarminState(updatedGarminState);
@@ -119,7 +133,6 @@ export const App: React.FC = () => {
     setIsRecharging(false);
   };
 
-  // Only sync once when the page loads (NOT on window focus / alt-tab)
   useEffect(() => {
     autoRechargeAll();
   }, []);
@@ -129,29 +142,36 @@ export const App: React.FC = () => {
     saveGarminSyncState(newState);
   };
 
-  const handleAddGarminActivities = (newActivities: GarminActivity[]) => {
-    const updated = [...newActivities, ...garminActivities];
-    setGarminActivities(updated);
-    saveGarminActivities(updated);
+  const handleActivitiesSynced = (newActivities: GarminActivity[]) => {
+    setGarminActivities(newActivities);
+    saveGarminActivities(newActivities);
     if (allEvents.length > 0) {
-      setComparisons(compareWorkoutsWithGarmin(allEvents, updated, undefined, referenceDate));
+      setComparisons(compareWorkoutsWithGarmin(allEvents, newActivities, undefined, referenceDate));
     }
   };
 
-  const handleReloadSamples = () => {
-    const samples = getSampleGarminActivities();
-    setGarminActivities(samples);
-    saveGarminActivities(samples);
-    if (allEvents.length > 0) {
-      setComparisons(compareWorkoutsWithGarmin(allEvents, samples, undefined, referenceDate));
-    }
-  };
+  // Compute full current week's targets for accurate microcycle telemetry progress
+  const calendarStartMonday = getMondayOfWeek(referenceDate);
+  const weekStartStr = calendarStartMonday.toISOString().slice(0, 10);
+  const weekEndDate = new Date(calendarStartMonday);
+  weekEndDate.setDate(calendarStartMonday.getDate() + 6);
+  const weekEndStr = weekEndDate.toISOString().slice(0, 10);
 
-  const weeklyStats = computeWeeklyTelemetry(comparisons, 7);
+  const currentWeekSchedules = schedules.slice(0, 7);
+  const plannedDurationMin = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession?.durationMinutes || 0), 0);
+  const plannedElevationM = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession?.metadata?.targetElevationM || 0), 0);
+  const weeklyStats = computeWeeklyTelemetry(
+    comparisons,
+    { start: weekStartStr, end: weekEndStr },
+    {
+      plannedDurationMin: plannedDurationMin || 285,
+      plannedElevationM: plannedElevationM || 780
+    }
+  );
 
   return (
     <div className="app-container">
-      {/* Top Header */}
+      {/* Top Header with Fused Telemetry HUD */}
       <Header
         periodContext={currentPeriodContext}
         garminState={garminState}
@@ -161,13 +181,11 @@ export const App: React.FC = () => {
         onRefreshAll={autoRechargeAll}
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
+        onSelectPeriodizationTab={() => setActiveTab('periodization')}
       />
 
-      {/* Periodization Progress Bar */}
-      <PeriodizationBar context={currentPeriodContext} />
-
       {/* Navigation Tabs (Desktop) */}
-      <div className="nav-tabs" style={{ marginBottom: '16px' }}>
+      <div className="nav-tabs" style={{ marginBottom: '14px' }}>
         <button
           className={`nav-tab-btn ${activeTab === 'calendar' ? 'active' : ''}`}
           onClick={() => setActiveTab('calendar')}
@@ -186,8 +204,9 @@ export const App: React.FC = () => {
                 fontSize: '0.68rem',
                 padding: '1px 6px',
                 borderRadius: 9999,
-                background: 'rgba(0, 242, 254, 0.2)',
-                color: 'var(--cyan)'
+                background: 'var(--primary-subtle)',
+                color: 'var(--primary)',
+                fontWeight: 700
               }}
             >
               {comparisons.length}
@@ -209,6 +228,7 @@ export const App: React.FC = () => {
           schedules={schedules}
           allEvents={allEvents}
           onOpenGoogleCalendar={() => setIsGoogleCalendarModalOpen(true)}
+          referenceDateStr={referenceDate.toISOString().slice(0, 10)}
         />
       )}
 
@@ -230,8 +250,7 @@ export const App: React.FC = () => {
         onClose={() => setIsGarminModalOpen(false)}
         garminState={garminState}
         onUpdateState={handleUpdateGarminState}
-        onAddActivities={handleAddGarminActivities}
-        onReloadSamples={handleReloadSamples}
+        onActivitiesSynced={handleActivitiesSynced}
       />
 
       {/* Google Calendar Sync Modal */}
