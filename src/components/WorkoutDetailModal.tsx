@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { CalendarEvent } from '../types/calendar';
-import { Clock, Compass, Heart, MapPin, X, Zap } from 'lucide-react';
+import { CheckSquare, Clock, Compass, Flame, Heart, MapPin, ShieldCheck, Square, Utensils, X, Zap } from 'lucide-react';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -9,6 +9,12 @@ interface WorkoutDetailModalProps {
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, onClose }) => {
   if (!event) return null;
+
+  const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
+
+  const toggleGear = (item: string) => {
+    setCheckedGear(prev => ({ ...prev, [item]: !prev[item] }));
+  };
 
   const startDate = new Date(event.startDate);
   const endDate = new Date(event.endDate);
@@ -19,9 +25,34 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
   const formatDate = (d: Date) =>
     d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
+  // Ultra-Trail Fueling & Hydration Calculator
+  const isSport = event.category === 'sport';
+  const durationHours = event.durationMinutes / 60;
+  const isLongTrail = event.sportType === 'TRAIL_LONG';
+  const isIntenseTrail = event.sportType === 'TRAIL_INTENSE';
+
+  const carbsPerHour = (isLongTrail || isIntenseTrail) ? 60 : 35;
+  const totalCarbsG = Math.round(durationHours * carbsPerHour);
+  const totalWaterMl = Math.round(durationHours * 550);
+  const totalSodiumMg = Math.round(durationHours * 450);
+  const gelsEquivalent = Math.max(1, Math.round(totalCarbsG / 25));
+
+  const mandatoryGearList: string[] = [];
+  if (isSport && event.durationMinutes >= 45) {
+    mandatoryGearList.push(`${Math.ceil(totalWaterMl / 500)}x 500 mL Soft flasks with electrolytes`);
+    mandatoryGearList.push(`Energy nutrition: ~${totalCarbsG}g carbs (${gelsEquivalent} gels / bars)`);
+    mandatoryGearList.push('Charged smartphone with downloaded trail GPX track');
+  }
+  if (isLongTrail || event.durationMinutes >= 90) {
+    mandatoryGearList.push('Emergency survival blanket + safety whistle (QMT-80 mandatory)');
+    mandatoryGearList.push('Waterproof breathable jacket (10,000 Schmerber minimum)');
+    mandatoryGearList.push('Collapsible silicone reusable eco-cup (no cups at aid stations)');
+    mandatoryGearList.push('Trail running poles (folding carbon)');
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span style={{ fontSize: '24px' }}>{event.emoji}</span>
@@ -48,7 +79,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" style={{ gap: '12px' }}>
           {/* Timing & Location Bar */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
             <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
@@ -140,16 +171,76 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
             </div>
           </div>
 
-          {/* Nutrition Advice */}
-          {event.metadata?.nutritionAdvice && (
-            <div style={{ background: 'rgba(255, 87, 34, 0.06)', border: '1px solid rgba(255, 87, 34, 0.25)', padding: '10px', borderRadius: 'var(--radius-xs)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.8rem' }}>
-                <Zap size={14} />
-                <span>Ultra-Trail Fueling Strategy</span>
+          {/* Ultra-Trail Fueling & Hydration Calculator (Interactive) */}
+          {isSport && event.durationMinutes >= 35 && (
+            <div
+              style={{
+                background: 'rgba(255, 87, 34, 0.05)',
+                border: '1px solid rgba(255, 87, 34, 0.25)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '12px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.82rem' }}>
+                  <Zap size={14} />
+                  <span>QMT-80 Race Fueling & Hydration Calculator</span>
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Target: {carbsPerHour}g carbs/hour
+                </span>
               </div>
-              <p style={{ fontSize: '0.78rem', marginTop: '3px', color: 'var(--text-secondary)' }}>
-                {event.metadata.nutritionAdvice}
-              </p>
+
+              {/* Fueling metrics strip */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center', marginBottom: 10 }}>
+                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '8px 4px', borderRadius: 4 }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary)' }}>{totalCarbsG}g</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Total Carbs ({gelsEquivalent} gels)</div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '8px 4px', borderRadius: 4 }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#38bdf8' }}>{totalWaterMl} mL</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Hydration Fluid</div>
+                </div>
+                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '8px 4px', borderRadius: 4 }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#f59e0b' }}>{totalSodiumMg} mg</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Sodium (Electrolytes)</div>
+                </div>
+              </div>
+
+              {/* Mandatory Gear Checklist */}
+              {mandatoryGearList.length > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ShieldCheck size={12} color="#10b981" /> Recommended Trail Gear Checklist:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {mandatoryGearList.map((item, idx) => {
+                      const isChecked = Boolean(checkedGear[item]);
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => toggleGear(item)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '4px 8px',
+                            background: isChecked ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: '0.74rem',
+                            color: isChecked ? '#34d399' : 'var(--text-secondary)',
+                            textDecoration: isChecked ? 'line-through' : 'none'
+                          }}
+                        >
+                          {isChecked ? <CheckSquare size={13} color="#10b981" /> : <Square size={13} color="var(--text-muted)" />}
+                          <span>{item}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
