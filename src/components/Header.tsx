@@ -14,6 +14,8 @@ interface HeaderProps {
   isRecharging: boolean;
   lastSyncTime?: string;
   onSelectPeriodizationTab?: () => void;
+  dateMode?: 'live' | 'demo';
+  onToggleDateMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -25,7 +27,9 @@ export const Header: React.FC<HeaderProps> = ({
   onRefreshAll,
   isRecharging,
   lastSyncTime,
-  onSelectPeriodizationTab
+  onSelectPeriodizationTab,
+  dateMode = 'demo',
+  onToggleDateMode
 }) => {
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -83,6 +87,22 @@ export const Header: React.FC<HeaderProps> = ({
             />
             <span>{isRecharging ? 'Syncing...' : `Synced (${formattedSyncTime})`}</span>
           </div>
+
+          {onToggleDateMode && (
+            <button
+              className="btn-secondary"
+              onClick={onToggleDateMode}
+              style={{
+                borderColor: dateMode === 'live' ? '#10b981' : 'var(--border-color)',
+                background: dateMode === 'live' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                color: dateMode === 'live' ? '#34d399' : 'var(--text-secondary)',
+                fontWeight: 700
+              }}
+              title="Toggle between Real-time Today and Demo Training Block (Sept 2026)"
+            >
+              <span>{dateMode === 'live' ? '🟢 Live: Today' : '🧪 Demo: Sept 2026'}</span>
+            </button>
+          )}
 
           <button
             className="btn-primary"

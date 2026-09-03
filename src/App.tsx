@@ -4,6 +4,7 @@ import { GarminActivity, GarminSyncState, ActivityComparison } from './types/gar
 import { Header } from './components/Header';
 import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
+import { TrainingLoadCard } from './components/TrainingLoadCard';
 import { GarminModal } from './components/GarminModal';
 import { GoogleCalendarModal } from './components/GoogleCalendarModal';
 import { QMTPlanOverview } from './components/QMTPlanOverview';
@@ -14,6 +15,21 @@ import { loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, 
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { Activity, Calendar, TrendingUp } from 'lucide-react';
 
+const DATE_MODE_STORAGE_KEY = 'app_date_mode';
+const MANUAL_PAIRS_STORAGE_KEY = 'garmin_manual_pairs';
+
+function loadManualPairs(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(MANUAL_PAIRS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveManualPairs(pairs: Record<string, string>): void {
+  localStorage.setItem(MANUAL_PAIRS_STORAGE_KEY, JSON.stringify(pairs));
+}
+
 function getMondayOfWeek(date: Date): Date {
   const d = new Date(date);
   const day = (d.getDay() + 6) % 7; // 0=Monday, ..., 6=Sunday
@@ -23,10 +39,15 @@ function getMondayOfWeek(date: Date): Date {
 }
 
 export const App: React.FC = () => {
+  const [dateMode, setDateMode] = useState<'live' | 'demo'>(() => {
+    return (localStorage.getItem(DATE_MODE_STORAGE_KEY) as 'live' | 'demo') || 'demo';
+  });
+
   const [schedules, setSchedules] = useState<DailySchedule[]>([]);
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
+  const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
   const [comparisons, setComparisons] = useState<ActivityComparison[]>([]);
   const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization'>('calendar');
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
@@ -34,11 +55,17 @@ export const App: React.FC = () => {
   const [isGarminModalOpen, setIsGarminModalOpen] = useState<boolean>(false);
   const [isGoogleCalendarModalOpen, setIsGoogleCalendarModalOpen] = useState<boolean>(false);
 
-  // Reference date: default to 2026-09-02 for sample training block alignment
-  const referenceDate = new Date('2026-09-02T12:00:00');
+  // Dynamic reference date based on dateMode
+  const referenceDate = dateMode === 'live' ? new Date() : new Date('2026-09-02T12:00:00');
   const currentPeriodContext = getPeriodizationContext(referenceDate);
 
-  // Function to recharge both ÉTS iCal and Garmin Connect (only on page load or manual button click)
+  const toggleDateMode = () => {
+    const nextMode = dateMode === 'demo' ? 'live' : 'demo';
+    setDateMode(nextMode);
+    localStorage.setItem(DATE_MODE_STORAGE_KEY, nextMode);
+  };
+
+  // Function to recharge both ÉTS iCal and Garmin Connect
   const autoRechargeAll = async () => {
     setIsRecharging(true);
     let rawCourses: RawIcsEvent[] = [];
@@ -84,7 +111,7 @@ export const App: React.FC = () => {
       ];
     }
 
-    // Start calendar exactly on Monday of current week (Monday August 31, 2026)
+    // Start calendar exactly on Monday of current week
     const calendarStartMonday = getMondayOfWeek(referenceDate);
     const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
       rawCourses,
@@ -114,7 +141,7 @@ export const App: React.FC = () => {
 
     setGarminActivities(loadedActivities);
 
-    const compResults = compareWorkoutsWithGarmin(builtEvents, loadedActivities, undefined, referenceDate);
+    const compResults = compareWorkoutsWithGarmin(builtEvents, loadedActivities, manualPairs, referenceDate);
     setComparisons(compResults);
 
     const nowIso = new Date().toISOString();
@@ -135,7 +162,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     autoRechargeAll();
-  }, []);
+  }, [dateMode]);
 
   const handleUpdateGarminState = (newState: GarminSyncState) => {
     setGarminState(newState);
@@ -146,7 +173,26 @@ export const App: React.FC = () => {
     setGarminActivities(newActivities);
     saveGarminActivities(newActivities);
     if (allEvents.length > 0) {
-      setComparisons(compareWorkoutsWithGarmin(allEvents, newActivities, undefined, referenceDate));
+      setComparisons(compareWorkoutsWithGarmin(allEvents, newActivities, manualPairs, referenceDate));
+    }
+  };
+
+  const handleManualPair = (planId: string, garminActivityId: string) => {
+    const updated = { ...manualPairs, [planId]: garminActivityId };
+    setManualPairs(updated);
+    saveManualPairs(updated);
+    if (allEvents.length > 0) {
+      setComparisons(compareWorkoutsWithGarmin(allEvents, garminActivities, updated, referenceDate));
+    }
+  };
+
+  const handleManualUnpair = (planId: string) => {
+    const updated = { ...manualPairs };
+    delete updated[planId];
+    setManualPairs(updated);
+    saveManualPairs(updated);
+    if (allEvents.length > 0) {
+      setComparisons(compareWorkoutsWithGarmin(allEvents, garminActivities, updated, referenceDate));
     }
   };
 
@@ -182,6 +228,8 @@ export const App: React.FC = () => {
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
         onSelectPeriodizationTab={() => setActiveTab('periodization')}
+        dateMode={dateMode}
+        onToggleDateMode={toggleDateMode}
       />
 
       {/* Navigation Tabs (Desktop) */}
@@ -233,11 +281,21 @@ export const App: React.FC = () => {
       )}
 
       {activeTab === 'compare' && (
-        <ComparisonDashboard
-          comparisons={comparisons}
-          garminState={garminState}
-          onOpenGarminSync={() => setIsGarminModalOpen(true)}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <TrainingLoadCard
+            weeklyStats={weeklyStats}
+            comparisons={comparisons}
+          />
+          <ComparisonDashboard
+            comparisons={comparisons}
+            garminState={garminState}
+            onOpenGarminSync={() => setIsGarminModalOpen(true)}
+            availableGarminActivities={garminActivities}
+            manualPairs={manualPairs}
+            onManualPair={handleManualPair}
+            onManualUnpair={handleManualUnpair}
+          />
+        </div>
       )}
 
       {activeTab === 'periodization' && (
