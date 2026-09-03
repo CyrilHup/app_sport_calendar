@@ -296,6 +296,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({ schedules, onOpenGoo
                               </div>
                             )}
 
+                            {ev.metadata?.conflictRescheduled && (
+                              <div style={{ fontSize: '0.66rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                <span>🔄 Shifted for classes</span>
+                              </div>
+                            )}
+
                             {/* Fused Journey Strip (Commute to & from class/workout) */}
                             {isFusedMode && (hasAller || hasRetour) && (
                               <div className="journey-strip">

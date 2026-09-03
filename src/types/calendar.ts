@@ -47,6 +47,8 @@ export interface CalendarEvent {
     };
     isDistanciel?: boolean;
     isExam?: boolean;
+    conflictRescheduled?: boolean;
+    conflictReason?: string;
   };
 }
 

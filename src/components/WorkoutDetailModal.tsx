@@ -92,6 +92,16 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
             )}
           </div>
 
+          {/* Smart Schedule Conflict Banner */}
+          {event.metadata?.conflictRescheduled && event.metadata.conflictReason && (
+            <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', fontSize: '0.78rem', color: '#7dd3fc', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.1rem' }}>🔄</span>
+              <div>
+                <strong>Smart Rescheduled:</strong> {event.metadata.conflictReason}
+              </div>
+            </div>
+          )}
+
           {/* Cardio & Physiological Targets */}
           {event.metadata?.targetHeartRate && (
             <div style={{ background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)', padding: '12px', borderRadius: 'var(--radius-xs)' }}>

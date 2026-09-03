@@ -324,6 +324,9 @@ export function buildCompleteCalendar(
       let transitAllerMinutes = 0;
       let transitRetourMinutes = 0;
 
+      let conflictRescheduled = false;
+      let conflictReason: string | undefined = undefined;
+
       if (workoutTemplate.chainedAfterCourse && chainedCourse) {
         const transitionMs = GLOBAL_APP_CONFIG.BUFFER_BETWEEN_CLASS_AND_SPORT_MIN * 60000;
         workoutStart = new Date(chainedCourse.endDate.getTime() + transitionMs);
@@ -349,8 +352,56 @@ export function buildCompleteCalendar(
           transitRetourMinutes = 0;
         }
 
-        workoutEnd = new Date(targetHomeReturn.getTime() - transitRetourMinutes * 60000);
-        workoutStart = new Date(workoutEnd.getTime() - workoutTemplate.duration * 60000);
+        // Default morning target window
+        const tentativeWorkoutEnd = new Date(targetHomeReturn.getTime() - transitRetourMinutes * 60000);
+        const tentativeWorkoutStart = new Date(tentativeWorkoutEnd.getTime() - workoutTemplate.duration * 60000);
+        const tentativeTravelStart = new Date(tentativeWorkoutStart.getTime() - transitAllerMinutes * 60000);
+        const tentativeTravelEnd = new Date(tentativeWorkoutEnd.getTime() + transitRetourMinutes * 60000);
+
+        // Check if morning target window conflicts with any class or class transit on that day
+        const conflictingCourse = dayCourses.find(c => {
+          const cMeta = analyzeETSEvent(c);
+          const cTransit = !cMeta.isDistanciel ? GLOBAL_APP_CONFIG.TRANSIT_TIMES.HOME_TO_ETS : 0;
+          const cBuffer = !cMeta.isDistanciel ? GLOBAL_APP_CONFIG.BUFFER_BEFORE_CLASS_MIN : 0;
+          const cBufferAfter = !cMeta.isDistanciel ? GLOBAL_APP_CONFIG.BUFFER_AFTER_CLASS_MIN : 0;
+          const cStartBusy = c.startDate.getTime() - (cTransit + cBuffer) * 60000;
+          const cEndBusy = c.endDate.getTime() + (cTransit + cBufferAfter) * 60000;
+
+          return tentativeTravelStart.getTime() < cEndBusy && tentativeTravelEnd.getTime() > cStartBusy;
+        });
+
+        if (conflictingCourse) {
+          conflictRescheduled = true;
+          const cMeta = analyzeETSEvent(conflictingCourse);
+
+          // If workout is at ÉTS Gym and conflicting course is at ÉTS, chain directly after the course
+          if (workoutTemplate.address === GLOBAL_APP_CONFIG.ETS_ADDRESS && !cMeta.isDistanciel) {
+            workoutStart = new Date(conflictingCourse.endDate.getTime() + GLOBAL_APP_CONFIG.BUFFER_BETWEEN_CLASS_AND_SPORT_MIN * 60000);
+            workoutEnd = new Date(workoutStart.getTime() + workoutTemplate.duration * 60000);
+            transitAllerMinutes = 0;
+            transitRetourMinutes = GLOBAL_APP_CONFIG.TRANSIT_TIMES.ETS_TO_HOME;
+            conflictReason = `Chained directly post-class at ÉTS Gym after ${conflictingCourse.summary} to optimize schedule.`;
+          } else {
+            // Reschedule after all day classes finish (late afternoon / early evening)
+            const latestCourseEnd = Math.max(...dayCourses.map(c => {
+              const m = analyzeETSEvent(c);
+              const t = !m.isDistanciel ? (GLOBAL_APP_CONFIG.TRANSIT_TIMES.ETS_TO_HOME + GLOBAL_APP_CONFIG.BUFFER_AFTER_CLASS_MIN) : 0;
+              return c.endDate.getTime() + t * 60000;
+            }));
+
+            const earliestSafeStart = new Date(latestCourseEnd + 20 * 60000);
+            const standardAfternoon = new Date(currentDate);
+            standardAfternoon.setHours(17, 0, 0, 0);
+
+            workoutStart = earliestSafeStart.getTime() > standardAfternoon.getTime() ? earliestSafeStart : standardAfternoon;
+            workoutEnd = new Date(workoutStart.getTime() + workoutTemplate.duration * 60000);
+            const startStr = workoutStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            conflictReason = `Rescheduled to afternoon (${startStr}) to prevent overlap with ${conflictingCourse.summary}.`;
+          }
+        } else {
+          workoutStart = tentativeWorkoutStart;
+          workoutEnd = tentativeWorkoutEnd;
+        }
       }
 
       // Sport Aller transit if needed
@@ -402,7 +453,9 @@ export function buildCompleteCalendar(
             departureTime: workoutEnd.toISOString(),
             arrivalTime: new Date(workoutEnd.getTime() + transitRetourMinutes * 60000).toISOString(),
             durationMinutes: transitRetourMinutes
-          } : undefined
+          } : undefined,
+          conflictRescheduled,
+          conflictReason
         }
       };
       dayEvents.push(sportEvent);
