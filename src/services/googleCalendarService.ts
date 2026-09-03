@@ -123,7 +123,7 @@ export async function syncDirectToGoogleCalendar(
 
       if (existingGcalId) {
         // Update existing event (PUT)
-        await fetch(
+        const res = await fetch(
           `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${existingGcalId}`,
           {
             method: 'PUT',
@@ -134,6 +134,11 @@ export async function syncDirectToGoogleCalendar(
             body: JSON.stringify(gcalEventPayload)
           }
         );
+
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error?.message || `Google Calendar API error (${res.status}): ${res.statusText}`);
+        }
       } else {
         // Create new event (POST)
         const res = await fetch(
@@ -148,13 +153,19 @@ export async function syncDirectToGoogleCalendar(
           }
         );
 
-        if (res.ok) {
-          const created = await res.json();
-          if (created.id) {
-            eventMap[ev.id] = created.id;
-          }
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error?.message || `Google Calendar API error (${res.status}): ${res.statusText}`);
+        }
+
+        const created = await res.json();
+        if (created.id) {
+          eventMap[ev.id] = created.id;
         }
       }
+
+      // Small throttling delay (40ms) to respect Google API quotas
+      await new Promise(r => setTimeout(r, 40));
 
       synced++;
       if (onProgress) {

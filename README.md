@@ -119,16 +119,19 @@ This repository is strictly designed to be open-source and privacy-compliant:
 │   ├── App.tsx               # Main application coordinator
 │   ├── main.tsx              # React DOM entry
 │   ├── components/
-│   │   ├── Header.tsx                 # Pro telemetry strip & live sync controls
+│   │   ├── Header.tsx                 # Pro telemetry strip, live sync & date toggle
 │   │   ├── CalendarView.tsx           # 7-day responsive grid & detailed list
-│   │   ├── ComparisonDashboard.tsx    # Garmin telemetry table & 'Other' analyzer
+│   │   ├── WeatherWidget.tsx          # Mont-Royal live weather & gear advisory
+│   │   ├── ComparisonDashboard.tsx    # Garmin telemetry table, status filters & manual pairing
+│   │   ├── TrainingLoadCard.tsx       # Weekly volume & Training Stress Score (TSS) telemetry
 │   │   ├── GoogleCalendarModal.tsx    # Direct sync, 1-click import & feed subscription
 │   │   ├── GarminModal.tsx            # Garmin Connect sync & GPX file import
-│   │   ├── PeriodizationBar.tsx       # Training phase progress & guidance
-│   │   ├── WorkoutDetailModal.tsx     # Session protocol, HR zones & nutrition
+│   │   ├── WorkoutDetailModal.tsx     # Session protocol, fueling calculator & gear checklist
+│   │   ├── QMTPlanOverview.tsx        # 6-phase periodization matrix & race strategy
 │   │   └── MobileNav.tsx              # Responsive bottom navigation bar
 │   ├── services/
-│   │   ├── icsParser.ts               # RFC 5545 parser & automated commute generator
+│   │   ├── icsParser.ts               # RFC 5545 parser & automated smart commute generator
+│   │   ├── weatherService.ts          # Open-Meteo meteorological client & trail conditions
 │   │   ├── periodizationEngine.ts     # QMT-80 periodization matrix & target builder
 │   │   ├── garminService.ts           # Garmin Connect integration & GPX parser
 │   │   ├── comparisonEngine.ts        # Telemetry comparison & signature matcher
