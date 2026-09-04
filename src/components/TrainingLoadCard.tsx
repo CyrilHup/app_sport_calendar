@@ -9,28 +9,39 @@ interface TrainingLoadCardProps {
 }
 
 export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats, comparisons }) => {
-  const tss = weeklyStats.estimatedTss || 0;
+  const isNative = weeklyStats.hasNativeGarminLoad;
+  const loadScore = isNative ? weeklyStats.totalGarminTrainingLoad : (weeklyStats.estimatedTss || 0);
 
-  let tssLevel = 'Base Aérobie Optimale';
-  let tssColor = '#10b981';
-  let tssAdvice = 'Charge d\'endurance soutenable. Développement aérobie et mitochondrial.';
+  let loadLevel = 'Base Aérobie Optimale';
+  let loadColor = '#10b981';
+  let loadAdvice = 'Charge d\'endurance soutenable. Développement aérobie et mitochondrial adapté.';
 
-  if (tss > 400) {
-    tssLevel = 'Choc de Surcharge Élevé';
-    tssColor = '#ef4444';
-    tssAdvice = 'Forte fatigue neuromusculaire. Sommeil réparateur et hydratation stricts obligatoires.';
-  } else if (tss > 280) {
-    tssLevel = 'Surmenage Fonctionnel';
-    tssColor = 'var(--primary)';
-    tssAdvice = 'Stimulus d\'entraînement progressif et solide pour l\'ultra QMT-80.';
-  } else if (tss < 120) {
-    tssLevel = 'Décharge / Récupération Active';
-    tssColor = '#38bdf8';
-    tssAdvice = 'Recharge glycogénique et régénération tendineuse/collagène.';
+  if (loadScore > 500) {
+    loadLevel = 'Choc de Surcharge Élevé';
+    loadColor = '#ef4444';
+    loadAdvice = 'Forte fatigue neuromusculaire. Sommeil réparateur et hydratation stricts obligatoires.';
+  } else if (loadScore > 320) {
+    loadLevel = 'Stimulus Optimal / Productif';
+    loadColor = 'var(--primary)';
+    loadAdvice = 'Stimulus d\'entraînement progressif et solide pour l\'ultra QMT-80.';
+  } else if (loadScore < 140) {
+    loadLevel = 'Récupération / Décharge Active';
+    loadColor = '#38bdf8';
+    loadAdvice = 'Recharge glycogénique et régénération tendineuse/collagène.';
   }
 
   const durationHours = (weeklyStats.actualDurationMin / 60).toFixed(1);
   const plannedHours = (weeklyStats.plannedDurationMin / 60).toFixed(1);
+
+  // Extract Firstbeat Training Effect summary
+  const teLabels: Record<string, number> = {};
+  for (const c of comparisons) {
+    if (c.actualActivity?.trainingEffectLabel) {
+      const lbl = c.actualActivity.trainingEffectLabel.toUpperCase();
+      teLabels[lbl] = (teLabels[lbl] || 0) + 1;
+    }
+  }
+  const teList = Object.entries(teLabels);
 
   return (
     <div
@@ -62,10 +73,12 @@ export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats,
           </div>
           <div>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.95rem', fontWeight: 800, color: '#fff' }}>
-              Score de Stress d'Entraînement (TSS) & Charge du Microcycle
+              {isNative ? 'Charge d\'Entraînement Garmin Firstbeat (EPOC)' : 'Score de Stress d\'Entraînement (TSS) & Charge'}
             </h3>
             <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-              Calcul de charge physiologique inspiré d'Intervals.icu selon l'intensité cardiaque et le volume
+              {isNative
+                ? 'Télémétrie physiologique réelle calculée par l\'algorithme Firstbeat de ta montre Garmin'
+                : 'Calcul de charge physiologique inspiré d\'Intervals.icu selon l\'intensité cardiaque et le volume'}
             </p>
           </div>
         </div>
@@ -76,52 +89,85 @@ export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats,
               fontSize: '0.74rem',
               padding: '3px 10px',
               borderRadius: 9999,
-              background: `${tssColor}15`,
-              color: tssColor,
-              border: `1px solid ${tssColor}40`,
+              background: `${loadColor}15`,
+              color: loadColor,
+              border: `1px solid ${loadColor}40`,
               fontWeight: 700
             }}
           >
-            TSS {tss} • {tssLevel}
+            {isNative ? `Charge EPOC ${loadScore}` : `TSS ${loadScore}`} • {loadLevel}
           </span>
         </div>
       </div>
 
-      {/* 3 Cartes de Métriques Clés */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px' }}>
+      {/* 4 Cartes de Métriques Clés */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+        {/* Volume */}
         <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Clock size={12} /> Volume Hebdo (Heures)
+            <Clock size={12} /> Volume Hebdo
           </div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', marginTop: 2 }}>
-            {durationHours}h <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>/ {plannedHours}h prévu</span>
+            {durationHours}h <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>/ {plannedHours}h</span>
           </div>
           <div style={{ marginTop: 4, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
             <div style={{ width: `${Math.min(100, weeklyStats.durationCompliancePct)}%`, height: '100%', background: weeklyStats.durationCompliancePct >= 80 ? '#10b981' : '#f59e0b' }} />
           </div>
         </div>
 
+        {/* Dénivelé D+ et D- */}
         <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Compass size={12} /> Dénivelé Positif D+
+            <Compass size={12} /> Dénivelé D+ / D-
           </div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)', marginTop: 2 }}>
-            +{weeklyStats.actualElevationM}m <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>/ +{weeklyStats.plannedElevationM}m</span>
+            +{weeklyStats.actualElevationM}m <span style={{ fontSize: '0.75rem', color: 'var(--accent-blue)', fontWeight: 600 }}>-{weeklyStats.actualElevationLossM || 0}m</span>
           </div>
           <div style={{ marginTop: 4, height: 4, borderRadius: 2, background: 'rgba(255, 255, 255, 0.06)', overflow: 'hidden' }}>
             <div style={{ width: `${Math.min(100, weeklyStats.elevationCompliancePct)}%`, height: '100%', background: 'var(--primary)' }} />
           </div>
         </div>
 
+        {/* Cardio */}
         <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Flame size={12} /> Fréquence Cardiaque Moyenne
+            <Flame size={12} /> FC Moyenne
           </div>
           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#38bdf8', marginTop: 2 }}>
-            {weeklyStats.avgHeartRate} bpm <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 500 }}>(Z2 cible : 138-155)</span>
+            {weeklyStats.avgHeartRate > 0 ? `${weeklyStats.avgHeartRate} bpm` : '--'}
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 4 }}>
-            Concordance globale : <strong>{weeklyStats.overallComplianceScore}%</strong>
+            Concordance : <strong>{weeklyStats.overallComplianceScore}%</strong>
+          </div>
+        </div>
+
+        {/* Impact Firstbeat */}
+        <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '10px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Zap size={12} /> Bénéfices Séances
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+            {teList.length > 0 ? (
+              teList.slice(0, 3).map(([lbl, count]) => (
+                <span
+                  key={lbl}
+                  style={{
+                    fontSize: '0.65rem',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    color: '#e2e8f0',
+                    border: '1px solid var(--border-color)'
+                  }}
+                >
+                  {lbl} ({count})
+                </span>
+              ))
+            ) : (
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                {isNative ? 'Analyses Firstbeat synchronisées' : 'En attente de télémétrie'}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -129,7 +175,7 @@ export const TrainingLoadCard: React.FC<TrainingLoadCardProps> = ({ weeklyStats,
       {/* Bandeau de conseil physiologique */}
       <div style={{ background: 'rgba(255, 255, 255, 0.02)', padding: '8px 12px', borderRadius: 4, fontSize: '0.76rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
         <Zap size={13} color="var(--primary)" />
-        <span><strong>Conseil Télémétrie :</strong> {tssAdvice}</span>
+        <span><strong>Conseil Coach Télémétrie :</strong> {loadAdvice}</span>
       </div>
     </div>
   );

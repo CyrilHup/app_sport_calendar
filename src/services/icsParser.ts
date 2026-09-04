@@ -178,6 +178,10 @@ export function buildCompleteCalendar(
       const meta = analyzeETSEvent(c);
       return !meta.isDistanciel;
     });
+    const onlineCourses = dayCourses.filter(c => {
+      const meta = analyzeETSEvent(c);
+      return meta.isDistanciel;
+    });
 
     // Saturday intensive check
     const satDate = new Date(currentDate);
@@ -204,12 +208,16 @@ export function buildCompleteCalendar(
     }
 
     // Workout session
-    const workoutTemplate = getDailyWorkoutPlan(
+    let workoutTemplate = getDailyWorkoutPlan(
       dayOfWeek,
       Boolean(chainedCourse),
       saturdayHasIntensive,
       periodContext,
-      currentDate
+      currentDate,
+      {
+        hasPresentialClass: presentialCourses.length > 0,
+        hasOnlineClass: onlineCourses.length > 0
+      }
     );
 
     const dayEvents: CalendarEvent[] = [];
@@ -382,6 +390,21 @@ export function buildCompleteCalendar(
             transitRetourMinutes = GLOBAL_APP_CONFIG.TRANSIT_TIMES.ETS_TO_HOME;
             conflictReason = `Chained directly post-class at ÉTS Gym after ${conflictingCourse.summary} to optimize schedule.`;
           } else {
+            // If the conflicting course was from home (or no presential courses at ÉTS that day)
+            // and the workout was originally set to ÉTS, relocate the workout to Home!
+            const onlyHomeCourses = presentialCourses.length === 0;
+            if ((cMeta.isDistanciel || onlyHomeCourses) && workoutTemplate.address === GLOBAL_APP_CONFIG.ETS_ADDRESS) {
+              const isRunning = workoutTemplate.sportType === 'RUN_EASY' || workoutTemplate.sportType === 'TRAIL_LONG' || workoutTemplate.sportType === 'TRAIL_INTENSE';
+              workoutTemplate = {
+                ...workoutTemplate,
+                locName: isRunning ? "Neighborhood / Maisonneuve Park" : "Home",
+                address: GLOBAL_APP_CONFIG.HOME_ADDRESS,
+                title: workoutTemplate.title.replace(" (Direct ÉTS)", "").replace(" (ÉTS Gym)", "")
+              };
+              transitAllerMinutes = 0;
+              transitRetourMinutes = 0;
+            }
+
             // Reschedule after all day classes finish (late afternoon / early evening)
             const latestCourseEnd = Math.max(...dayCourses.map(c => {
               const m = analyzeETSEvent(c);
@@ -389,14 +412,17 @@ export function buildCompleteCalendar(
               return c.endDate.getTime() + t * 60000;
             }));
 
-            const earliestSafeStart = new Date(latestCourseEnd + 20 * 60000);
+            // Make sure the start time gives enough time for transit if transitAllerMinutes > 0
+            const earliestSafeStart = new Date(latestCourseEnd + 20 * 60000 + transitAllerMinutes * 60000);
             const standardAfternoon = new Date(currentDate);
             standardAfternoon.setHours(17, 0, 0, 0);
 
             workoutStart = earliestSafeStart.getTime() > standardAfternoon.getTime() ? earliestSafeStart : standardAfternoon;
             workoutEnd = new Date(workoutStart.getTime() + workoutTemplate.duration * 60000);
-            const startStr = workoutStart.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-            conflictReason = `Rescheduled to afternoon (${startStr}) to prevent overlap with ${conflictingCourse.summary}.`;
+            const startStr = workoutStart.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
+            conflictReason = cMeta.isDistanciel
+              ? `Séance à domicile après le cours en ligne ${conflictingCourse.summary} (${startStr})`
+              : `Décalé en après-midi (${startStr}) pour éviter le conflit avec ${conflictingCourse.summary}.`;
           }
         } else {
           workoutStart = tentativeWorkoutStart;

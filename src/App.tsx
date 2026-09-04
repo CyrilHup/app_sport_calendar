@@ -11,11 +11,10 @@ import { QMTPlanOverview } from './components/QMTPlanOverview';
 import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
 import { getPeriodizationContext } from './services/periodizationEngine';
-import { loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState } from './services/garminService';
+import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { Activity, Calendar, TrendingUp } from 'lucide-react';
 
-const DATE_MODE_STORAGE_KEY = 'app_date_mode';
 const MANUAL_PAIRS_STORAGE_KEY = 'garmin_manual_pairs';
 
 function loadManualPairs(): Record<string, string> {
@@ -39,10 +38,6 @@ function getMondayOfWeek(date: Date): Date {
 }
 
 export const App: React.FC = () => {
-  const [dateMode, setDateMode] = useState<'live' | 'demo'>(() => {
-    return (localStorage.getItem(DATE_MODE_STORAGE_KEY) as 'live' | 'demo') || 'demo';
-  });
-
   const [schedules, setSchedules] = useState<DailySchedule[]>([]);
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
@@ -55,15 +50,9 @@ export const App: React.FC = () => {
   const [isGarminModalOpen, setIsGarminModalOpen] = useState<boolean>(false);
   const [isGoogleCalendarModalOpen, setIsGoogleCalendarModalOpen] = useState<boolean>(false);
 
-  // Dynamic reference date based on dateMode
-  const referenceDate = dateMode === 'live' ? new Date() : new Date('2026-09-02T12:00:00');
+  // Live real date (always current)
+  const referenceDate = new Date();
   const currentPeriodContext = getPeriodizationContext(referenceDate);
-
-  const toggleDateMode = () => {
-    const nextMode = dateMode === 'demo' ? 'live' : 'demo';
-    setDateMode(nextMode);
-    localStorage.setItem(DATE_MODE_STORAGE_KEY, nextMode);
-  };
 
   // Function to recharge both ÉTS iCal and Garmin Connect
   const autoRechargeAll = async () => {
@@ -81,36 +70,6 @@ export const App: React.FC = () => {
       console.warn("Could not fetch from proxy, using fallback", err);
     }
 
-    // Fallback if needed
-    if (rawCourses.length === 0) {
-      rawCourses = [
-        {
-          uid: "577948-1",
-          summary: "MGL869-01 (C)",
-          description: "MGL869 - Special Topics in Software Engineering - Class",
-          location: "A-1540",
-          startDate: new Date("2026-09-03T18:00:00"),
-          endDate: new Date("2026-09-03T21:30:00")
-        },
-        {
-          uid: "563197-1",
-          summary: "MTR801-55 (C)",
-          description: "MTR801 - Research Project Planning in Engineering - Class",
-          location: "Online (Home)",
-          startDate: new Date("2026-09-04T08:30:00"),
-          endDate: new Date("2026-09-04T17:00:00")
-        },
-        {
-          uid: "563197-2",
-          summary: "MTR801-55 (C)",
-          description: "MTR801 - Research Project Planning in Engineering - Class",
-          location: "Online (Home)",
-          startDate: new Date("2026-09-05T09:00:00"),
-          endDate: new Date("2026-09-05T17:30:00")
-        }
-      ];
-    }
-
     // Start calendar exactly on Monday of current week
     const calendarStartMonday = getMondayOfWeek(referenceDate);
     const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
@@ -122,21 +81,27 @@ export const App: React.FC = () => {
     setSchedules(builtSchedules);
     setAllEvents(builtEvents);
 
-    // 2. Load stored real Garmin activities or attempt auto-sync via .env credentials
+    // 2. Load stored real Garmin activities and attempt sync for latest activities
     let loadedActivities = loadStoredGarminActivities();
-    if (loadedActivities.length === 0) {
-      try {
+    const creds = loadGarminCredentials();
+    try {
+      if (creds?.email && creds?.password) {
+        const result = await syncWithGarminAPI(creds);
+        if (result.success && result.activities.length > 0) {
+          loadedActivities = result.activities;
+        }
+      } else {
         const garminRes = await fetch('/api/garmin-sync');
         if (garminRes.ok) {
           const garminData = await garminRes.json();
-          if (garminData.activities && garminData.activities.length > 0) {
+          if (garminData.activities && Array.isArray(garminData.activities) && garminData.activities.length > 0) {
             loadedActivities = garminData.activities;
             saveGarminActivities(loadedActivities);
           }
         }
-      } catch {
-        // Not configured in .env; remains empty until user connects
       }
+    } catch {
+      // Offline, dev server not running, or credentials prompt needed
     }
 
     setGarminActivities(loadedActivities);
@@ -161,8 +126,11 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
+    try {
+      localStorage.removeItem('app_date_mode');
+    } catch {}
     autoRechargeAll();
-  }, [dateMode]);
+  }, []);
 
   const handleUpdateGarminState = (newState: GarminSyncState) => {
     setGarminState(newState);
@@ -228,8 +196,6 @@ export const App: React.FC = () => {
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
         onSelectPeriodizationTab={() => setActiveTab('periodization')}
-        dateMode={dateMode}
-        onToggleDateMode={toggleDateMode}
       />
 
       {/* Navigation Tabs (Desktop) */}

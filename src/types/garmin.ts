@@ -7,6 +7,7 @@ export type GarminActivityType =
   | 'CYCLING'
   | 'WALKING'
   | 'FITNESS_EQUIPMENT'
+  | 'CLIMBING'
   | 'OTHER';
 
 export interface GarminActivity {
@@ -17,6 +18,7 @@ export interface GarminActivity {
   durationMinutes: number;
   distanceKm?: number;
   elevationGainM?: number;
+  elevationLossM?: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
   avgCadence?: number;
@@ -24,6 +26,12 @@ export interface GarminActivity {
   calories?: number;
   aerobicTrainingEffect?: number;
   anaerobicTrainingEffect?: number;
+  trainingLoad?: number; // Firstbeat EPOC load score
+  trainingEffectLabel?: string; // e.g. "BASE", "TEMPO", "VO2_MAX", "RECOVERY"
+  elapsedDurationMinutes?: number; // Total gross elapsed time including pauses
+  movingDurationMinutes?: number; // Net moving time
+  vo2MaxValue?: number;
+  garminTypeKey?: string; // Native Garmin Connect typeKey (e.g. "trail_running", "bouldering")
   source: 'GARMIN_CONNECT' | 'GPX_IMPORT' | 'SAMPLE_DATA';
 }
 

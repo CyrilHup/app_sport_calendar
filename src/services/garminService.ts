@@ -2,6 +2,74 @@ import { GarminActivity, GarminActivityType, GarminSyncState } from '../types/ga
 
 const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
 const GARMIN_STATE_KEY = 'garmin_sync_state';
+const GARMIN_CREDS_KEY = 'garmin_credentials';
+
+export interface GarminCredentials {
+  email?: string;
+  password?: string;
+}
+
+/**
+ * Saves Garmin credentials in local storage for seamless background sync.
+ */
+export function saveGarminCredentials(creds: GarminCredentials): void {
+  try {
+    localStorage.setItem(GARMIN_CREDS_KEY, JSON.stringify(creds));
+  } catch (e) {
+    console.error("Failed to save garmin credentials", e);
+  }
+}
+
+/**
+ * Loads saved Garmin credentials from local storage.
+ */
+export function loadGarminCredentials(): GarminCredentials | null {
+  try {
+    const raw = localStorage.getItem(GARMIN_CREDS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+/**
+ * Clears saved Garmin credentials.
+ */
+export function clearGarminCredentials(): void {
+  try {
+    localStorage.removeItem(GARMIN_CREDS_KEY);
+  } catch {}
+}
+
+/**
+ * Normalizes an activity's type based on its metadata and name.
+ * E.g., climbing/bouldering/grimp activities logged as 'OTHER' or generic are mapped to 'CLIMBING'.
+ */
+export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
+  const name = (a.activityName || '').toLowerCase();
+  const key = (a.garminTypeKey || '').toLowerCase();
+  let type = a.activityType;
+
+  if (type === 'OTHER' || !type) {
+    if (key.includes('climb') || key.includes('boulder') || name.includes('grimp') || name.includes('climb') || name.includes('boulder') || name.includes('escalade') || name.includes('bloc')) {
+      type = 'CLIMBING';
+    } else if (key.includes('trail')) {
+      type = 'TRAIL_RUNNING';
+    } else if (key.includes('run') || name.includes('course') || name.includes('footing') || name.includes('jog')) {
+      type = 'RUNNING';
+    } else if (key.includes('strength') || key.includes('weight') || key.includes('gym') || name.includes('muscu') || name.includes('calisth') || name.includes('force')) {
+      type = 'STRENGTH_TRAINING';
+    } else if (key.includes('cycl') || key.includes('bike') || name.includes('vélo') || name.includes('bike')) {
+      type = 'CYCLING';
+    } else if (key.includes('walk') || key.includes('hike') || name.includes('marche') || name.includes('walk') || name.includes('randonnée')) {
+      type = 'WALKING';
+    }
+  }
+
+  return {
+    ...a,
+    activityType: type
+  };
+}
 
 /**
  * Loads real synchronized Garmin activities from persistent local storage.
@@ -9,19 +77,11 @@ const GARMIN_STATE_KEY = 'garmin_sync_state';
  */
 export function loadStoredGarminActivities(): GarminActivity[] {
   try {
-    // Purge any legacy mock storage keys
-    localStorage.removeItem('garmin_activities_v1');
-    localStorage.removeItem('garmin_sync_state_v1');
-    localStorage.removeItem('garmin_activities_v2');
-    localStorage.removeItem('garmin_sync_state_v2');
-    localStorage.removeItem('garmin_activities_v3');
-    localStorage.removeItem('garmin_sync_state_v3');
-
     const raw = localStorage.getItem(GARMIN_STORAGE_KEY);
     if (raw) {
       const parsed: GarminActivity[] = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed;
+        return parsed.map(normalizeGarminActivity);
       }
     }
   } catch (e) {
@@ -35,7 +95,8 @@ export function loadStoredGarminActivities(): GarminActivity[] {
  */
 export function saveGarminActivities(activities: GarminActivity[]): void {
   try {
-    localStorage.setItem(GARMIN_STORAGE_KEY, JSON.stringify(activities));
+    const normalized = activities.map(normalizeGarminActivity);
+    localStorage.setItem(GARMIN_STORAGE_KEY, JSON.stringify(normalized));
   } catch (e) {
     console.error("Failed to save garmin activities", e);
   }
@@ -81,10 +142,14 @@ export async function syncWithGarminAPI(credentials?: {
   password?: string;
 }): Promise<{ success: boolean; activities: GarminActivity[]; count: number; error?: string }> {
   try {
+    const credsToUse = (credentials?.email && credentials?.password)
+      ? credentials
+      : (loadGarminCredentials() || credentials);
+
     const response = await fetch('/api/garmin-sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials || {})
+      body: JSON.stringify(credsToUse || {})
     });
 
     const data = await response.json();
@@ -98,13 +163,19 @@ export async function syncWithGarminAPI(credentials?: {
       };
     }
 
-    const activities: GarminActivity[] = data.activities || [];
+    const rawActivities: GarminActivity[] = data.activities || [];
+    const activities: GarminActivity[] = rawActivities.map(normalizeGarminActivity);
     saveGarminActivities(activities);
+
+    // Persist credentials locally so future reloads and "Synchro Directe" work automatically
+    if (credsToUse?.email && credsToUse?.password) {
+      saveGarminCredentials({ email: credsToUse.email, password: credsToUse.password });
+    }
 
     const newState: GarminSyncState = {
       connected: true,
       lastSyncTime: new Date().toISOString(),
-      accountEmail: credentials?.email || "Synced Account",
+      accountEmail: credsToUse?.email || "Compte Garmin",
       activitiesCount: activities.length,
       isSyncing: false,
       mode: "LIVE"

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { GarminActivity, GarminSyncState } from '../types/garmin';
-import { parseGPXString, syncWithGarminAPI } from '../services/garminService';
+import { clearGarminCredentials, loadGarminCredentials, parseGPXString, saveGarminCredentials, syncWithGarminAPI } from '../services/garminService';
 import { Activity, CheckCircle2, FileUp, Info, Key, Lock, Mail, RefreshCw, X, Zap } from 'lucide-react';
 
 interface GarminModalProps {
@@ -20,9 +20,10 @@ export const GarminModal: React.FC<GarminModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  const storedCreds = loadGarminCredentials();
   const [activeSubTab, setActiveSubTab] = useState<'api' | 'upload' | 'env'>('api');
-  const [email, setEmail] = useState(garminState.accountEmail || '');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState(storedCreds?.email || garminState.accountEmail || '');
+  const [password, setPassword] = useState(storedCreds?.password || '');
   const [syncMessage, setSyncMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -31,22 +32,27 @@ export const GarminModal: React.FC<GarminModalProps> = ({
     setIsProcessing(true);
     setSyncMessage({ text: 'Connexion à l\'API Garmin Connect et extraction des activités...', isError: false });
 
-    const creds = email && password ? { email, password } : undefined;
+    const creds = email && password ? { email, password } : (email ? { email } : undefined);
     const result = await syncWithGarminAPI(creds);
 
     setIsProcessing(false);
     if (result.success) {
+      if (email && password) {
+        saveGarminCredentials({ email, password });
+      } else if (email && !storedCreds?.email) {
+        saveGarminCredentials({ email });
+      }
       onActivitiesSynced(result.activities);
       onUpdateState({
         connected: true,
         lastSyncTime: new Date().toISOString(),
-        accountEmail: email || 'Compte Garmin',
+        accountEmail: email || storedCreds?.email || 'Compte Garmin',
         activitiesCount: result.count,
         isSyncing: false,
         mode: 'LIVE'
       });
       setSyncMessage({
-        text: `✅ ${result.count} activité(s) synchronisée(s) avec succès depuis Garmin Connect !`,
+        text: `✅ ${result.count} activité(s) synchronisée(s) avec succès (Télémétrie Firstbeat & EPOC complète) !`,
         isError: false
       });
     } else {
@@ -55,6 +61,23 @@ export const GarminModal: React.FC<GarminModalProps> = ({
         isError: true
       });
     }
+  };
+
+  const handleDisconnect = () => {
+    clearGarminCredentials();
+    setEmail('');
+    setPassword('');
+    onUpdateState({
+      ...garminState,
+      connected: false,
+      accountEmail: undefined,
+      lastSyncTime: undefined,
+      activitiesCount: 0
+    });
+    setSyncMessage({
+      text: 'Identifiants supprimés et synchronisation automatique désactivée.',
+      isError: false
+    });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -194,6 +217,48 @@ export const GarminModal: React.FC<GarminModalProps> = ({
           {/* TAB 1: API GARMIN */}
           {activeSubTab === 'api' && (
             <form onSubmit={handleAPISync} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {storedCreds?.email && (
+                <div
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.1)',
+                    border: '1px solid rgba(16, 185, 129, 0.25)',
+                    borderRadius: 'var(--radius-xs)',
+                    padding: '10px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#34d399', fontWeight: 700, fontSize: '0.8rem' }}>
+                      <CheckCircle2 size={15} />
+                      <span>Connexion permanente active ({storedCreds.email})</span>
+                    </div>
+                    <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                      Tes séances se synchronisent désormais automatiquement en arrière-plan (au chargement et via « Synchro Directe »).
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDisconnect}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.15)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      color: '#f87171',
+                      borderRadius: 4,
+                      padding: '5px 9px',
+                      fontSize: '0.72rem',
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    Déconnecter
+                  </button>
+                </div>
+              )}
+
               <div
                 style={{
                   background: 'rgba(255, 255, 255, 0.02)',
@@ -205,7 +270,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                   color: 'var(--text-secondary)'
                 }}
               >
-                Connexion directe à ton compte <strong>Garmin Connect</strong> pour extraire tes activités réelles (footings, sorties trail, dénivelé D+ et fréquence cardiaque).
+                Connexion directe à ton compte <strong>Garmin Connect</strong>. Tes identifiants restent stockés localement sur ton navigateur pour maintenir la synchronisation continue de tes footings et trails.
               </div>
 
               <div>
@@ -263,7 +328,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
                 style={{ justifyContent: 'center', padding: '11px', marginTop: 4 }}
               >
                 <RefreshCw size={14} className={isProcessing ? 'spin-animation' : ''} />
-                <span>{isProcessing ? 'Connexion et extraction en cours...' : '⚡ Lancer la Synchronisation Garmin'}</span>
+                <span>{isProcessing ? 'Synchronisation en cours...' : (storedCreds?.email ? '🔄 Forcer une Synchronisation Garmin' : '⚡ Mémoriser et Lancer la Synchronisation')}</span>
               </button>
             </form>
           )}

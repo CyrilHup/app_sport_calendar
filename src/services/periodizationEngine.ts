@@ -187,7 +187,11 @@ export function getDailyWorkoutPlan(
   hasChainedClass: boolean,
   saturdayHasIntensiveClass: boolean,
   ctx: PeriodizationContext,
-  date: Date
+  date: Date,
+  options?: {
+    hasPresentialClass?: boolean;
+    hasOnlineClass?: boolean;
+  }
 ): WorkoutTemplate {
   const isDeload = ctx.isDeload;
   const setsNote = isDeload ? "(Deload: 2 maintenance sets, 0 failure)" : "(Build: 4 working sets)";
@@ -321,11 +325,12 @@ export function getDailyWorkoutPlan(
           targetHeartRate: "Zone 1-2 (Mobility & Technique)"
         };
       }
+      const isHomeFriday = Boolean(options?.hasOnlineClass && !options?.hasPresentialClass);
       return {
-        title: "Calisthenics 3 (Handstand & Skills)",
+        title: isHomeFriday ? "Calisthenics 3 (Handstand & Skills - Home)" : "Calisthenics 3 (Handstand & Skills)",
         duration: isDeload ? 40 : 60,
-        locName: "ÉTS Gym",
-        address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
+        locName: isHomeFriday ? "Home" : "ÉTS Gym",
+        address: isHomeFriday ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.ETS_ADDRESS,
         chainedAfterCourse: false,
         sportType: "CALISTHENICS",
         emoji: COLOR_MAP.CALISTHENICS.emoji,
@@ -337,17 +342,32 @@ export function getDailyWorkoutPlan(
 
     case 5: // Saturday (Long Run D+)
       if (saturdayHasIntensiveClass) {
+        if (hasChainedClass) {
+          return {
+            title: "Running: Active Recovery Treadmill (Direct ÉTS)",
+            duration: 35,
+            locName: "ÉTS Gym (Treadmill)",
+            address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
+            chainedAfterCourse: true,
+            sportType: "RUN_EASY",
+            emoji: COLOR_MAP.RUN_EASY.emoji,
+            colorHex: COLOR_MAP.RUN_EASY.colorHex,
+            colorId: COLOR_MAP.RUN_EASY.colorId,
+            description: "• 30-35 min light flush on treadmill at ÉTS gym right after class (Zone 1 easy, HR < 142 bpm).",
+            targetHeartRate: "< 142 bpm (Zone 1 recovery)"
+          };
+        }
         return {
-          title: "Running: Active Recovery Treadmill (Direct ÉTS)",
+          title: "Running: Active Recovery (Neighborhood / Maisonneuve)",
           duration: 35,
-          locName: "ÉTS Gym (Treadmill)",
-          address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
-          chainedAfterCourse: true,
+          locName: "Neighborhood / Maisonneuve Park",
+          address: GLOBAL_APP_CONFIG.HOME_ADDRESS,
+          chainedAfterCourse: false,
           sportType: "RUN_EASY",
           emoji: COLOR_MAP.RUN_EASY.emoji,
           colorHex: COLOR_MAP.RUN_EASY.colorHex,
           colorId: COLOR_MAP.RUN_EASY.colorId,
-          description: "• 30-35 min light flush on treadmill at ÉTS gym right after class (Zone 1 easy, HR < 142 bpm).",
+          description: "• 30-35 min light recovery jog in conversational pace starting from home post-class (Zone 1 easy, HR < 142 bpm).",
           targetHeartRate: "< 142 bpm (Zone 1 recovery)"
         };
       }

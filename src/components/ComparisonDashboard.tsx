@@ -120,6 +120,24 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             Course
           </span>
         );
+      case 'CLIMBING':
+        return (
+          <span className="badge-tag" style={{ background: 'rgba(234, 179, 8, 0.15)', color: '#facc15', border: '1px solid rgba(234, 179, 8, 0.3)', fontSize: '0.65rem' }}>
+            🧗 Escalade
+          </span>
+        );
+      case 'CYCLING':
+        return (
+          <span className="badge-tag" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '0.65rem' }}>
+            🚴 Vélo
+          </span>
+        );
+      case 'WALKING':
+        return (
+          <span className="badge-tag" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', fontSize: '0.65rem' }}>
+            🚶 Marche
+          </span>
+        );
       case 'STRENGTH_TRAINING':
       case 'FITNESS_EQUIPMENT':
         return (
@@ -329,9 +347,15 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                               </span>
                               {getActivityTypeBadge(comp.actualActivity.activityType)}
                             </div>
-                            {isOther && comp.inferredType && (
+                            {comp.inferredType && (
                               <div style={{ fontSize: '0.68rem', color: '#c084fc' }}>
                                 Profil inféré : {comp.inferredType}
+                              </div>
+                            )}
+                            {comp.actualActivity.trainingEffectLabel && (
+                              <div style={{ fontSize: '0.66rem', color: 'var(--primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                                <Zap size={10} /> {comp.actualActivity.trainingEffectLabel}
+                                {comp.actualActivity.trainingLoad ? ` (${comp.actualActivity.trainingLoad} EPOC)` : ''}
                               </div>
                             )}
                             {isManuallyPaired && (
@@ -351,7 +375,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         )}
                       </td>
 
-                      {/* Durée */}
+                      {/* Durée & Allure */}
                       <td>
                         {comp.actualActivity && comp.plannedEvent ? (
                           <div>
@@ -372,9 +396,21 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                             >
                               ({comp.durationDeltaMinutes > 0 ? '+' : ''}{comp.durationDeltaMinutes}m)
                             </span>
+                            {comp.actualActivity.avgPaceMinKm && (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--accent-blue)', fontWeight: 600, marginTop: 2 }}>
+                                ⚡ {comp.actualActivity.avgPaceMinKm}
+                              </div>
+                            )}
                           </div>
                         ) : comp.actualActivity ? (
-                          <span>{comp.actualActivity.durationMinutes} min</span>
+                          <div>
+                            <span>{comp.actualActivity.durationMinutes} min</span>
+                            {comp.actualActivity.avgPaceMinKm && (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--accent-blue)', fontWeight: 600, marginTop: 2 }}>
+                                ⚡ {comp.actualActivity.avgPaceMinKm}
+                              </div>
+                            )}
+                          </div>
                         ) : comp.plannedEvent ? (
                           <span style={{ color: '#ef4444', fontWeight: 700 }}>
                             0m / {comp.plannedEvent.durationMinutes}m
@@ -411,17 +447,22 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         )}
                       </td>
 
-                      {/* Dénivelé D+ */}
+                      {/* Dénivelé D+ & D- */}
                       <td>
                         {comp.actualActivity?.elevationGainM !== undefined ? (
                           <div>
                             <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
                               +{comp.actualActivity.elevationGainM} m
                             </span>
-                            {comp.plannedEvent?.metadata?.targetElevationM && (
-                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginLeft: 4 }}>
-                                / +{comp.plannedEvent.metadata.targetElevationM} m
+                            {comp.actualActivity.elevationLossM ? (
+                              <span style={{ fontSize: '0.7rem', color: 'var(--accent-blue)', marginLeft: 4, fontWeight: 600 }}>
+                                / -{comp.actualActivity.elevationLossM} m
                               </span>
+                            ) : null}
+                            {comp.plannedEvent?.metadata?.targetElevationM && (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                Cible : +{comp.plannedEvent.metadata.targetElevationM} m
+                              </div>
                             )}
                           </div>
                         ) : comp.plannedEvent?.metadata?.targetElevationM ? (
@@ -613,21 +654,32 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 </div>
 
                 {comp.actualActivity ? (
-                  <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.04)', paddingTop: 6 }}>
+                  <div style={{ display: 'flex', gap: '14px', fontSize: '0.78rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.04)', paddingTop: 6 }}>
                     <div>
                       <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
                       Durée : <strong>{comp.actualActivity.durationMinutes} min</strong> {comp.plannedEvent && `(écart ${comp.durationDeltaMinutes > 0 ? '+' : ''}${comp.durationDeltaMinutes}m)`}
                     </div>
+                    {comp.actualActivity.avgPaceMinKm && (
+                      <div style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>
+                        ⚡ Allure : <strong>{comp.actualActivity.avgPaceMinKm}</strong>
+                      </div>
+                    )}
                     {comp.actualActivity.avgHeartRate && (
                       <div>
                         <Heart size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        Fréquence Cardiaque : <strong>{comp.actualActivity.avgHeartRate} bpm</strong> (max {comp.actualActivity.maxHeartRate})
+                        FC : <strong>{comp.actualActivity.avgHeartRate} bpm</strong> (max {comp.actualActivity.maxHeartRate})
                       </div>
                     )}
                     {comp.actualActivity.elevationGainM !== undefined && (
                       <div>
                         <Compass size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        Dénivelé D+ : <strong>+{comp.actualActivity.elevationGainM} m</strong>
+                        D+ / D- : <strong>+{comp.actualActivity.elevationGainM}m</strong> {comp.actualActivity.elevationLossM ? <span style={{ color: 'var(--accent-blue)' }}>(-{comp.actualActivity.elevationLossM}m)</span> : null}
+                      </div>
+                    )}
+                    {comp.actualActivity.trainingEffectLabel && (
+                      <div style={{ color: 'var(--primary)', fontWeight: 600 }}>
+                        <Zap size={11} style={{ display: 'inline', marginRight: 3 }} />
+                        {comp.actualActivity.trainingEffectLabel} {comp.actualActivity.trainingLoad ? `(Load ${comp.actualActivity.trainingLoad})` : ''}
                       </div>
                     )}
                   </div>
