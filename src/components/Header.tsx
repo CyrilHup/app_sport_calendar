@@ -1,13 +1,14 @@
 import React from 'react';
 import { Activity, Award, Calendar, ChevronRight, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap } from 'lucide-react';
 import { PeriodizationContext } from '../types/calendar';
-import { GarminSyncState } from '../types/garmin';
+import { ActivityComparison, GarminSyncState } from '../types/garmin';
 import { WeeklyStatsSummary } from '../services/comparisonEngine';
 
 interface HeaderProps {
   periodContext: PeriodizationContext;
   garminState: GarminSyncState;
   weeklyStats: WeeklyStatsSummary;
+  comparisons?: ActivityComparison[];
   onOpenGarmin: () => void;
   onOpenGoogleCalendar: () => void;
   onRefreshAll: () => void;
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   periodContext,
   garminState,
   weeklyStats,
+  comparisons,
   onOpenGarmin,
   onOpenGoogleCalendar,
   onRefreshAll,
@@ -36,6 +38,38 @@ export const Header: React.FC<HeaderProps> = ({
     const m = mins % 60;
     return `${h}h${String(m).padStart(2, '0')}`;
   };
+
+  const isNative = weeklyStats.hasNativeGarminLoad;
+  const loadScore = isNative ? weeklyStats.totalGarminTrainingLoad : (weeklyStats.estimatedTss || 0);
+
+  let loadLevel = 'Base Aérobie Optimale';
+  let loadColor = '#10b981';
+  let loadAdvice = "Charge d'endurance soutenable. Développement aérobie et mitochondrial adapté.";
+
+  if (loadScore > 500) {
+    loadLevel = 'Choc de Surcharge Élevé';
+    loadColor = '#ef4444';
+    loadAdvice = 'Forte fatigue neuromusculaire. Sommeil réparateur et hydratation stricts obligatoires.';
+  } else if (loadScore > 320) {
+    loadLevel = 'Stimulus Optimal / Productif';
+    loadColor = 'var(--primary)';
+    loadAdvice = "Stimulus d'entraînement progressif et solide pour l'ultra QMT-80.";
+  } else if (loadScore < 140) {
+    loadLevel = 'Récupération / Décharge Active';
+    loadColor = '#38bdf8';
+    loadAdvice = 'Recharge glycogénique et régénération tendineuse/collagène.';
+  }
+
+  const teLabels: Record<string, number> = {};
+  if (comparisons) {
+    for (const c of comparisons) {
+      if (c.actualActivity?.trainingEffectLabel) {
+        const lbl = c.actualActivity.trainingEffectLabel.toUpperCase();
+        teLabels[lbl] = (teLabels[lbl] || 0) + 1;
+      }
+    }
+  }
+  const teList = Object.entries(teLabels);
 
   return (
     <header className="app-header">
@@ -84,8 +118,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span>{isRecharging ? 'Synchronisation...' : `Synchronisé (${formattedSyncTime})`}</span>
           </div>
 
-
-
           <button
             className="btn-primary"
             onClick={onRefreshAll}
@@ -112,9 +144,9 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Fused Command Bar (Combines Telemetry + Periodization Status) */}
+      {/* Fused Command Bar (Combines Telemetry + Periodization Status + Coach Advice) */}
       <div className="fused-command-bar">
-        {/* Top bar: Phase & Countdown */}
+        {/* Top bar: Phase, Physiological Load & Countdown */}
         <div className="command-bar-top">
           <div className="command-phase-info">
             <div className="phase-pill">
@@ -154,6 +186,26 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
 
+            {/* Physiological Load Pill */}
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '2px 9px',
+                borderRadius: 'var(--radius-full)',
+                background: `${loadColor}15`,
+                color: loadColor,
+                border: `1px solid ${loadColor}40`,
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5
+              }}
+              title={isNative ? 'Charge Firstbeat EPOC calculée par Garmin' : 'Score de stress estimé TSS'}
+            >
+              <Zap size={11} />
+              {isNative ? `Charge EPOC ${loadScore}` : `TSS ${loadScore}`} • {loadLevel}
+            </span>
+
             <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
               {periodContext.description}
             </span>
@@ -186,7 +238,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Bottom grid: 4 Sleek Telemetry Gauges */}
+        {/* Middle grid: 4 Sleek Telemetry Gauges */}
         <div className="telemetry-metrics-grid">
           {/* Weekly Volume */}
           <div className="telemetry-item">
@@ -209,10 +261,10 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Elevation D+ */}
+          {/* Elevation D+ / D- */}
           <div className="telemetry-item">
             <div className="telemetry-label">
-              <span><Compass size={11} style={{ display: 'inline', marginRight: 3 }} /> Dénivelé Positif D+</span>
+              <span><Compass size={11} style={{ display: 'inline', marginRight: 3 }} /> Dénivelé D+ / D-</span>
               <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{weeklyStats.elevationCompliancePct}%</span>
             </div>
             <div className="telemetry-value-row">
@@ -220,6 +272,11 @@ export const Header: React.FC<HeaderProps> = ({
                 +{weeklyStats.actualElevationM}m
               </span>
               <span className="telemetry-sub">/ +{weeklyStats.plannedElevationM}m D+</span>
+              {Boolean(weeklyStats.actualElevationLossM) && (
+                <span style={{ fontSize: '0.76rem', color: '#38bdf8', fontWeight: 700, marginLeft: 2 }}>
+                  -{weeklyStats.actualElevationLossM}m D-
+                </span>
+              )}
             </div>
             <div className="telemetry-bar-track">
               <div
@@ -232,18 +289,38 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Average Heart Rate / TSS */}
+          {/* Average Heart Rate / TSS & Training Effects */}
           <div className="telemetry-item">
             <div className="telemetry-label">
               <span><Zap size={11} style={{ display: 'inline', marginRight: 3 }} /> Intensité Cardiaque</span>
               <span style={{ color: 'var(--text-muted)' }}>FCmax 203</span>
             </div>
             <div className="telemetry-value-row">
-              <span className="telemetry-val">{weeklyStats.avgHeartRate}</span>
-              <span className="telemetry-sub">bpm moy. • ~{weeklyStats.estimatedTss} TSS</span>
+              <span className="telemetry-val">{weeklyStats.avgHeartRate > 0 ? weeklyStats.avgHeartRate : '--'}</span>
+              <span className="telemetry-sub">
+                bpm moy. • {isNative ? `${loadScore} EPOC` : `~${weeklyStats.estimatedTss} TSS`}
+              </span>
             </div>
-            <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 2 }}>
-              Zone 2 Base / Seuil en Côte
+            <div style={{ fontSize: '0.67rem', color: 'var(--text-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              {teList.length > 0 ? (
+                teList.slice(0, 3).map(([lbl, count]) => (
+                  <span
+                    key={lbl}
+                    style={{
+                      fontSize: '0.62rem',
+                      background: 'rgba(255, 255, 255, 0.06)',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                      color: '#e2e8f0',
+                      border: '1px solid var(--border-color)'
+                    }}
+                  >
+                    {lbl} ({count})
+                  </span>
+                ))
+              ) : (
+                <span>Zone 2 Base / Seuil en Côte</span>
+              )}
             </div>
           </div>
 
@@ -266,6 +343,33 @@ export const Header: React.FC<HeaderProps> = ({
               Analyseur d'activité Garmin actif
             </div>
           </div>
+        </div>
+
+        {/* Bottom Coach Advice Strip */}
+        <div
+          style={{
+            borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+            paddingTop: '8px',
+            fontSize: '0.74rem',
+            color: 'var(--text-secondary)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 6
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Zap size={13} color="var(--primary)" />
+            <span>
+              <strong style={{ color: 'var(--text-primary)' }}>Conseil Coach Télémétrie :</strong> {loadAdvice}
+            </span>
+          </div>
+          {isNative && (
+            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+              Algorithme Firstbeat Garmin Connect actif
+            </span>
+          )}
         </div>
       </div>
     </header>

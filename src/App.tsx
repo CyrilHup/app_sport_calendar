@@ -4,7 +4,6 @@ import { GarminActivity, GarminSyncState, ActivityComparison } from './types/gar
 import { Header } from './components/Header';
 import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
-import { TrainingLoadCard } from './components/TrainingLoadCard';
 import { GarminModal } from './components/GarminModal';
 import { GoogleCalendarModal } from './components/GoogleCalendarModal';
 import { QMTPlanOverview } from './components/QMTPlanOverview';
@@ -190,6 +189,7 @@ export const App: React.FC = () => {
         periodContext={currentPeriodContext}
         garminState={garminState}
         weeklyStats={weeklyStats}
+        comparisons={comparisons}
         onOpenGarmin={() => setIsGarminModalOpen(true)}
         onOpenGoogleCalendar={() => setIsGoogleCalendarModalOpen(true)}
         onRefreshAll={autoRechargeAll}
@@ -248,10 +248,6 @@ export const App: React.FC = () => {
 
       {activeTab === 'compare' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <TrainingLoadCard
-            weeklyStats={weeklyStats}
-            comparisons={comparisons}
-          />
           <ComparisonDashboard
             comparisons={comparisons}
             garminState={garminState}
