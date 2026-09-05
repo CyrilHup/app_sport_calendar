@@ -81,9 +81,10 @@ export function compareWorkoutsWithGarmin(
 
       if (sameDayActivities.length > 0) {
         // Classement de toutes les activités du jour selon leur score de compatibilité
+        const MIN_MATCH_CONFIDENCE = 50;
         const scoredCandidates = sameDayActivities
           .map(act => ({ act, score: scoreActivityMatch(plan, act) }))
-          .filter(candidate => candidate.score > 0)
+          .filter(candidate => candidate.score >= MIN_MATCH_CONFIDENCE)
           .sort((a, b) => b.score - a.score);
 
         if (scoredCandidates.length > 0) {
@@ -288,9 +289,15 @@ function evaluateSingleWorkout(
 
   if (isOther) {
     inferredType = inferOtherActivityCategory(act);
-    feedbackNotes.push(
-      `🏷️ Enregistrée sous le profil "Autre" sur la montre → Détectée comme : ${inferredType}.`
-    );
+    if (inferredType) {
+      feedbackNotes.push(
+        `🏷️ Enregistrée sous le profil "Autre" sur la montre → Détectée comme : ${inferredType}.`
+      );
+    } else {
+      feedbackNotes.push(
+        `🏷️ Enregistrée sous le profil générique "Autre" sur la montre.`
+      );
+    }
   }
 
   // 1. Évaluation de la durée
@@ -389,133 +396,180 @@ function evaluateSingleWorkout(
 
 /**
  * Calcule un score de pertinence pour associer une activité Garmin à une séance prescrite.
- * Un score <= 0 élimine catégoriquement l'activité comme candidate.
+ * Un score < 50 élimine catégoriquement l'activité comme candidate automatique.
  */
 function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
   const planType = plan.sportType;
   const actType = act.activityType;
-  const actName = (act.activityName || '').toLowerCase();
   const key = (act.garminTypeKey || '').toLowerCase();
+  const actName = (act.activityName || '').toLowerCase();
 
   const isPlanRunning = planType === 'RUN_EASY' || planType === 'TRAIL_LONG' || planType === 'TRAIL_INTENSE';
   const isPlanStrength = planType === 'CALISTHENICS' || planType === 'GYM_FORCE';
+  const isPlanMobility = planType === 'MOBILITY';
 
-  // 1. Incompatibilités strictes
+  // 1. Incompatibilités strictes de discipline
   const isClimbing =
     actType === 'CLIMBING' ||
     key.includes('climb') ||
     key.includes('boulder') ||
-    actName.includes('grimp') ||
-    actName.includes('climb') ||
-    actName.includes('boulder') ||
     actName.includes('escalade') ||
-    actName.includes('bloc');
+    actName.includes('boulder') ||
+    actName.includes('climb');
 
   if (isClimbing) {
-    // L'escalade / bloc ne doit jamais s'associer automatiquement à une séance de course ou calisthénie
+    // L'escalade / bloc ne doit jamais s'associer automatiquement à une séance de course, musculation ou mobilité
     return -1000;
   }
 
   const isCycling = actType === 'CYCLING' || key.includes('cycl') || key.includes('bike') || actName.includes('vélo') || actName.includes('bike');
-  if (isCycling && isPlanRunning) {
+  if (isCycling && (isPlanRunning || isPlanStrength)) {
+    // Une sortie vélo ne s'associe pas automatiquement à un plan de course ou de musculation
     return -1000;
   }
 
-  const isWalking = actType === 'WALKING' || key.includes('walk') || key.includes('hike') || actName.includes('marche') || actName.includes('walk');
-  if (isWalking && (planType === 'TRAIL_INTENSE' || planType === 'RUN_EASY')) {
-    return -500;
+  const isWalking = actType === 'WALKING' || key.includes('walk') || key.includes('hike') || actName.includes('marche') || actName.includes('walk') || actName.includes('randonnée');
+  if (isWalking && isPlanRunning) {
+    // Une marche ou rando ne doit pas s'associer à une séance de course / trail
+    return -1000;
   }
 
-  let score = 0;
-
-  // 2. Type Garmin exact ou compatible
+  // 2. Évaluation pour un plan de Course à pied / Trail
   if (isPlanRunning) {
+    const isActRunning =
+      actType === 'RUNNING' ||
+      actType === 'TRAIL_RUNNING' ||
+      key.includes('run') ||
+      key.includes('trail');
+
+    // Si l'activité n'est pas enregistrée comme course, elle ne peut s'associer QUE si elle possède une télémétrie de course irréfutable
+    if (!isActRunning) {
+      const hasClearRunningTelemetry =
+        actType === 'OTHER' &&
+        (act.distanceKm || 0) >= 1.5 &&
+        ((act.avgCadence || 0) >= 130 || act.avgPaceMinKm !== undefined);
+
+      if (!hasClearRunningTelemetry) {
+        // Activité non course (ex: Rave, profil Autre, soirée, etc.) -> disqualification stricte
+        return -1000;
+      }
+    }
+
+    let score = 0;
     if (planType === 'TRAIL_INTENSE' || planType === 'TRAIL_LONG') {
-      if (actType === 'TRAIL_RUNNING' || key.includes('trail')) score += 120;
-      else if (actType === 'RUNNING') score += 80;
-      else if (actType === 'OTHER' && (actName.includes('trail') || actName.includes('côte') || actName.includes('mont-royal'))) score += 90;
-      else if (actType === 'OTHER') score += 10;
+      if (actType === 'TRAIL_RUNNING' || key.includes('trail')) score += 100;
+      else if (actType === 'RUNNING' || key.includes('run')) score += 75;
+      else score += 50;
     } else if (planType === 'RUN_EASY') {
-      if (actType === 'RUNNING' || key.includes('run')) score += 120;
-      else if (actType === 'TRAIL_RUNNING') score += 85;
-      else if (actType === 'OTHER' && (actName.includes('run') || actName.includes('course') || actName.includes('footing') || actName.includes('jog'))) score += 90;
-      else if (actType === 'OTHER') score += 10;
+      if (actType === 'RUNNING' || key.includes('run')) score += 100;
+      else if (actType === 'TRAIL_RUNNING' || key.includes('trail')) score += 80;
+      else score += 50;
     }
-  } else if (isPlanStrength) {
-    if (actType === 'STRENGTH_TRAINING' || actType === 'FITNESS_EQUIPMENT' || key.includes('strength')) score += 120;
-    else if (actType === 'OTHER' && (actName.includes('gym') || actName.includes('muscu') || actName.includes('calisth') || actName.includes('dips') || actName.includes('pull'))) score += 90;
-    else if (actType === 'OTHER') score += 20;
-  } else if (planType === 'MOBILITY') {
-    if (actName.includes('stretch') || actName.includes('mobil') || actName.includes('yoga') || key.includes('yoga')) score += 100;
+
+    // Proximité de durée
+    const planDuration = Math.max(1, plan.durationMinutes);
+    const durationDiff = Math.abs(act.durationMinutes - planDuration);
+    const durationRatio = durationDiff / planDuration;
+
+    if (durationRatio <= 0.25) {
+      score += 25;
+    } else if (durationRatio <= 0.5) {
+      score += 10;
+    } else if (durationRatio > 0.8) {
+      score -= 25;
+    }
+
+    if (act.distanceKm && act.distanceKm >= 1.0) score += 15;
+    if (act.avgCadence && act.avgCadence >= 130) score += 10;
+
+    return score;
   }
 
-  // 3. Mots-clés dans le nom et métriques cohérentes
-  if (isPlanRunning) {
-    if (actName.includes('run') || actName.includes('course') || actName.includes('footing') || actName.includes('jog') || actName.includes('trail')) {
-      score += 35;
-    }
-    if (act.distanceKm && act.distanceKm > 0.5) score += 25;
-    if (act.avgCadence && act.avgCadence > 130) score += 25;
-
-    // Pénalité pour 0 distance et 0 cadence sur un plan de course
-    if ((!act.distanceKm || act.distanceKm < 0.2) && (!act.avgCadence || act.avgCadence < 100) && actType !== 'RUNNING' && actType !== 'TRAIL_RUNNING') {
-      score -= 50;
-    }
-  }
-
+  // 3. Évaluation pour un plan de Musculation / Calisthénie
   if (isPlanStrength) {
-    if (actName.includes('gym') || actName.includes('calisth') || actName.includes('muscu') || actName.includes('force')) {
-      score += 35;
+    const isActStrength =
+      actType === 'STRENGTH_TRAINING' ||
+      actType === 'FITNESS_EQUIPMENT' ||
+      key.includes('strength') ||
+      key.includes('gym') ||
+      key.includes('fitness') ||
+      key.includes('cardio') ||
+      key.includes('hiit') ||
+      key.includes('crossfit') ||
+      key.includes('calisthenics');
+
+    // Si c'est une activité de course ou de vélo, exclusion
+    if (actType === 'RUNNING' || actType === 'TRAIL_RUNNING' || actType === 'CYCLING') {
+      return -1000;
     }
-    if (!act.distanceKm || act.distanceKm < 0.5) score += 20;
-    if (act.distanceKm && act.distanceKm > 2 && act.avgCadence && act.avgCadence > 130) {
-      score -= 80;
+
+    if (!isActStrength) {
+      // Pour une activité "OTHER", elle ne doit pas avoir de distance ni de cadence de course
+      if ((act.distanceKm || 0) > 0.5 || (act.avgCadence || 0) > 120) {
+        return -1000;
+      }
+      if (act.durationMinutes < 20) {
+        return -1000;
+      }
     }
+
+    let score = isActStrength ? 100 : 50;
+
+    const planDuration = Math.max(1, plan.durationMinutes);
+    const durationDiff = Math.abs(act.durationMinutes - planDuration);
+    const durationRatio = durationDiff / planDuration;
+
+    if (durationRatio <= 0.25) score += 25;
+    else if (durationRatio <= 0.5) score += 10;
+    else if (durationRatio > 0.8) score -= 25;
+
+    return score;
   }
 
-  // 4. Proximité de la durée
-  const planDuration = Math.max(1, plan.durationMinutes);
-  const durationDiff = Math.abs(act.durationMinutes - planDuration);
-  const durationRatio = durationDiff / planDuration;
+  // 4. Évaluation pour un plan de Mobilité / Yoga / Étirements
+  if (isPlanMobility) {
+    const isActMobility =
+      key.includes('yoga') ||
+      key.includes('pilates') ||
+      key.includes('stretch') ||
+      key.includes('breathwork') ||
+      key.includes('mobility') ||
+      actName.includes('yoga') ||
+      actName.includes('stretch') ||
+      actName.includes('mobil');
 
-  if (durationRatio <= 0.25) {
-    score += 40; // Durée très proche (ex: 37m vs 35m)
-  } else if (durationRatio <= 0.5) {
-    score += 20;
-  } else if (durationRatio > 1.0) {
-    score -= 40; // Écart de durée flagrant (ex: 120m vs 35m)
+    if (!isActMobility) {
+      return -1000;
+    }
+    return 100;
   }
 
-  return score;
+  return 0;
 }
 
-function inferOtherActivityCategory(act: GarminActivity): string {
+function inferOtherActivityCategory(act: GarminActivity): string | undefined {
   const key = (act.garminTypeKey || '').toLowerCase();
-  const name = (act.activityName || '').toLowerCase();
   const dPlus = act.elevationGainM || 0;
-  const hr = act.avgHeartRate || 0;
   const dist = act.distanceKm || 0;
+  const cad = act.avgCadence || 0;
 
-  if (act.activityType === 'CLIMBING' || key.includes('climb') || key.includes('boulder') || name.includes('grimp') || name.includes('climb') || name.includes('boulder') || name.includes('escalade') || name.includes('bloc')) {
-    return 'Escalade / Bloc (Indoor Climbing)';
+  // Inférence basée UNIQUEMENT sur la télémétrie objective de l'appareil
+  if (key.includes('climb') || key.includes('boulder')) {
+    return 'Escalade / Bloc';
   }
-  if (act.activityType === 'CYCLING' || key.includes('cycl') || key.includes('bike') || name.includes('vélo') || name.includes('bike')) {
-    return 'Cyclisme / Vélo';
+  if (key.includes('cycl') || key.includes('bike')) {
+    return 'Cyclisme';
   }
-  if (act.activityType === 'WALKING' || key.includes('walk') || key.includes('hike') || name.includes('marche') || name.includes('walk') || name.includes('randonnée')) {
+  if (key.includes('walk') || key.includes('hike')) {
     return 'Marche / Randonnée';
   }
-  if (key.includes('trail') || dPlus > 120 || name.includes('mont-royal') || name.includes('côte') || name.includes('trail') || name.includes('hill')) {
-    return 'Trail / Côtes (Mont-Royal)';
+  if (dist >= 1.5 && (cad >= 130 || act.avgPaceMinKm !== undefined)) {
+    return dPlus > 80 ? 'Trail / Dénivelé' : 'Course à pied';
   }
-  if (hr > 165 || name.includes('fractionné') || name.includes('interval') || name.includes('intense')) {
-    return 'Cardio Haute Intensité (Zone 4/5)';
+  if (dist === 0 && act.durationMinutes >= 20 && (key.includes('strength') || key.includes('gym') || key.includes('fitness'))) {
+    return 'Renforcement musculaire';
   }
-  if (dist > 2 || (act.avgCadence && act.avgCadence > 130) || key.includes('run') || name.includes('course') || name.includes('footing') || name.includes('run')) {
-    return 'Endurance Fondamentale (Zone 2)';
-  }
-  if (act.activityType === 'STRENGTH_TRAINING' || key.includes('strength') || name.includes('gym') || name.includes('calisth') || name.includes('dips') || name.includes('pull') || (dist === 0 && (name.includes('force') || name.includes('renfo') || name.includes('muscu')))) {
-    return 'Calisthénie / Musculation (Gym ÉTS)';
-  }
-  return 'Séance d\'Entraînement Générale';
+
+  // Pas de label inventé ni d'appellation générique pour les activités non identifiables
+  return undefined;
 }
