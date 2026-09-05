@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { GarminActivity, GarminSyncState } from '../types/garmin';
 import { clearGarminCredentials, loadGarminCredentials, parseGPXString, saveGarminCredentials, syncWithGarminAPI } from '../services/garminService';
-import { Activity, CheckCircle2, FileUp, Info, Key, Lock, Mail, RefreshCw, X, Zap } from 'lucide-react';
+import { Activity, CheckCircle2, FileUp, Key, Lock, Mail, RefreshCw, X } from 'lucide-react';
 
 interface GarminModalProps {
   isOpen: boolean;
@@ -48,8 +48,7 @@ export const GarminModal: React.FC<GarminModalProps> = ({
         lastSyncTime: new Date().toISOString(),
         accountEmail: email || storedCreds?.email || 'Compte Garmin',
         activitiesCount: result.count,
-        isSyncing: false,
-        mode: 'LIVE'
+        isSyncing: false
       });
       setSyncMessage({
         text: `✅ ${result.count} activité(s) synchronisée(s) avec succès (Télémétrie Firstbeat & EPOC complète) !`,

@@ -8,10 +8,13 @@ export const GLOBAL_APP_CONFIG = {
   HOME_ADDRESS: getEnvVal('VITE_HOME_ADDRESS', 'Home'),
   ETS_ADDRESS: getEnvVal('VITE_CAMPUS_ADDRESS', 'Campus'),
   MOUNT_ROYAL_ADDRESS: getEnvVal('VITE_TRAIL_ADDRESS', 'Trail Park'),
+  TRAIL_LOCATION: getEnvVal('VITE_TRAIL_LOCATION', 'Mont Royal'),
   ICAL_URL: getEnvVal('VITE_ICAL_FEED_URL', ''),
   SPORT_START_DATE: getEnvVal('VITE_SPORT_START_DATE', '2026-09-01'),
   PLAN_START_DATE: getEnvVal('VITE_PLAN_START_DATE', '2027-01-11'),
   RACE_DATE: getEnvVal('VITE_TARGET_RACE_DATE', '2027-07-03'),
+  TARGET_RACE_NAME: getEnvVal('VITE_TARGET_RACE_NAME', 'Québec Mega Trail 80 km'),
+  ATHLETE_FC_MAX: parseInt(getEnvVal('VITE_ATHLETE_FC_MAX', '203'), 10) || 203,
   TIMEZONE: "America/Toronto",
   TARGET_HOME_RETURN_HOUR: 13,
   TARGET_HOME_RETURN_MIN: 0,
@@ -30,17 +33,17 @@ export const GLOBAL_APP_CONFIG = {
 };
 
 export const COLOR_MAP = {
-  TRAIL_LONG: { emoji: "🏔️", colorHex: "#ff6b35", colorId: "6", bgGlow: "rgba(255, 107, 53, 0.2)" },
-  TRAIL_INTENSE: { emoji: "⚡", colorHex: "#f72585", colorId: "11", bgGlow: "rgba(247, 37, 133, 0.2)" },
-  RUN_EASY: { emoji: "🏃", colorHex: "#4cc9f0", colorId: "5", bgGlow: "rgba(76, 201, 240, 0.2)" },
-  CALISTHENICS: { emoji: "🤸", colorHex: "#7209b7", colorId: "7", bgGlow: "rgba(114, 9, 183, 0.2)" },
-  GYM_FORCE: { emoji: "🏋️", colorHex: "#4361ee", colorId: "10", bgGlow: "rgba(67, 97, 238, 0.2)" },
-  MOBILITY: { emoji: "🧘", colorHex: "#06d6a0", colorId: "3", bgGlow: "rgba(6, 214, 160, 0.2)" },
-  TRAVEL: { emoji: "🚌", colorHex: "#94a3b8", colorId: "8", bgGlow: "rgba(148, 163, 184, 0.2)" },
-  RACE_DAY: { emoji: "🏁", colorHex: "#e63946", colorId: "11", bgGlow: "rgba(230, 57, 70, 0.3)" },
-  COURSE: { emoji: "🏛️", colorHex: "#3b82f6", colorId: "9", bgGlow: "rgba(59, 130, 246, 0.2)" },
-  TP: { emoji: "🔬", colorHex: "#10b981", colorId: "2", bgGlow: "rgba(16, 185, 129, 0.2)" },
-  EXAM: { emoji: "📝", colorHex: "#ef4444", colorId: "11", bgGlow: "rgba(239, 68, 68, 0.2)" }
+  TRAIL_LONG: { emoji: "🏔️", colorHex: "#ff6b35", colorId: "6" },
+  TRAIL_INTENSE: { emoji: "⚡", colorHex: "#f72585", colorId: "11" },
+  RUN_EASY: { emoji: "🏃", colorHex: "#4cc9f0", colorId: "5" },
+  CALISTHENICS: { emoji: "🤸", colorHex: "#7209b7", colorId: "7" },
+  GYM_FORCE: { emoji: "🏋️", colorHex: "#4361ee", colorId: "10" },
+  MOBILITY: { emoji: "🧘", colorHex: "#06d6a0", colorId: "3" },
+  TRAVEL: { emoji: "🚌", colorHex: "#94a3b8", colorId: "8" },
+  RACE_DAY: { emoji: "🏁", colorHex: "#e63946", colorId: "11" },
+  COURSE: { emoji: "🏛️", colorHex: "#3b82f6", colorId: "9" },
+  TP: { emoji: "🔬", colorHex: "#10b981", colorId: "2" },
+  EXAM: { emoji: "📝", colorHex: "#ef4444", colorId: "11" }
 };
 
 export function getPeriodizationContext(date: Date): PeriodizationContext {

@@ -14,7 +14,6 @@ import {
   Download,
   ExternalLink,
   Key,
-  Layers,
   RefreshCw,
   Sparkles,
   X

@@ -117,7 +117,7 @@ export function analyzeETSEvent(ev: RawIcsEvent) {
   } else if (isDistanciel) {
     typePrefix = "[ONLINE]";
     emoji = "💻";
-    color = { emoji: "💻", colorHex: "#60a5fa", colorId: "3", bgGlow: "rgba(96, 165, 250, 0.2)" };
+    color = { emoji: "💻", colorHex: "#60a5fa", colorId: "3" };
   }
 
   let cleanTitle = summary;

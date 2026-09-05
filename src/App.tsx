@@ -125,9 +125,6 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    try {
-      localStorage.removeItem('app_date_mode');
-    } catch {}
     autoRechargeAll();
   }, []);
 
@@ -240,7 +237,6 @@ export const App: React.FC = () => {
       {activeTab === 'calendar' && (
         <CalendarView
           schedules={schedules}
-          allEvents={allEvents}
           onOpenGoogleCalendar={() => setIsGoogleCalendarModalOpen(true)}
           referenceDateStr={referenceDate.toISOString().slice(0, 10)}
         />

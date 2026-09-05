@@ -1,5 +1,8 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, ComparisonStatus, GarminActivity } from '../types/garmin';
+import { classifyGarminActivityType, inferOtherProfileCategory } from './activityClassifier';
+import { formatDateKey } from './icsParser';
+import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 
 export interface WeeklyStatsSummary {
   plannedDurationMin: number;
@@ -44,13 +47,6 @@ export function compareWorkoutsWithGarmin(
   const matchedGarminIds = new Set<string>();
 
   const sportPlans = plannedEvents.filter(e => e.category === 'sport');
-
-  const formatDateKey = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
 
   const asOfKey = formatDateKey(asOfDate);
 
@@ -139,7 +135,7 @@ export function compareWorkoutsWithGarmin(
     }
 
     if (!matchedGarminIds.has(act.activityId)) {
-      const inferred = act.activityType === 'OTHER' ? inferOtherActivityCategory(act) : undefined;
+      const inferred = act.activityType === 'OTHER' ? inferOtherProfileCategory(act) : undefined;
 
       const bonusNotes = [
         `Activité Garmin enregistrée : ${act.activityName} (${act.durationMinutes} min)${inferred ? ` [Profil inféré : ${inferred}]` : ''}.`
@@ -251,7 +247,7 @@ export function computeWeeklyTelemetry(
   const estimatedTss = hasNativeGarminLoad
     ? Math.round(totalGarminTrainingLoad)
     : (avgHeartRate > 0
-        ? Math.round((actualDurationMin / 60) * ((avgHeartRate / 203) ** 2) * 100)
+        ? Math.round((actualDurationMin / 60) * ((avgHeartRate / GLOBAL_APP_CONFIG.ATHLETE_FC_MAX) ** 2) * 100)
         : Math.round((actualDurationMin / 60) * 55));
 
   return {
@@ -288,7 +284,7 @@ function evaluateSingleWorkout(
   let inferredType: string | undefined = undefined;
 
   if (isOther) {
-    inferredType = inferOtherActivityCategory(act);
+    inferredType = inferOtherProfileCategory(act);
     if (inferredType) {
       feedbackNotes.push(
         `🏷️ Enregistrée sous le profil "Autre" sur la montre → Détectée comme : ${inferredType}.`
@@ -409,28 +405,16 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
   const isPlanMobility = planType === 'MOBILITY';
 
   // 1. Incompatibilités strictes de discipline
-  const isClimbing =
-    actType === 'CLIMBING' ||
-    key.includes('climb') ||
-    key.includes('boulder') ||
-    actName.includes('escalade') ||
-    actName.includes('boulder') ||
-    actName.includes('climb');
+  const classifiedType = classifyGarminActivityType(act.garminTypeKey, act.activityName);
+  const effectiveActType = (actType === 'OTHER' || !actType) ? classifiedType : actType;
 
-  if (isClimbing) {
-    // L'escalade / bloc ne doit jamais s'associer automatiquement à une séance de course, musculation ou mobilité
+  if (effectiveActType === 'CLIMBING') {
     return -1000;
   }
-
-  const isCycling = actType === 'CYCLING' || key.includes('cycl') || key.includes('bike') || actName.includes('vélo') || actName.includes('bike');
-  if (isCycling && (isPlanRunning || isPlanStrength)) {
-    // Une sortie vélo ne s'associe pas automatiquement à un plan de course ou de musculation
+  if (effectiveActType === 'CYCLING' && (isPlanRunning || isPlanStrength)) {
     return -1000;
   }
-
-  const isWalking = actType === 'WALKING' || key.includes('walk') || key.includes('hike') || actName.includes('marche') || actName.includes('walk') || actName.includes('randonnée');
-  if (isWalking && isPlanRunning) {
-    // Une marche ou rando ne doit pas s'associer à une séance de course / trail
+  if (effectiveActType === 'WALKING' && isPlanRunning) {
     return -1000;
   }
 
@@ -545,31 +529,4 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
   }
 
   return 0;
-}
-
-function inferOtherActivityCategory(act: GarminActivity): string | undefined {
-  const key = (act.garminTypeKey || '').toLowerCase();
-  const dPlus = act.elevationGainM || 0;
-  const dist = act.distanceKm || 0;
-  const cad = act.avgCadence || 0;
-
-  // Inférence basée UNIQUEMENT sur la télémétrie objective de l'appareil
-  if (key.includes('climb') || key.includes('boulder')) {
-    return 'Escalade / Bloc';
-  }
-  if (key.includes('cycl') || key.includes('bike')) {
-    return 'Cyclisme';
-  }
-  if (key.includes('walk') || key.includes('hike')) {
-    return 'Marche / Randonnée';
-  }
-  if (dist >= 1.5 && (cad >= 130 || act.avgPaceMinKm !== undefined)) {
-    return dPlus > 80 ? 'Trail / Dénivelé' : 'Course à pied';
-  }
-  if (dist === 0 && act.durationMinutes >= 20 && (key.includes('strength') || key.includes('gym') || key.includes('fitness'))) {
-    return 'Renforcement musculaire';
-  }
-
-  // Pas de label inventé ni d'appellation générique pour les activités non identifiables
-  return undefined;
 }

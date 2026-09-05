@@ -32,7 +32,7 @@ export interface GarminActivity {
   movingDurationMinutes?: number; // Net moving time
   vo2MaxValue?: number;
   garminTypeKey?: string; // Native Garmin Connect typeKey (e.g. "trail_running", "bouldering")
-  source: 'GARMIN_CONNECT' | 'GPX_IMPORT' | 'SAMPLE_DATA';
+  source: 'GARMIN_CONNECT' | 'GPX_IMPORT';
 }
 
 export type ComparisonStatus = 'COMPLIANT' | 'PARTIAL' | 'MISSED' | 'UNPLANNED' | 'PENDING';
@@ -57,5 +57,4 @@ export interface GarminSyncState {
   accountEmail?: string;
   activitiesCount: number;
   isSyncing: boolean;
-  mode: 'LIVE' | 'DEMO' | 'OFFLINE';
 }

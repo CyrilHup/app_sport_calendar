@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CalendarEvent } from '../types/calendar';
-import { CheckSquare, Clock, Compass, Flame, Heart, MapPin, ShieldCheck, Square, Utensils, X, Zap } from 'lucide-react';
+import { CheckSquare, Clock, Compass, Heart, MapPin, ShieldCheck, Square, X, Zap } from 'lucide-react';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;

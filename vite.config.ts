@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { parseICSString, buildCompleteCalendar } from './src/services/icsParser';
 import { generateICSContent } from './src/services/googleCalendarService';
+import { classifyGarminActivityType } from './src/services/activityClassifier';
 import garminPkg from '@flow-js/garmin-connect';
 const GarminConnect = (garminPkg as any).GarminConnect || garminPkg;
 import fs from 'node:fs';
@@ -113,39 +114,9 @@ export default defineConfig(({ mode }) => {
                 }
 
                 const activities = (rawActivities || []).map((a: any) => {
-                  const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '').toLowerCase();
-                  const actName = String(a.activityName || '').toLowerCase();
-
-                  let activityType = 'OTHER';
-                  if (
-                    typeKey.includes('climb') ||
-                    typeKey.includes('boulder') ||
-                    actName.includes('grimp') ||
-                    actName.includes('climb') ||
-                    actName.includes('boulder') ||
-                    actName.includes('escalade') ||
-                    actName.includes('bloc')
-                  ) {
-                    activityType = 'CLIMBING';
-                  } else if (typeKey.includes('trail')) {
-                    activityType = 'TRAIL_RUNNING';
-                  } else if (typeKey.includes('run') || actName.includes('course') || actName.includes('footing') || actName.includes('jog')) {
-                    activityType = 'RUNNING';
-                  } else if (
-                    typeKey.includes('strength') ||
-                    typeKey.includes('weight') ||
-                    typeKey.includes('gym') ||
-                    typeKey.includes('fitness') ||
-                    actName.includes('muscu') ||
-                    actName.includes('calisth') ||
-                    actName.includes('force')
-                  ) {
-                    activityType = 'STRENGTH_TRAINING';
-                  } else if (typeKey.includes('cycl') || typeKey.includes('bike') || actName.includes('vélo') || actName.includes('bike')) {
-                    activityType = 'CYCLING';
-                  } else if (typeKey.includes('walk') || typeKey.includes('hike') || actName.includes('marche') || actName.includes('walk') || actName.includes('randonnée')) {
-                    activityType = 'WALKING';
-                  }
+                  const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');
+                  const actName = String(a.activityName || '');
+                  const activityType = classifyGarminActivityType(typeKey, actName);
 
                   // Durations:
                   // For gym / strength / calisthenics / climbing: elapsed time reflects the total workout session at the gym

@@ -2,16 +2,12 @@ import React, { useState } from 'react';
 import { PeriodizationContext } from '../types/calendar';
 import {
   AlertTriangle,
-  Award,
   Calendar,
   CheckCircle2,
   CheckSquare,
-  ChevronRight,
   Clock,
   Compass,
-  Flame,
   Heart,
-  Info,
   Layers,
   MapPin,
   Mountain,
@@ -19,7 +15,6 @@ import {
   ShieldCheck,
   Sparkles,
   Square,
-  Target,
   TrendingUp,
   Zap
 } from 'lucide-react';

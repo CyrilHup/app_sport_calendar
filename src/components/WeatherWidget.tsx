@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchMontRoyalWeather, MontRoyalWeather } from '../services/weatherService';
-import { ChevronDown, ChevronUp, Compass, Flame, Info, Mountain, ShieldAlert, Sparkles, Sun, Wind } from 'lucide-react';
+import { ChevronDown, ChevronUp, Mountain, Sparkles, Wind } from 'lucide-react';
 
 export const WeatherWidget: React.FC = () => {
   const [weather, setWeather] = useState<MontRoyalWeather | null>(null);

@@ -1,4 +1,5 @@
 import { GarminActivity, GarminActivityType, GarminSyncState } from '../types/garmin';
+import { classifyGarminActivityType } from './activityClassifier';
 
 const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
 const GARMIN_STATE_KEY = 'garmin_sync_state';
@@ -45,24 +46,9 @@ export function clearGarminCredentials(): void {
  * E.g., climbing/bouldering/grimp activities logged as 'OTHER' or generic are mapped to 'CLIMBING'.
  */
 export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
-  const name = (a.activityName || '').toLowerCase();
-  const key = (a.garminTypeKey || '').toLowerCase();
   let type = a.activityType;
-
   if (type === 'OTHER' || !type) {
-    if (key.includes('climb') || key.includes('boulder') || name.includes('grimp') || name.includes('climb') || name.includes('boulder') || name.includes('escalade') || name.includes('bloc')) {
-      type = 'CLIMBING';
-    } else if (key.includes('trail')) {
-      type = 'TRAIL_RUNNING';
-    } else if (key.includes('run') || name.includes('course') || name.includes('footing') || name.includes('jog')) {
-      type = 'RUNNING';
-    } else if (key.includes('strength') || key.includes('weight') || key.includes('gym') || name.includes('muscu') || name.includes('calisth') || name.includes('force')) {
-      type = 'STRENGTH_TRAINING';
-    } else if (key.includes('cycl') || key.includes('bike') || name.includes('vélo') || name.includes('bike')) {
-      type = 'CYCLING';
-    } else if (key.includes('walk') || key.includes('hike') || name.includes('marche') || name.includes('walk') || name.includes('randonnée')) {
-      type = 'WALKING';
-    }
+    type = classifyGarminActivityType(a.garminTypeKey, a.activityName);
   }
 
   return {
@@ -117,8 +103,7 @@ export function loadGarminSyncState(): GarminSyncState {
     lastSyncTime: undefined,
     accountEmail: undefined,
     activitiesCount: 0,
-    isSyncing: false,
-    mode: "LIVE"
+    isSyncing: false
   };
 }
 
@@ -177,8 +162,7 @@ export async function syncWithGarminAPI(credentials?: {
       lastSyncTime: new Date().toISOString(),
       accountEmail: credsToUse?.email || "Compte Garmin",
       activitiesCount: activities.length,
-      isSyncing: false,
-      mode: "LIVE"
+      isSyncing: false
     };
     saveGarminSyncState(newState);
 

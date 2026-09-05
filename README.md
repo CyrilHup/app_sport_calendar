@@ -123,7 +123,6 @@ This repository is strictly designed to be open-source and privacy-compliant:
 │   │   ├── CalendarView.tsx           # 7-day responsive grid & detailed list
 │   │   ├── WeatherWidget.tsx          # Mont-Royal live weather & gear advisory
 │   │   ├── ComparisonDashboard.tsx    # Garmin telemetry table, status filters & manual pairing
-│   │   ├── TrainingLoadCard.tsx       # Weekly volume & Training Stress Score (TSS) telemetry
 │   │   ├── GoogleCalendarModal.tsx    # Direct sync, 1-click import & feed subscription
 │   │   ├── GarminModal.tsx            # Garmin Connect sync & GPX file import
 │   │   ├── WorkoutDetailModal.tsx     # Session protocol, fueling calculator & gear checklist

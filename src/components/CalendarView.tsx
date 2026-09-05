@@ -6,7 +6,6 @@ import { WeatherWidget } from './WeatherWidget';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
-  allEvents: CalendarEvent[];
   onOpenGoogleCalendar?: () => void;
   referenceDateStr?: string;
 }

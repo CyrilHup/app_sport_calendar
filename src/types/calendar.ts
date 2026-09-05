@@ -30,7 +30,6 @@ export interface CalendarEvent {
     targetHeartRateRange?: [number, number];
     targetCadence?: string;
     targetElevationM?: number;
-    setsAndReps?: string;
     nutritionAdvice?: string;
     chainedAfterCourse?: boolean;
     transitFrom?: string;
