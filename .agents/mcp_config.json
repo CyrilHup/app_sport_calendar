@@ -2,6 +2,9 @@
   "mcpServers": {
     "vercel": {
       "serverUrl": "https://mcp.vercel.com"
+    },
+    "supabase": {
+      "serverUrl": "https://mcp.supabase.com/mcp"
     }
   }
 }

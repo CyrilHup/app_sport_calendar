@@ -887,7 +887,18 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     <button
                       type="button"
                       className="btn-secondary"
-                      onClick={() => signInWithGoogle()}
+                      onClick={async () => {
+                        setAuthErrorMsg('');
+                        setAuthSuccessMsg('');
+                        const res = await signInWithGoogle();
+                        if (res?.error) {
+                          setAuthErrorMsg(
+                            res.error.includes('provider') || res.error.includes('not enabled')
+                              ? "L'authentification Google nécessite un Client ID Google Cloud. Connectez-vous directement avec votre e-mail et mot de passe ci-dessus (validation instantanée)."
+                              : res.error
+                          );
+                        }
+                      }}
                       style={{ justifyContent: 'center', padding: '9px 12px' }}
                     >
                       <svg width="15" height="15" viewBox="0 0 24 24" style={{ marginRight: 6 }}>
@@ -898,6 +909,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                       </svg>
                       Continuer avec Google
                     </button>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', margin: '4px 0 0 0' }}>
+                      Recommandé : utilisez le formulaire <strong>E-mail & Mot de passe</strong> (connexion immédiate).
+                    </p>
                   </form>
                 </div>
               )}
