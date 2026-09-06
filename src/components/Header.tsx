@@ -1,21 +1,19 @@
-import { Activity, Award, Calendar, ChevronRight, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap, Share2, User } from 'lucide-react';
+import { Activity, Award, Calendar, ChevronRight, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap, User, Settings } from 'lucide-react';
 import { PeriodizationContext } from '../types/calendar';
 import { ActivityComparison, GarminSyncState } from '../types/garmin';
 import { WeeklyStatsSummary } from '../services/comparisonEngine';
+import { AccountModalTab } from './AccountModal';
 
 interface HeaderProps {
   periodContext: PeriodizationContext;
   garminState: GarminSyncState;
   weeklyStats: WeeklyStatsSummary;
   comparisons?: ActivityComparison[];
-  onOpenGarmin: () => void;
-  onOpenGoogleCalendar: () => void;
+  onOpenAccountModal: (tab?: AccountModalTab) => void;
   onRefreshAll: () => void;
   isRecharging: boolean;
   lastSyncTime?: string;
   onSelectPeriodizationTab?: () => void;
-  onOpenAuth?: () => void;
-  onOpenShare?: () => void;
   userDisplayName?: string;
   isLoggedIn?: boolean;
 }
@@ -25,14 +23,11 @@ export const Header: React.FC<HeaderProps> = ({
   garminState,
   weeklyStats,
   comparisons,
-  onOpenGarmin,
-  onOpenGoogleCalendar,
+  onOpenAccountModal,
   onRefreshAll,
   isRecharging,
   lastSyncTime,
   onSelectPeriodizationTab,
-  onOpenAuth,
-  onOpenShare,
   userDisplayName,
   isLoggedIn
 }) => {
@@ -98,7 +93,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="header-actions">
-          {/* Live Sync Status */}
+          {/* Live Sync Status with Quick Refresh Icon */}
           <div
             style={{
               display: 'flex',
@@ -123,58 +118,63 @@ export const Header: React.FC<HeaderProps> = ({
               }}
             />
             <span>{isRecharging ? 'Synchronisation...' : `Synchronisé (${formattedSyncTime})`}</span>
-          </div>
-
-          <button
-            className="btn-primary"
-            onClick={onRefreshAll}
-            disabled={isRecharging}
-            title="Rafraîchir les flux iCal ÉTS et la télémétrie Garmin"
-          >
-            <RefreshCw size={13} className={isRecharging ? 'spin-animation' : ''} />
-            <span>Synchro Directe</span>
-          </button>
-
-          <button
-            className="btn-secondary"
-            onClick={onOpenGoogleCalendar}
-            title="Exporter ou s'abonner sur Google Agenda"
-          >
-            <Calendar size={13} color="var(--accent-blue)" />
-            <span>Google Agenda</span>
-          </button>
-
-          <button className="btn-garmin" onClick={onOpenGarmin} title="Gérer la télémétrie Garmin Connect et imports GPX">
-            <Activity size={13} />
-            <span>Garmin</span>
-          </button>
-
-          {onOpenShare && (
             <button
-              className="btn-secondary"
-              onClick={onOpenShare}
-              title="Partager mon entraînement avec mes amis"
-              style={{ borderColor: 'rgba(255, 87, 34, 0.4)', color: 'var(--primary)' }}
-            >
-              <Share2 size={13} />
-              <span>Partager</span>
-            </button>
-          )}
-
-          {onOpenAuth && (
-            <button
-              className="btn-secondary"
-              onClick={onOpenAuth}
-              title={isLoggedIn ? "Mon compte athlète" : "Se connecter pour synchroniser"}
+              onClick={onRefreshAll}
+              disabled={isRecharging}
+              title="Rafraîchir les flux ÉTS et la télémétrie Garmin"
               style={{
-                borderColor: isLoggedIn ? 'rgba(16, 185, 129, 0.5)' : undefined,
-                background: isLoggedIn ? 'rgba(16, 185, 129, 0.08)' : undefined
+                background: 'none',
+                border: 'none',
+                color: isRecharging ? '#f59e0b' : '#34d399',
+                cursor: isRecharging ? 'default' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px',
+                marginLeft: '2px',
+                borderRadius: 4
               }}
             >
-              <User size={13} color={isLoggedIn ? '#10b981' : undefined} />
-              <span>{isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Connexion'}</span>
+              <RefreshCw size={12} className={isRecharging ? 'spin-animation' : ''} />
             </button>
-          )}
+          </div>
+
+          {/* Unified Athlete Account & Services Hub Button */}
+          <button
+            className="btn-secondary"
+            onClick={() => onOpenAccountModal('profile')}
+            title="Mon compte athlète, Garmin Connect, Google Agenda et Partage"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '7px 12px',
+              borderRadius: 'var(--radius-xs)',
+              background: isLoggedIn ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.04)',
+              borderColor: isLoggedIn ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: '0.78rem'
+            }}
+          >
+            <div
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                background: isLoggedIn ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'rgba(255, 255, 255, 0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: '0.7rem',
+                fontWeight: 700
+              }}
+            >
+              {isLoggedIn && userDisplayName ? userDisplayName[0].toUpperCase() : <User size={12} />}
+            </div>
+            <span>{isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Mon Compte & Services'}</span>
+            <Settings size={12} style={{ color: 'var(--text-muted)' }} />
+          </button>
         </div>
       </div>
 

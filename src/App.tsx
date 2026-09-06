@@ -4,8 +4,7 @@ import { GarminActivity, GarminSyncState, ActivityComparison } from './types/gar
 import { Header } from './components/Header';
 import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
-import { GarminModal } from './components/GarminModal';
-import { GoogleCalendarModal } from './components/GoogleCalendarModal';
+import { AccountModal, AccountModalTab } from './components/AccountModal';
 import { QMTPlanOverview } from './components/QMTPlanOverview';
 import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
@@ -15,8 +14,6 @@ import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/co
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { Activity, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { AuthModal } from './components/AuthModal';
-import { ShareModal } from './components/ShareModal';
 import { setAppConfigOverrides } from './services/periodizationEngine';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
 
@@ -54,11 +51,15 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization'>('calendar');
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
-  const [isGarminModalOpen, setIsGarminModalOpen] = useState<boolean>(false);
-  const [isGoogleCalendarModalOpen, setIsGoogleCalendarModalOpen] = useState<boolean>(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [accountModal, setAccountModal] = useState<{ isOpen: boolean; tab: AccountModalTab }>({
+    isOpen: false,
+    tab: 'profile'
+  });
   const [spectatorData, setSpectatorData] = useState<{ profile: any; activities: GarminActivity[] } | null>(null);
+
+  const handleOpenAccountModal = (tab: AccountModalTab = 'profile') => {
+    setAccountModal({ isOpen: true, tab });
+  };
 
   const { user, profile } = useAuth();
 
@@ -332,14 +333,11 @@ export const App: React.FC = () => {
         garminState={garminState}
         weeklyStats={weeklyStats}
         comparisons={comparisons}
-        onOpenGarmin={() => setIsGarminModalOpen(true)}
-        onOpenGoogleCalendar={() => setIsGoogleCalendarModalOpen(true)}
+        onOpenAccountModal={handleOpenAccountModal}
         onRefreshAll={autoRechargeAll}
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
         onSelectPeriodizationTab={() => setActiveTab('periodization')}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-        onOpenShare={() => setIsShareModalOpen(true)}
         userDisplayName={profile?.displayName}
         isLoggedIn={Boolean(user)}
       />
@@ -386,7 +384,7 @@ export const App: React.FC = () => {
       {activeTab === 'calendar' && (
         <CalendarView
           schedules={schedules}
-          onOpenGoogleCalendar={() => setIsGoogleCalendarModalOpen(true)}
+          onOpenGoogleCalendar={() => handleOpenAccountModal('google')}
           referenceDateStr={referenceDate.toISOString().slice(0, 10)}
           onPostponeWorkout={handlePostponeWorkout}
           onCancelPostponeWorkout={handleCancelPostpone}
@@ -399,7 +397,7 @@ export const App: React.FC = () => {
           <ComparisonDashboard
             comparisons={comparisons}
             garminState={garminState}
-            onOpenGarminSync={() => setIsGarminModalOpen(true)}
+            onOpenGarminSync={() => handleOpenAccountModal('garmin')}
             availableGarminActivities={garminActivities}
             manualPairs={manualPairs}
             onManualPair={handleManualPair}
@@ -414,42 +412,24 @@ export const App: React.FC = () => {
         <QMTPlanOverview currentContext={currentPeriodContext} />
       )}
 
-      {/* Garmin Connect Modal */}
-      <GarminModal
-        isOpen={isGarminModalOpen}
-        onClose={() => setIsGarminModalOpen(false)}
-        garminState={garminState}
-        onUpdateState={handleUpdateGarminState}
-        onActivitiesSynced={handleActivitiesSynced}
-      />
-
-      {/* Google Calendar Sync Modal */}
-      <GoogleCalendarModal
-        isOpen={isGoogleCalendarModalOpen}
-        onClose={() => setIsGoogleCalendarModalOpen(false)}
-        events={allEvents}
-      />
-
       {/* Mobile Bottom Navigation Bar */}
       <MobileNav
         currentTab={activeTab}
         onChangeTab={tab => setActiveTab(tab)}
       />
 
-      {/* Auth & Profile Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onOpenShare={() => {
-          setIsAuthModalOpen(false);
-          setIsShareModalOpen(true);
-        }}
-      />
-
-      {/* Share Modal */}
-      <ShareModal
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
+      {/* Unified Athlete Hub Modal */}
+      <AccountModal
+        isOpen={accountModal.isOpen}
+        onClose={() => setAccountModal(prev => ({ ...prev, isOpen: false }))}
+        initialTab={accountModal.tab}
+        garminState={garminState}
+        onUpdateGarminState={handleUpdateGarminState}
+        onActivitiesSynced={handleActivitiesSynced}
+        calendarEvents={allEvents}
+        onRefreshAll={autoRechargeAll}
+        isRecharging={isRecharging}
+        lastSyncTime={lastSyncTime}
       />
     </div>
   );

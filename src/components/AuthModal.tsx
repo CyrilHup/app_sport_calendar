@@ -226,7 +226,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onOpenSha
                 </label>
                 <input
                   type="text"
-                  placeholder="ex: 2650 Av. Jeanne-d'Arc, Montréal..."
+                  placeholder="ex: 123 Rue de la Montagne, Montréal..."
                   value={profHome}
                   onChange={e => setProfHome(e.target.value)}
                   style={{
