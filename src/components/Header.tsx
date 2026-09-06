@@ -1,5 +1,4 @@
-import React from 'react';
-import { Activity, Award, Calendar, ChevronRight, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap } from 'lucide-react';
+import { Activity, Award, Calendar, ChevronRight, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap, Share2, User } from 'lucide-react';
 import { PeriodizationContext } from '../types/calendar';
 import { ActivityComparison, GarminSyncState } from '../types/garmin';
 import { WeeklyStatsSummary } from '../services/comparisonEngine';
@@ -15,6 +14,10 @@ interface HeaderProps {
   isRecharging: boolean;
   lastSyncTime?: string;
   onSelectPeriodizationTab?: () => void;
+  onOpenAuth?: () => void;
+  onOpenShare?: () => void;
+  userDisplayName?: string;
+  isLoggedIn?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,7 +30,11 @@ export const Header: React.FC<HeaderProps> = ({
   onRefreshAll,
   isRecharging,
   lastSyncTime,
-  onSelectPeriodizationTab
+  onSelectPeriodizationTab,
+  onOpenAuth,
+  onOpenShare,
+  userDisplayName,
+  isLoggedIn
 }) => {
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -141,6 +148,33 @@ export const Header: React.FC<HeaderProps> = ({
             <Activity size={13} />
             <span>Garmin</span>
           </button>
+
+          {onOpenShare && (
+            <button
+              className="btn-secondary"
+              onClick={onOpenShare}
+              title="Partager mon entraînement avec mes amis"
+              style={{ borderColor: 'rgba(255, 87, 34, 0.4)', color: 'var(--primary)' }}
+            >
+              <Share2 size={13} />
+              <span>Partager</span>
+            </button>
+          )}
+
+          {onOpenAuth && (
+            <button
+              className="btn-secondary"
+              onClick={onOpenAuth}
+              title={isLoggedIn ? "Mon compte athlète" : "Se connecter pour synchroniser"}
+              style={{
+                borderColor: isLoggedIn ? 'rgba(16, 185, 129, 0.5)' : undefined,
+                background: isLoggedIn ? 'rgba(16, 185, 129, 0.08)' : undefined
+              }}
+            >
+              <User size={13} color={isLoggedIn ? '#10b981' : undefined} />
+              <span>{isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Connexion'}</span>
+            </button>
+          )}
         </div>
       </div>
 

@@ -48,7 +48,22 @@ export interface CalendarEvent {
     isExam?: boolean;
     conflictRescheduled?: boolean;
     conflictReason?: string;
+    isPostponed?: boolean;
+    originalDate?: string;
+    postponedToDate?: string;
+    postponedReason?: string;
+    isPostponedPlaceholder?: boolean;
   };
+}
+
+export interface WorkoutPostponeOverride {
+  originalEventId: string;
+  originalDate: string;      // YYYY-MM-DD
+  targetDate: string;        // YYYY-MM-DD
+  targetStartTime?: string;  // HH:mm or ISO string
+  targetEndTime?: string;
+  reason?: string;
+  createdAt: string;
 }
 
 export interface PeriodizationContext {

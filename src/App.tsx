@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarEvent, DailySchedule, PeriodizationContext } from './types/calendar';
+import { CalendarEvent, DailySchedule, PeriodizationContext, WorkoutPostponeOverride } from './types/calendar';
 import { GarminActivity, GarminSyncState, ActivityComparison } from './types/garmin';
 import { Header } from './components/Header';
 import { CalendarView } from './components/CalendarView';
@@ -12,7 +12,13 @@ import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/i
 import { getPeriodizationContext } from './services/periodizationEngine';
 import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
+import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { Activity, Calendar, TrendingUp } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
+import { AuthModal } from './components/AuthModal';
+import { ShareModal } from './components/ShareModal';
+import { setAppConfigOverrides } from './services/periodizationEngine';
+import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
 
 const MANUAL_PAIRS_STORAGE_KEY = 'garmin_manual_pairs';
 
@@ -37,8 +43,10 @@ function getMondayOfWeek(date: Date): Date {
 }
 
 export const App: React.FC = () => {
+  const [baseCalendar, setBaseCalendar] = useState<{ schedules: DailySchedule[]; allEvents: CalendarEvent[] }>({ schedules: [], allEvents: [] });
   const [schedules, setSchedules] = useState<DailySchedule[]>([]);
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
+  const [postponeOverrides, setPostponeOverrides] = useState<Record<string, WorkoutPostponeOverride>>(loadPostponeOverrides());
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
   const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
@@ -48,6 +56,58 @@ export const App: React.FC = () => {
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
   const [isGarminModalOpen, setIsGarminModalOpen] = useState<boolean>(false);
   const [isGoogleCalendarModalOpen, setIsGoogleCalendarModalOpen] = useState<boolean>(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+  const [spectatorData, setSpectatorData] = useState<{ profile: any; activities: GarminActivity[] } | null>(null);
+
+  const { user, profile } = useAuth();
+
+  // Apply user profile overrides to periodization & transit engine
+  useEffect(() => {
+    if (profile) {
+      setAppConfigOverrides({
+        homeAddress: profile.homeAddress,
+        campusAddress: profile.campusAddress,
+        trailAddress: profile.trailAddress,
+        fcMax: profile.fcMax
+      });
+    }
+  }, [profile]);
+
+  // Check for spectator share mode in URL (?share=slug)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shareSlug = params.get('share');
+    if (shareSlug) {
+      fetchPublicSharedData(shareSlug).then(data => {
+        if (data) {
+          setSpectatorData(data);
+          if (data.activities.length > 0) {
+            setGarminActivities(data.activities);
+          }
+        }
+      });
+    }
+  }, []);
+
+  // Fetch activities and manual pairs from cloud when user logs in
+  useEffect(() => {
+    if (user?.id) {
+      fetchActivitiesFromCloud(user.id).then(cloudActs => {
+        if (cloudActs && cloudActs.length > 0) {
+          setGarminActivities(cloudActs);
+          saveGarminActivities(cloudActs);
+        }
+      });
+
+      fetchPairsFromCloud(user.id).then(cloudPairs => {
+        if (cloudPairs && Object.keys(cloudPairs).length > 0) {
+          setManualPairs(cloudPairs);
+          saveManualPairs(cloudPairs);
+        }
+      });
+    }
+  }, [user?.id]);
 
   // Live real date (always current)
   const referenceDate = new Date();
@@ -77,8 +137,17 @@ export const App: React.FC = () => {
       42 // 6 full weeks
     );
 
-    setSchedules(builtSchedules);
-    setAllEvents(builtEvents);
+    setBaseCalendar({ schedules: builtSchedules, allEvents: builtEvents });
+
+    // Appliquer les reports de séances enregistrés
+    const { schedules: transformedSchedules, allEvents: transformedEvents } = applyPostponements(
+      builtSchedules,
+      builtEvents,
+      postponeOverrides
+    );
+
+    setSchedules(transformedSchedules);
+    setAllEvents(transformedEvents);
 
     // 2. Load stored real Garmin activities and attempt sync for latest activities
     let loadedActivities = loadStoredGarminActivities();
@@ -105,7 +174,7 @@ export const App: React.FC = () => {
 
     setGarminActivities(loadedActivities);
 
-    const compResults = compareWorkoutsWithGarmin(builtEvents, loadedActivities, manualPairs, referenceDate);
+    const compResults = compareWorkoutsWithGarmin(transformedEvents, loadedActivities, manualPairs, referenceDate);
     setComparisons(compResults);
 
     const nowIso = new Date().toISOString();
@@ -136,6 +205,9 @@ export const App: React.FC = () => {
   const handleActivitiesSynced = (newActivities: GarminActivity[]) => {
     setGarminActivities(newActivities);
     saveGarminActivities(newActivities);
+    if (user?.id) {
+      syncActivitiesToCloud(user.id, newActivities);
+    }
     if (allEvents.length > 0) {
       setComparisons(compareWorkoutsWithGarmin(allEvents, newActivities, manualPairs, referenceDate));
     }
@@ -145,6 +217,9 @@ export const App: React.FC = () => {
     const updated = { ...manualPairs, [planId]: garminActivityId };
     setManualPairs(updated);
     saveManualPairs(updated);
+    if (user?.id) {
+      syncPairsToCloud(user.id, updated);
+    }
     if (allEvents.length > 0) {
       setComparisons(compareWorkoutsWithGarmin(allEvents, garminActivities, updated, referenceDate));
     }
@@ -155,8 +230,47 @@ export const App: React.FC = () => {
     delete updated[planId];
     setManualPairs(updated);
     saveManualPairs(updated);
+    if (user?.id) {
+      syncPairsToCloud(user.id, updated);
+    }
     if (allEvents.length > 0) {
       setComparisons(compareWorkoutsWithGarmin(allEvents, garminActivities, updated, referenceDate));
+    }
+  };
+
+  const handlePostponeWorkout = (
+    eventId: string,
+    originalDate: string,
+    targetDate: string,
+    reason?: string,
+    targetStartTime?: string
+  ) => {
+    const updated = postponeWorkout(postponeOverrides, eventId, originalDate, targetDate, reason, targetStartTime);
+    setPostponeOverrides(updated);
+    if (baseCalendar.schedules.length > 0) {
+      const { schedules: newSched, allEvents: newEv } = applyPostponements(
+        baseCalendar.schedules,
+        baseCalendar.allEvents,
+        updated
+      );
+      setSchedules(newSched);
+      setAllEvents(newEv);
+      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
+    }
+  };
+
+  const handleCancelPostpone = (eventId: string) => {
+    const updated = cancelPostponeWorkout(postponeOverrides, eventId);
+    setPostponeOverrides(updated);
+    if (baseCalendar.schedules.length > 0) {
+      const { schedules: newSched, allEvents: newEv } = applyPostponements(
+        baseCalendar.schedules,
+        baseCalendar.allEvents,
+        updated
+      );
+      setSchedules(newSched);
+      setAllEvents(newEv);
+      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
     }
   };
 
@@ -181,6 +295,37 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-container">
+      {/* Spectator Mode Banner if accessing via public friend link */}
+      {spectatorData && (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, rgba(255, 87, 34, 0.15), rgba(245, 158, 11, 0.15))',
+            border: '1px solid rgba(255, 87, 34, 0.35)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '10px 16px',
+            marginBottom: '14px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            fontSize: '0.82rem'
+          }}
+        >
+          <div>
+            👁️ <strong>Mode Spectateur :</strong> Vous suivez la préparation QMT-80 de{' '}
+            <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{spectatorData.profile.displayName}</span>
+          </div>
+          <button
+            className="btn-secondary"
+            style={{ fontSize: '0.74rem', padding: '4px 10px' }}
+            onClick={() => {
+              window.location.href = window.location.origin;
+            }}
+          >
+            Quitter la vue spectateur
+          </button>
+        </div>
+      )}
+
       {/* Top Header with Fused Telemetry HUD */}
       <Header
         periodContext={currentPeriodContext}
@@ -193,6 +338,10 @@ export const App: React.FC = () => {
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
         onSelectPeriodizationTab={() => setActiveTab('periodization')}
+        onOpenAuth={() => setIsAuthModalOpen(true)}
+        onOpenShare={() => setIsShareModalOpen(true)}
+        userDisplayName={profile?.displayName}
+        isLoggedIn={Boolean(user)}
       />
 
       {/* Navigation Tabs (Desktop) */}
@@ -239,6 +388,9 @@ export const App: React.FC = () => {
           schedules={schedules}
           onOpenGoogleCalendar={() => setIsGoogleCalendarModalOpen(true)}
           referenceDateStr={referenceDate.toISOString().slice(0, 10)}
+          onPostponeWorkout={handlePostponeWorkout}
+          onCancelPostponeWorkout={handleCancelPostpone}
+          comparisons={comparisons}
         />
       )}
 
@@ -252,6 +404,8 @@ export const App: React.FC = () => {
             manualPairs={manualPairs}
             onManualPair={handleManualPair}
             onManualUnpair={handleManualUnpair}
+            onPostponeWorkout={handlePostponeWorkout}
+            referenceDateStr={referenceDate.toISOString().slice(0, 10)}
           />
         </div>
       )}
@@ -280,6 +434,22 @@ export const App: React.FC = () => {
       <MobileNav
         currentTab={activeTab}
         onChangeTab={tab => setActiveTab(tab)}
+      />
+
+      {/* Auth & Profile Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onOpenShare={() => {
+          setIsAuthModalOpen(false);
+          setIsShareModalOpen(true);
+        }}
+      />
+
+      {/* Share Modal */}
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
       />
     </div>
   );

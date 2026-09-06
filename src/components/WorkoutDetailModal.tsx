@@ -1,19 +1,81 @@
 import React, { useState } from 'react';
 import { CalendarEvent } from '../types/calendar';
-import { CheckSquare, Clock, Compass, Heart, MapPin, ShieldCheck, Square, X, Zap } from 'lucide-react';
+import { CalendarClock, CheckSquare, Clock, Compass, Heart, MapPin, RotateCcw, ShieldCheck, Square, X, Zap, ArrowRight } from 'lucide-react';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
   onClose: () => void;
+  onPostpone?: (
+    eventId: string,
+    originalDate: string,
+    targetDate: string,
+    reason?: string,
+    targetStartTime?: string
+  ) => void;
+  onCancelPostpone?: (eventId: string) => void;
 }
 
-export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, onClose }) => {
+export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
+  event,
+  onClose,
+  onPostpone,
+  onCancelPostpone
+}) => {
   if (!event) return null;
 
   const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
 
+  const originalDateKey = event.metadata?.originalDate || event.startDate.slice(0, 10);
+  const currentEventDateKey = event.startDate.slice(0, 10);
+
+  // Date de demain par défaut pour le report rapide
+  const baseDate = new Date(currentEventDateKey + 'T12:00:00');
+  const defaultTomorrow = new Date(baseDate);
+  defaultTomorrow.setDate(defaultTomorrow.getDate() + 1);
+  const defaultTomorrowStr = defaultTomorrow.toISOString().slice(0, 10);
+
+  const defaultHours = String(new Date(event.startDate).getHours()).padStart(2, '0');
+  const defaultMins = String(new Date(event.startDate).getMinutes()).padStart(2, '0');
+
+  const [targetDateInput, setTargetDateInput] = useState<string>(defaultTomorrowStr);
+  const [targetTimeInput, setTargetTimeInput] = useState<string>(`${defaultHours}:${defaultMins}`);
+  const [reasonInput, setReasonInput] = useState<string>(event.metadata?.postponedReason || 'Déplacée / Reportée');
+  const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(event.metadata?.isPostponed));
+  const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
+
   const toggleGear = (item: string) => {
     setCheckedGear(prev => ({ ...prev, [item]: !prev[item] }));
+  };
+
+  const handleQuickPostpone = (daysOffset: number) => {
+    const d = new Date(currentEventDateKey + 'T12:00:00');
+    d.setDate(d.getDate() + daysOffset);
+    const newDateStr = d.toISOString().slice(0, 10);
+    setTargetDateInput(newDateStr);
+  };
+
+  const handleConfirmPostpone = () => {
+    if (!onPostpone) return;
+    onPostpone(
+      event.id,
+      originalDateKey,
+      targetDateInput,
+      reasonInput,
+      targetTimeInput
+    );
+    setPostponeSuccessMsg(`Séance reportée avec succès au ${targetDateInput} !`);
+    setTimeout(() => {
+      onClose();
+    }, 1200);
+  };
+
+  const handleRevertPostpone = () => {
+    if (!onCancelPostpone) return;
+    onCancelPostpone(event.id);
+    setPostponeSuccessMsg(`Séance rétablie à sa date initiale (${originalDateKey}) !`);
+    setTimeout(() => {
+      onClose();
+    }, 1000);
   };
 
   const startDate = new Date(event.startDate);
@@ -122,6 +184,196 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({ event, o
               </div>
             )}
           </div>
+
+          {/* Alerte / Confirmation de report */}
+          {postponeSuccessMsg && (
+            <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid #10b981', padding: '10px 14px', borderRadius: 'var(--radius-xs)', fontSize: '0.82rem', color: '#34d399', fontWeight: 600 }}>
+              ✓ {postponeSuccessMsg}
+            </div>
+          )}
+
+          {/* Séance Fantôme : Déjà reportée vers un autre jour */}
+          {event.metadata?.isPostponedPlaceholder && (
+            <div style={{ background: 'rgba(100, 116, 139, 0.12)', border: '1px solid rgba(148, 163, 184, 0.3)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontWeight: 700, fontSize: '0.86rem' }}>
+                <CalendarClock size={16} />
+                <span>Séance Reportée</span>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                Cette séance a été déplacée vers le <strong>{event.metadata.postponedToDate}</strong>.
+                {event.metadata.postponedReason && ` (Motif : ${event.metadata.postponedReason})`}
+              </p>
+              {onCancelPostpone && (
+                <button
+                  className="btn-secondary"
+                  onClick={handleRevertPostpone}
+                  style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', color: 'var(--primary)', borderColor: 'var(--primary-border)' }}
+                >
+                  <RotateCcw size={13} /> Rétablir la séance sur cette date
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Section Reporter / Déplacer la séance (pour les séances de sport actives) */}
+          {isSport && !event.metadata?.isPostponedPlaceholder && onPostpone && (
+            <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.25)', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPostponeExpanded ? 10 : 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CalendarClock size={16} color="var(--primary)" />
+                  <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#ffffff' }}>
+                    {event.metadata?.isPostponed ? 'Séance Déplacée / Reportée' : 'Reporter ou Déplacer cette séance'}
+                  </span>
+                  {event.metadata?.isPostponed && (
+                    <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 87, 34, 0.18)', color: 'var(--primary)', fontWeight: 700 }}>
+                      Reportée depuis le {event.metadata.originalDate}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setIsPostponeExpanded(!isPostponeExpanded)}
+                  style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                >
+                  {isPostponeExpanded ? 'Réduire' : 'Modifier la date'}
+                </button>
+              </div>
+
+              {isPostponeExpanded && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 8 }}>
+                  {/* Raccourcis rapides */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Raccourci :</span>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleQuickPostpone(1)}
+                      style={{ padding: '4px 8px', fontSize: '0.74rem', background: 'rgba(255, 255, 255, 0.04)' }}
+                    >
+                      Demain (+1 j)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleQuickPostpone(2)}
+                      style={{ padding: '4px 8px', fontSize: '0.74rem', background: 'rgba(255, 255, 255, 0.04)' }}
+                    >
+                      Après-demain (+2 j)
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleQuickPostpone(3)}
+                      style={{ padding: '4px 8px', fontSize: '0.74rem', background: 'rgba(255, 255, 255, 0.04)' }}
+                    >
+                      +3 jours
+                    </button>
+                  </div>
+
+                  {/* Formulaire Date & Heure & Motif */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
+                        Nouvelle date
+                      </label>
+                      <input
+                        type="date"
+                        value={targetDateInput}
+                        onChange={e => setTargetDateInput(e.target.value)}
+                        style={{
+                          width: '100%',
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 4,
+                          padding: '6px 8px',
+                          color: '#ffffff',
+                          fontSize: '0.82rem'
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
+                        Heure de départ
+                      </label>
+                      <input
+                        type="time"
+                        value={targetTimeInput}
+                        onChange={e => setTargetTimeInput(e.target.value)}
+                        style={{
+                          width: '100%',
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 4,
+                          padding: '6px 8px',
+                          color: '#ffffff',
+                          fontSize: '0.82rem'
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
+                      Motif du report (optionnel)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ex : Récupération, météo, imprévu..."
+                      value={reasonInput}
+                      onChange={e => setReasonInput(e.target.value)}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(0, 0, 0, 0.3)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 4,
+                        padding: '6px 8px',
+                        color: '#ffffff',
+                        fontSize: '0.82rem'
+                      }}
+                    />
+                  </div>
+
+                  {/* Actions de validation */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: 4 }}>
+                    <button
+                      type="button"
+                      onClick={handleConfirmPostpone}
+                      style={{
+                        background: 'var(--primary)',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: 4,
+                        padding: '7px 14px',
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}
+                    >
+                      <CalendarClock size={14} />
+                      <span>Confirmer le report au {targetDateInput}</span>
+                    </button>
+
+                    {event.metadata?.isPostponed && onCancelPostpone && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={handleRevertPostpone}
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.74rem', color: 'var(--text-secondary)' }}
+                        title="Annuler le report et remettre la séance à sa date d'origine"
+                      >
+                        <RotateCcw size={12} /> Rétablir au {event.metadata.originalDate}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Bandeau de Conflit d'Horaire Résolu */}
           {event.metadata?.conflictRescheduled && event.metadata.conflictReason && (

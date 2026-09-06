@@ -35,7 +35,34 @@ export function getGarminLocalDateKey(act: GarminActivity): string {
 }
 
 /**
+ * Calcule la clé de début de semaine (Lundi YYYY-MM-DD) pour une date YYYY-MM-DD.
+ */
+export function getMondayWeekKey(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  const day = (d.getDay() + 6) % 7; // 0=Lundi, ..., 6=Dimanche
+  const mon = new Date(d);
+  mon.setDate(d.getDate() - day);
+  return formatDateKey(mon);
+}
+
+/**
+ * Formate une date YYYY-MM-DD en texte court et convivial (ex: "sam. 5 sept.").
+ */
+export function formatFriendlyDay(dateKey: string): string {
+  try {
+    const d = new Date(dateKey + 'T12:00:00');
+    return d.toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' });
+  } catch {
+    return dateKey;
+  }
+}
+
+/**
  * Compare les séances prévues avec les activités Garmin réelles.
+ * Intègre la réconciliation automatique à l'échelle du microcycle hebdomadaire :
+ * si une séance prévue plus tôt dans la semaine a été manquée et qu'une séance correspondante
+ * a été réalisée plus tard (ex: dimanche pour samedi ou vendredi), elles sont automatiquement
+ * liées ensemble et la séance réalisée remplace la séance manquée sans pénalité.
  */
 export function compareWorkoutsWithGarmin(
   plannedEvents: CalendarEvent[],
@@ -46,58 +73,164 @@ export function compareWorkoutsWithGarmin(
   const comparisons: ActivityComparison[] = [];
   const matchedGarminIds = new Set<string>();
 
-  const sportPlans = plannedEvents.filter(e => e.category === 'sport');
-
+  const sportPlans = plannedEvents.filter(e => e.category === 'sport' && !e.metadata?.isPostponedPlaceholder);
   const asOfKey = formatDateKey(asOfDate);
 
-  // Évaluation des séances prévues jusqu'à la date de référence
-  for (const plan of sportPlans) {
-    const planDate = new Date(plan.startDate);
-    const dateKey = formatDateKey(planDate);
+  // Filtrer les séances prévues jusqu'à la date de référence
+  const plansToEvaluate = sportPlans.filter(plan => {
+    const planDateKey = formatDateKey(new Date(plan.startDate));
+    return planDateKey <= asOfKey;
+  });
 
-    // Ne pas évaluer les séances dans le futur
-    if (dateKey > asOfKey) {
-      continue;
-    }
+  interface MatchRecord {
+    plan: CalendarEvent;
+    act: GarminActivity;
+    isPostponedCatchup: boolean;
+    scheduledDate: string;
+    executedDate: string;
+  }
 
-    let bestMatch: GarminActivity | undefined = undefined;
+  const planMatches = new Map<string, MatchRecord>();
 
-    // 1. Vérification d'un appairage manuel
+  // Étape 1 : Appairage manuel explicite prioritaire
+  for (const plan of plansToEvaluate) {
     if (manualPairs[plan.id]) {
       const pairedActId = manualPairs[plan.id];
-      bestMatch = garminActivities.find(a => a.activityId === pairedActId);
+      const foundAct = garminActivities.find(a => a.activityId === pairedActId);
+      if (foundAct) {
+        matchedGarminIds.add(foundAct.activityId);
+        const scheduledDate = formatDateKey(new Date(plan.startDate));
+        const executedDate = getGarminLocalDateKey(foundAct);
+        planMatches.set(plan.id, {
+          plan,
+          act: foundAct,
+          isPostponedCatchup: scheduledDate !== executedDate,
+          scheduledDate,
+          executedDate
+        });
+      }
+    }
+  }
+
+  // Étape 2 : Correspondance automatique intelligente le MÊME jour local
+  for (const plan of plansToEvaluate) {
+    if (planMatches.has(plan.id)) continue;
+    const planDateKey = formatDateKey(new Date(plan.startDate));
+
+    const sameDayActivities = garminActivities.filter(act => {
+      if (matchedGarminIds.has(act.activityId)) return false;
+      return getGarminLocalDateKey(act) === planDateKey;
+    });
+
+    if (sameDayActivities.length > 0) {
+      const MIN_MATCH_CONFIDENCE = 50;
+      const scoredCandidates = sameDayActivities
+        .map(act => ({ act, score: scoreActivityMatch(plan, act) }))
+        .filter(candidate => candidate.score >= MIN_MATCH_CONFIDENCE)
+        .sort((a, b) => b.score - a.score);
+
+      if (scoredCandidates.length > 0) {
+        const bestMatch = scoredCandidates[0].act;
+        matchedGarminIds.add(bestMatch.activityId);
+        planMatches.set(plan.id, {
+          plan,
+          act: bestMatch,
+          isPostponedCatchup: false,
+          scheduledDate: planDateKey,
+          executedDate: planDateKey
+        });
+      }
+    }
+  }
+
+  // Étape 3 : Réconciliation globale hebdomadaire (Catch-up / Report automatique au sein du microcycle)
+  // Détecte automatiquement si des séances manquées plus tôt dans la semaine ont été rattrapées
+  // par des activités correspondantes enregistrées plus tard (ex: les 2 séances du dimanche remplaçant le samedi et vendredi)
+  const unmatchedPlans = plansToEvaluate.filter(p => !planMatches.has(p.id));
+  const availableUnmatchedActs = garminActivities.filter(act => {
+    if (matchedGarminIds.has(act.activityId)) return false;
+    const actDate = getGarminLocalDateKey(act);
+    return actDate <= asOfKey;
+  });
+
+  if (unmatchedPlans.length > 0 && availableUnmatchedActs.length > 0) {
+    interface CrossCandidate {
+      plan: CalendarEvent;
+      act: GarminActivity;
+      score: number;
+      scheduledDate: string;
+      executedDate: string;
     }
 
-    // 2. Recherche automatique de correspondance intelligente le même jour local
-    if (!bestMatch) {
-      const sameDayActivities = garminActivities.filter(act => {
-        if (matchedGarminIds.has(act.activityId)) return false;
-        return getGarminLocalDateKey(act) === dateKey;
-      });
+    const crossCandidates: CrossCandidate[] = [];
 
-      if (sameDayActivities.length > 0) {
-        // Classement de toutes les activités du jour selon leur score de compatibilité
-        const MIN_MATCH_CONFIDENCE = 50;
-        const scoredCandidates = sameDayActivities
-          .map(act => ({ act, score: scoreActivityMatch(plan, act) }))
-          .filter(candidate => candidate.score >= MIN_MATCH_CONFIDENCE)
-          .sort((a, b) => b.score - a.score);
+    for (const plan of unmatchedPlans) {
+      const scheduledDate = formatDateKey(new Date(plan.startDate));
+      const planWeek = getMondayWeekKey(scheduledDate);
 
-        if (scoredCandidates.length > 0) {
-          bestMatch = scoredCandidates[0].act;
+      for (const act of availableUnmatchedActs) {
+        const executedDate = getGarminLocalDateKey(act);
+        const actWeek = getMondayWeekKey(executedDate);
+
+        // Appartenance au même microcycle hebdomadaire (Lundi ➔ Dimanche)
+        if (planWeek === actWeek) {
+          const score = scoreActivityMatch(plan, act);
+          if (score >= 50) {
+            crossCandidates.push({
+              plan,
+              act,
+              score,
+              scheduledDate,
+              executedDate
+            });
+          }
         }
       }
     }
 
-    if (bestMatch) {
-      matchedGarminIds.add(bestMatch.activityId);
-      const comparison = evaluateSingleWorkout(plan, bestMatch, dateKey);
-      comparisons.push(comparison);
-    } else if (dateKey === asOfKey) {
+    // Prioriser les scores de compatibilité les plus élevés
+    crossCandidates.sort((a, b) => b.score - a.score);
+
+    for (const candidate of crossCandidates) {
+      if (!planMatches.has(candidate.plan.id) && !matchedGarminIds.has(candidate.act.activityId)) {
+        matchedGarminIds.add(candidate.act.activityId);
+        planMatches.set(candidate.plan.id, {
+          plan: candidate.plan,
+          act: candidate.act,
+          isPostponedCatchup: true,
+          scheduledDate: candidate.scheduledDate,
+          executedDate: candidate.executedDate
+        });
+      }
+    }
+  }
+
+  // Étape 4 : Construction de la liste des comparaisons
+  for (const plan of plansToEvaluate) {
+    const planDateKey = formatDateKey(new Date(plan.startDate));
+    const match = planMatches.get(plan.id);
+
+    if (match) {
+      // Pour une séance rattrapée un autre jour (ex: dimanche au lieu de samedi),
+      // on positionne la date sur le jour d'exécution réel pour que la séance remplace
+      // l'activité bonus du dimanche et affiche clairement le report !
+      const comparisonDate = match.isPostponedCatchup ? match.executedDate : match.scheduledDate;
+      const comp = evaluateSingleWorkout(plan, match.act, comparisonDate);
+
+      if (match.isPostponedCatchup) {
+        comp.isPostponedCatchup = true;
+        comp.scheduledDate = match.scheduledDate;
+        comp.executedDate = match.executedDate;
+        comp.feedbackNotes.unshift(
+          `🔄 Séance du ${formatFriendlyDay(match.scheduledDate)} reportée et réalisée le ${formatFriendlyDay(match.executedDate)} sur Garmin.`
+        );
+      }
+      comparisons.push(comp);
+    } else if (planDateKey === asOfKey) {
       // Séance d'aujourd'hui pas encore téléversée
       comparisons.push({
         id: `comp-pending-${plan.id}`,
-        date: dateKey,
+        date: planDateKey,
         status: 'PENDING',
         plannedEvent: plan,
         durationDeltaMinutes: 0,
@@ -109,10 +242,10 @@ export function compareWorkoutsWithGarmin(
         ]
       });
     } else {
-      // Séance passée non réalisée
+      // Séance passée non réalisée (aucun rattrapage trouvé dans la semaine)
       comparisons.push({
         id: `comp-missed-${plan.id}`,
-        date: dateKey,
+        date: planDateKey,
         status: 'MISSED',
         plannedEvent: plan,
         durationDeltaMinutes: -plan.durationMinutes,
@@ -371,6 +504,9 @@ function evaluateSingleWorkout(
   if (act.avgPaceMinKm) {
     feedbackNotes.push(`⏱️ Allure moyenne : ${act.avgPaceMinKm}`);
   }
+  if (plan.metadata?.isPostponed) {
+    feedbackNotes.unshift(`🔄 Séance reportée depuis le ${plan.metadata.originalDate}${plan.metadata.postponedReason ? ` (${plan.metadata.postponedReason})` : ''}.`);
+  }
 
   const finalScore = Math.max(10, Math.min(100, score));
   const status: ComparisonStatus = finalScore >= 80 ? 'COMPLIANT' : 'PARTIAL';
@@ -471,16 +607,21 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
 
   // 3. Évaluation pour un plan de Musculation / Calisthénie
   if (isPlanStrength) {
+    const inferred = inferOtherProfileCategory(act);
     const isActStrength =
       actType === 'STRENGTH_TRAINING' ||
       actType === 'FITNESS_EQUIPMENT' ||
+      inferred === 'Renforcement musculaire' ||
       key.includes('strength') ||
       key.includes('gym') ||
       key.includes('fitness') ||
       key.includes('cardio') ||
       key.includes('hiit') ||
       key.includes('crossfit') ||
-      key.includes('calisthenics');
+      key.includes('calisthenics') ||
+      actName.includes('muscu') ||
+      actName.includes('force') ||
+      actName.includes('gym');
 
     // Si c'est une activité de course ou de vélo, exclusion
     if (actType === 'RUNNING' || actType === 'TRAIL_RUNNING' || actType === 'CYCLING') {
@@ -492,7 +633,7 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
       if ((act.distanceKm || 0) > 0.5 || (act.avgCadence || 0) > 120) {
         return -1000;
       }
-      if (act.durationMinutes < 20) {
+      if (act.durationMinutes < 15) {
         return -1000;
       }
     }

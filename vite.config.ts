@@ -10,7 +10,7 @@ import path from 'node:path';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const ICAL_URL = env.VITE_ICAL_FEED_URL || process.env.VITE_ICAL_FEED_URL || '';
+  const ICAL_URL = env.ICAL_FEED_URL || env.VITE_ICAL_FEED_URL || process.env.ICAL_FEED_URL || process.env.VITE_ICAL_FEED_URL || '';
 
   // Forward env to process.env for Node middleware usage
   for (const [key, val] of Object.entries(env)) {

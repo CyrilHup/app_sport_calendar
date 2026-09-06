@@ -5,11 +5,10 @@ const getEnvVal = (key: string, fallback: string = ''): string => {
 };
 
 export const GLOBAL_APP_CONFIG = {
-  HOME_ADDRESS: getEnvVal('VITE_HOME_ADDRESS', 'Home'),
-  ETS_ADDRESS: getEnvVal('VITE_CAMPUS_ADDRESS', 'Campus'),
-  MOUNT_ROYAL_ADDRESS: getEnvVal('VITE_TRAIL_ADDRESS', 'Trail Park'),
-  TRAIL_LOCATION: getEnvVal('VITE_TRAIL_LOCATION', 'Mont Royal'),
-  ICAL_URL: getEnvVal('VITE_ICAL_FEED_URL', ''),
+  HOME_ADDRESS: getEnvVal('VITE_HOME_ADDRESS', 'Domicile'),
+  ETS_ADDRESS: getEnvVal('VITE_CAMPUS_ADDRESS', 'Campus ÉTS'),
+  MOUNT_ROYAL_ADDRESS: getEnvVal('VITE_TRAIL_ADDRESS', 'Parc du Mont-Royal'),
+  TRAIL_LOCATION: getEnvVal('VITE_TRAIL_LOCATION', 'Mont-Royal'),
   SPORT_START_DATE: getEnvVal('VITE_SPORT_START_DATE', '2026-09-01'),
   PLAN_START_DATE: getEnvVal('VITE_PLAN_START_DATE', '2027-01-11'),
   RACE_DATE: getEnvVal('VITE_TARGET_RACE_DATE', '2027-07-03'),
@@ -31,6 +30,18 @@ export const GLOBAL_APP_CONFIG = {
     DEFAULT: 35
   }
 };
+
+export function setAppConfigOverrides(overrides: {
+  homeAddress?: string;
+  campusAddress?: string;
+  trailAddress?: string;
+  fcMax?: number;
+}): void {
+  if (overrides.homeAddress) GLOBAL_APP_CONFIG.HOME_ADDRESS = overrides.homeAddress;
+  if (overrides.campusAddress) GLOBAL_APP_CONFIG.ETS_ADDRESS = overrides.campusAddress;
+  if (overrides.trailAddress) GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS = overrides.trailAddress;
+  if (overrides.fcMax) GLOBAL_APP_CONFIG.ATHLETE_FC_MAX = overrides.fcMax;
+}
 
 export const COLOR_MAP = {
   TRAIL_LONG: { emoji: "🏔️", colorHex: "#ff6b35", colorId: "6" },

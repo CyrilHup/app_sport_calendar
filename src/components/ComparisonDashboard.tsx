@@ -3,6 +3,7 @@ import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/ga
 import {
   Activity,
   AlertTriangle,
+  CalendarClock,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -30,6 +31,8 @@ interface ComparisonDashboardProps {
   manualPairs?: Record<string, string>;
   onManualPair?: (planId: string, garminActivityId: string) => void;
   onManualUnpair?: (planId: string) => void;
+  onPostponeWorkout?: (eventId: string, originalDate: string, targetDate: string, reason?: string) => void;
+  referenceDateStr?: string;
 }
 
 type StatusFilterType = 'ALL' | 'COMPLIANT' | 'PARTIAL' | 'MISSED' | 'UNPLANNED' | 'PENDING';
@@ -41,7 +44,9 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   availableGarminActivities = [],
   manualPairs = {},
   onManualPair,
-  onManualUnpair
+  onManualUnpair,
+  onPostponeWorkout,
+  referenceDateStr
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
@@ -320,8 +325,13 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                             {comp.plannedEvent?.emoji || '📅'}
                           </span>
                           <div>
-                            <div style={{ fontWeight: 700, color: '#ffffff' }}>
-                              {comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Activité Bonus'}
+                            <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span>{comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Activité Bonus'}</span>
+                              {comp.isPostponedCatchup && comp.scheduledDate && (
+                                <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
+                                  🔄 Remplacée / Reportée du {new Date(comp.scheduledDate + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </span>
+                              )}
                             </div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                               {dateFormatted} • Objectif {comp.plannedEvent?.durationMinutes || comp.actualActivity?.durationMinutes || '--'} min
@@ -477,30 +487,55 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                             {comp.feedbackNotes[0]}
                           </div>
 
-                          {/* Bouton Appairage Manuel */}
-                          {planId && onManualPair && (
-                            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
-                              {isManuallyPaired ? (
-                                <button
-                                  className="btn-secondary"
-                                  onClick={() => onManualUnpair && onManualUnpair(planId)}
-                                  style={{ padding: '3px 6px', fontSize: '0.68rem', color: '#f87171' }}
-                                  title="Délier l'appairage manuel"
-                                >
-                                  <Unlink size={11} /> Délier
-                                </button>
-                              ) : (
-                                <button
-                                  className="btn-secondary"
-                                  onClick={() => setPairingForPlanId(pairingForPlanId === planId ? null : planId)}
-                                  style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--accent-blue)' }}
-                                  title="Associer avec une activité Garmin"
-                                >
-                                  <Link2 size={11} /> Lier
-                                </button>
-                              )}
-                            </div>
-                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                            {/* Bouton Reporter Séance (pour les séances manquées ou en attente) */}
+                            {comp.plannedEvent && (comp.status === 'MISSED' || comp.status === 'PENDING') && onPostponeWorkout && (
+                              <button
+                                className="btn-secondary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const origDate = comp.plannedEvent?.metadata?.originalDate || comp.plannedEvent!.startDate.slice(0, 10);
+                                  const todayStr = referenceDateStr || new Date().toISOString().slice(0, 10);
+                                  let targetDate = todayStr;
+                                  if (origDate >= todayStr) {
+                                    const nextD = new Date(todayStr + 'T12:00:00');
+                                    nextD.setDate(nextD.getDate() + 1);
+                                    targetDate = nextD.toISOString().slice(0, 10);
+                                  }
+                                  onPostponeWorkout(comp.plannedEvent!.id, origDate, targetDate, 'Reporté depuis la télémétrie');
+                                }}
+                                style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--primary)', borderColor: 'var(--primary-border)', display: 'flex', alignItems: 'center', gap: 3 }}
+                                title="Reporter la séance à aujourd'hui / demain"
+                              >
+                                <CalendarClock size={11} /> Reporter
+                              </button>
+                            )}
+
+                            {/* Bouton Appairage Manuel */}
+                            {planId && onManualPair && (
+                              <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                                {isManuallyPaired ? (
+                                  <button
+                                    className="btn-secondary"
+                                    onClick={() => onManualUnpair && onManualUnpair(planId)}
+                                    style={{ padding: '3px 6px', fontSize: '0.68rem', color: '#f87171' }}
+                                    title="Délier l'appairage manuel"
+                                  >
+                                    <Unlink size={11} /> Délier
+                                  </button>
+                                ) : (
+                                  <button
+                                    className="btn-secondary"
+                                    onClick={() => setPairingForPlanId(pairingForPlanId === planId ? null : planId)}
+                                    style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--accent-blue)' }}
+                                    title="Associer avec une activité Garmin"
+                                  >
+                                    <Link2 size={11} /> Lier
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -613,9 +648,14 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ fontSize: '1.3rem' }}>{comp.plannedEvent?.emoji || '⌚'}</span>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span>{comp.actualActivity?.activityName || comp.plannedEvent?.title}</span>
                         {getActivityTypeBadge(comp.actualActivity?.activityType)}
+                        {comp.isPostponedCatchup && comp.scheduledDate && (
+                          <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
+                            🔄 Remplacée / Reportée du {new Date(comp.scheduledDate + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                         {comp.date} {comp.plannedEvent && `• Prescrit : ${comp.plannedEvent.title}`}
@@ -624,6 +664,29 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     {getStatusBadge(comp.status, comp.complianceScore)}
+
+                    {comp.plannedEvent && (comp.status === 'MISSED' || comp.status === 'PENDING') && onPostponeWorkout && (
+                      <button
+                        className="btn-secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const origDate = comp.plannedEvent?.metadata?.originalDate || comp.plannedEvent!.startDate.slice(0, 10);
+                          const todayStr = referenceDateStr || new Date().toISOString().slice(0, 10);
+                          let targetDate = todayStr;
+                          if (origDate >= todayStr) {
+                            const nextD = new Date(todayStr + 'T12:00:00');
+                            nextD.setDate(nextD.getDate() + 1);
+                            targetDate = nextD.toISOString().slice(0, 10);
+                          }
+                          onPostponeWorkout(comp.plannedEvent!.id, origDate, targetDate, 'Reporté depuis la télémétrie');
+                        }}
+                        style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--primary)', borderColor: 'var(--primary-border)', display: 'flex', alignItems: 'center', gap: 3 }}
+                        title="Reporter cette séance"
+                      >
+                        <CalendarClock size={11} /> Reporter
+                      </button>
+                    )}
+
                     {planId && onManualPair && (
                       isManuallyPaired ? (
                         <button

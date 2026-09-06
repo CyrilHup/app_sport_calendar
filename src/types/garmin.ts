@@ -49,6 +49,9 @@ export interface ActivityComparison {
   complianceScore: number; // 0 to 100%
   inferredType?: string; // For activities logged as 'OTHER'
   feedbackNotes: string[];
+  isPostponedCatchup?: boolean;
+  scheduledDate?: string;
+  executedDate?: string;
 }
 
 export interface GarminSyncState {
