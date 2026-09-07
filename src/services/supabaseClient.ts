@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Preferences } from '@capacitor/preferences';
 import { GarminActivity } from '../types/garmin';
 
 const getEnv = (key: string): string => {
@@ -15,11 +16,56 @@ export const isSupabaseConfigured = (): boolean => {
   return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http'));
 };
 
+/**
+ * Hybrid persistent storage adapter:
+ * Uses @capacitor/preferences (backed by Android native SharedPreferences)
+ * on mobile to ensure sessions persist across app restarts, updates, and process kills.
+ * Seamlessly falls back to localStorage on standard web browsers.
+ */
+export const persistentAuthStorage = {
+  getItem: async (key: string): Promise<string | null> => {
+    try {
+      const { value } = await Preferences.get({ key });
+      if (value !== null && value !== undefined) {
+        return value;
+      }
+    } catch {}
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        return window.localStorage.getItem(key);
+      }
+    } catch {}
+    return null;
+  },
+  setItem: async (key: string, value: string): Promise<void> => {
+    try {
+      await Preferences.set({ key, value });
+    } catch {}
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(key, value);
+      }
+    } catch {}
+  },
+  removeItem: async (key: string): Promise<void> => {
+    try {
+      await Preferences.remove({ key });
+    } catch {}
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(key);
+      }
+    } catch {}
+  }
+};
+
 export const supabase: SupabaseClient = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
+        storage: persistentAuthStorage,
         persistSession: true,
-        autoRefreshToken: true
+        autoRefreshToken: true,
+        detectSessionInUrl: true
       }
     })
   : (null as unknown as SupabaseClient);

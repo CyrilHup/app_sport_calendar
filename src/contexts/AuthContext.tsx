@@ -66,12 +66,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     // 2. Auth state subscription
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
         await loadProfileForUser(session.user);
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setProfile(null);
       }
       setLoading(false);
