@@ -343,7 +343,7 @@ export const App: React.FC = () => {
       />
 
       {/* Navigation Tabs (Desktop) */}
-      <div className="nav-tabs" style={{ marginBottom: '14px' }}>
+      <div className="nav-tabs desktop-only" style={{ marginBottom: '14px' }}>
         <button
           className={`nav-tab-btn ${activeTab === 'calendar' ? 'active' : ''}`}
           onClick={() => setActiveTab('calendar')}

@@ -332,58 +332,35 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-      {/* Sub-Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '10px', flexWrap: 'wrap' }}>
+      {/* Sub-Navigation Tabs (Ruban Scrollable Moderne) */}
+      <div className="filter-chips-scroll" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '10px' }}>
         <button
-          className={`btn-secondary ${activeSubTab === 'roadmap' ? 'active' : ''}`}
+          className={`chip-btn ${activeSubTab === 'roadmap' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('roadmap')}
-          style={{
-            borderColor: activeSubTab === 'roadmap' ? 'var(--primary)' : undefined,
-            color: activeSubTab === 'roadmap' ? 'var(--primary)' : undefined,
-            fontSize: '0.8rem',
-            fontWeight: 700
-          }}
         >
-          <Layers size={14} /> Matrice de Périodisation (6 Phases)
+          <Layers size={13} /> 1. Périodisation (6 Phases)
         </button>
 
         <button
-          className={`btn-secondary ${activeSubTab === 'weekly' ? 'active' : ''}`}
+          className={`chip-btn ${activeSubTab === 'weekly' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('weekly')}
-          style={{
-            borderColor: activeSubTab === 'weekly' ? 'var(--primary)' : undefined,
-            color: activeSubTab === 'weekly' ? 'var(--primary)' : undefined,
-            fontSize: '0.8rem',
-            fontWeight: 700
-          }}
         >
-          <Calendar size={14} /> Planning Hebdo Type (Lun – Dim)
+          <Calendar size={13} /> 2. Planning Hebdo Type
         </button>
 
         <button
-          className={`btn-secondary ${activeSubTab === 'raceStrategy' ? 'active' : ''}`}
+          className={`chip-btn ${activeSubTab === 'raceStrategy' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('raceStrategy')}
-          style={{
-            borderColor: activeSubTab === 'raceStrategy' ? 'var(--primary)' : undefined,
-            color: activeSubTab === 'raceStrategy' ? 'var(--primary)' : undefined,
-            fontSize: '0.8rem',
-            fontWeight: 700
-          }}
         >
-          <Mountain size={14} /> Profil & Ravitaillements (77 km)
+          <Mountain size={13} /> 3. Parcours & Ravitaillements
         </button>
 
         <button
-          className={`btn-secondary ${activeSubTab === 'gearSetup' ? 'active' : ''}`}
+          className={`chip-btn ${activeSubTab === 'gearSetup' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('gearSetup')}
-          style={{
-            borderColor: activeSubTab === 'gearSetup' ? '#38bdf8' : undefined,
-            color: activeSubTab === 'gearSetup' ? '#38bdf8' : undefined,
-            fontSize: '0.8rem',
-            fontWeight: 700
-          }}
+          style={activeSubTab === 'gearSetup' ? { borderColor: '#38bdf8', color: '#38bdf8' } : undefined}
         >
-          <ShieldCheck size={14} /> Stratégie Sac 5L & Matériel Obligatoire
+          <ShieldCheck size={13} /> 4. Sac 5L & Matériel Obligatoire
         </button>
       </div>
 
@@ -670,7 +647,8 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
               </span>
             </div>
 
-            <div className="pro-table-wrapper">
+            {/* Desktop Table View */}
+            <div className="pro-table-wrapper desktop-only">
               <table className="pro-table">
                 <thead>
                   <tr>
@@ -710,6 +688,52 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile Vertical Race Timeline */}
+            <div className="race-timeline mobile-only">
+              {aidStations.map((station, sIdx) => {
+                const isDropBag = station.dropBag.includes('DROP');
+                const isFinish = station.name.includes('Arrivée');
+
+                return (
+                  <div key={sIdx} className="race-timeline-node">
+                    <div className={`race-timeline-dot ${isDropBag ? 'drop-bag' : ''} ${isFinish ? 'finish' : ''}`} />
+                    <div className="race-station-card">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                        <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>
+                          {station.name}
+                        </div>
+                        <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '0.84rem' }}>
+                          {station.km}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 8, fontSize: '0.74rem', color: 'var(--text-muted)', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span>⛰️ Alt: {station.elevation}</span>
+                        <span>•</span>
+                        <span>📈 Cumul: {station.elevationGain}</span>
+                        <span
+                          className="badge-tag"
+                          style={{
+                            background: isDropBag ? 'rgba(16, 185, 129, 0.15)' : (station.crew.includes('Isolé') ? 'rgba(239, 68, 68, 0.1)' : 'rgba(56, 189, 248, 0.1)'),
+                            color: isDropBag ? '#10b981' : (station.crew.includes('Isolé') ? '#f87171' : '#38bdf8'),
+                            border: '1px solid var(--border-color)',
+                            fontSize: '0.68rem',
+                            marginLeft: 'auto'
+                          }}
+                        >
+                          {isDropBag ? '🎒 DROP BAG' : station.crew}
+                        </span>
+                      </div>
+
+                      <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.45, margin: 0, marginTop: 4 }}>
+                        {station.notes}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

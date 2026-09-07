@@ -1,8 +1,10 @@
-import { Activity, Award, Calendar, ChevronRight, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap, User, Settings } from 'lucide-react';
+import React, { useState } from 'react';
+import { Activity, Award, Calendar, ChevronDown, ChevronRight, ChevronUp, Clock, Compass, Flame, RefreshCw, ShieldAlert, TrendingUp, Zap, User, Settings } from 'lucide-react';
 import { PeriodizationContext } from '../types/calendar';
 import { ActivityComparison, GarminSyncState } from '../types/garmin';
 import { WeeklyStatsSummary } from '../services/comparisonEngine';
 import { AccountModalTab } from './AccountModal';
+import { triggerHapticFeedback } from '../services/hapticsService';
 
 interface HeaderProps {
   periodContext: PeriodizationContext;
@@ -31,6 +33,8 @@ export const Header: React.FC<HeaderProps> = ({
   userDisplayName,
   isLoggedIn
 }) => {
+  const [isHudOpenOnMobile, setIsHudOpenOnMobile] = useState<boolean>(false);
+
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
     : 'Direct';
@@ -119,7 +123,10 @@ export const Header: React.FC<HeaderProps> = ({
             />
             <span>{isRecharging ? 'Synchronisation...' : `Synchronisé (${formattedSyncTime})`}</span>
             <button
-              onClick={onRefreshAll}
+              onClick={() => {
+                triggerHapticFeedback('light');
+                onRefreshAll();
+              }}
               disabled={isRecharging}
               title="Rafraîchir les flux ÉTS et la télémétrie Garmin"
               style={{
@@ -141,7 +148,10 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Unified Athlete Account & Services Hub Button */}
           <button
             className="btn-secondary"
-            onClick={() => onOpenAccountModal('profile')}
+            onClick={() => {
+              triggerHapticFeedback('light');
+              onOpenAccountModal('profile');
+            }}
             title="Mon compte athlète, Garmin Connect, Google Agenda et Partage"
             style={{
               display: 'inline-flex',
@@ -178,8 +188,39 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
+      {/* Mobile Compact HUD Summary Strip (Visible only on mobile < 769px) */}
+      <div
+        className="mobile-hud-summary"
+        onClick={() => setIsHudOpenOnMobile(!isHudOpenOnMobile)}
+        role="button"
+        tabIndex={0}
+        aria-label="Afficher la télémétrie"
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', flexWrap: 'wrap' }}>
+          <span className="phase-pill" style={{ padding: '2px 7px', fontSize: '0.68rem' }}>
+            <TrendingUp size={11} />
+            <span>{periodContext.label}</span>
+          </span>
+          <span style={{ fontWeight: 800, color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <Flame size={12} /> J-{periodContext.daysToRace}
+          </span>
+          <span style={{ color: 'var(--text-muted)' }}>•</span>
+          <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>
+            {formatHoursMin(weeklyStats.actualDurationMin)}/{formatHoursMin(weeklyStats.plannedDurationMin)}
+          </span>
+          <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+            +{weeklyStats.actualElevationM}m D+
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 700 }}>
+          <span>{isHudOpenOnMobile ? 'Fermer' : 'Télémétrie'}</span>
+          {isHudOpenOnMobile ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </div>
+      </div>
+
       {/* Fused Command Bar (Combines Telemetry + Periodization Status + Coach Advice) */}
-      <div className="fused-command-bar">
+      <div className={`fused-command-bar ${isHudOpenOnMobile ? 'mobile-open' : ''}`}>
         {/* Top bar: Phase, Physiological Load & Countdown */}
         <div className="command-bar-top">
           <div className="command-phase-info">

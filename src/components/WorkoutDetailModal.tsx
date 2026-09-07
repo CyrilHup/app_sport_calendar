@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { CalendarEvent } from '../types/calendar';
-import { CalendarClock, CheckSquare, Clock, Compass, Heart, MapPin, RotateCcw, ShieldCheck, Square, X, Zap, ArrowRight } from 'lucide-react';
+import { Bell, CalendarClock, CheckSquare, Clock, Compass, Heart, MapPin, RotateCcw, ShieldCheck, Square, X, Zap, ArrowRight } from 'lucide-react';
+import { RunAlarmModal } from './RunAlarmModal';
+import { triggerHapticFeedback } from '../services/hapticsService';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -24,6 +26,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   if (!event) return null;
 
   const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
+  const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
 
   const originalDateKey = event.metadata?.originalDate || event.startDate.slice(0, 10);
   const currentEventDateKey = event.startDate.slice(0, 10);
@@ -244,12 +247,12 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 8 }}>
                   {/* Raccourcis rapides */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Raccourci :</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Raccourcis :</span>
                     <button
                       type="button"
                       className="btn-secondary"
                       onClick={() => handleQuickPostpone(1)}
-                      style={{ padding: '4px 8px', fontSize: '0.74rem', background: 'rgba(255, 255, 255, 0.04)' }}
+                      style={{ padding: '6px 12px', minHeight: '34px', fontSize: '0.76rem', background: 'rgba(255, 255, 255, 0.05)' }}
                     >
                       Demain (+1 j)
                     </button>
@@ -257,7 +260,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       type="button"
                       className="btn-secondary"
                       onClick={() => handleQuickPostpone(2)}
-                      style={{ padding: '4px 8px', fontSize: '0.74rem', background: 'rgba(255, 255, 255, 0.04)' }}
+                      style={{ padding: '6px 12px', minHeight: '34px', fontSize: '0.76rem', background: 'rgba(255, 255, 255, 0.05)' }}
                     >
                       Après-demain (+2 j)
                     </button>
@@ -265,7 +268,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       type="button"
                       className="btn-secondary"
                       onClick={() => handleQuickPostpone(3)}
-                      style={{ padding: '4px 8px', fontSize: '0.74rem', background: 'rgba(255, 255, 255, 0.04)' }}
+                      style={{ padding: '6px 12px', minHeight: '34px', fontSize: '0.76rem', background: 'rgba(255, 255, 255, 0.05)' }}
                     >
                       +3 jours
                     </button>
@@ -497,12 +500,47 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           )}
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              triggerHapticFeedback('light');
+              setIsAlarmModalOpen(true);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+              border: 'none',
+              borderRadius: 8,
+              padding: '8px 14px',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              color: '#ffffff',
+              cursor: 'pointer'
+            }}
+          >
+            <Bell size={15} />
+            <span>Alarme & Rappel</span>
+          </button>
           <button className="btn-secondary" onClick={onClose}>
             Fermer
           </button>
         </div>
       </div>
+
+      <RunAlarmModal
+        isOpen={isAlarmModalOpen}
+        onClose={() => setIsAlarmModalOpen(false)}
+        workout={{
+          id: event.id,
+          title: event.title,
+          date: event.startDate,
+          activityType: event.sportType || 'SPORT'
+        }}
+      />
     </div>
   );
 };

@@ -38,3 +38,10 @@ lerna-debug.log*
 
 .vercel
 supabase/.temp/
+
+# Android build outputs
+android/.gradle/
+android/app/build/
+android/build/
+*.apk
+*.aab

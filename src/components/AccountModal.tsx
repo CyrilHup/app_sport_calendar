@@ -465,11 +465,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
         {/* Tab Navigation */}
         <div
+          className="filter-chips-scroll"
           style={{
             display: 'flex',
             borderBottom: '1px solid var(--border-color)',
             background: 'rgba(0, 0, 0, 0.15)',
-            padding: '0 20px',
+            padding: '0 14px',
             overflowX: 'auto',
             gap: '6px'
           }}

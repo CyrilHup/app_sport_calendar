@@ -1,5 +1,6 @@
 import { GarminActivity, GarminActivityType, GarminSyncState } from '../types/garmin';
 import { classifyGarminActivityType } from './activityClassifier';
+import { getApiUrl } from './apiConfig';
 
 const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
 const GARMIN_STATE_KEY = 'garmin_sync_state';
@@ -131,7 +132,7 @@ export async function syncWithGarminAPI(credentials?: {
       ? credentials
       : (loadGarminCredentials() || credentials);
 
-    const response = await fetch('/api/garmin-sync', {
+    const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credsToUse || {})

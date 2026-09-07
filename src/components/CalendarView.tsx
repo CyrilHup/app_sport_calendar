@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ActivityComparison } from '../types/garmin';
-import { ChevronLeft, ChevronRight, Filter, Clock, MapPin, ListFilter, LayoutGrid, Layers, Bus, CheckCircle2, ArrowRight, CalendarClock, RotateCcw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Filter, Clock, MapPin, ListFilter, LayoutGrid, Layers, Bus, CheckCircle2, ArrowRight, CalendarClock, RotateCcw, Calendar } from 'lucide-react';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
 
@@ -21,6 +21,7 @@ interface CalendarViewProps {
 }
 
 type FilterCategory = 'all' | 'sport' | 'course' | 'trajet' | 'mobility';
+type ViewMode = 'day' | 'grid' | 'list';
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
   schedules,
@@ -30,13 +31,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onCancelPostponeWorkout,
   comparisons = []
 }) => {
+  const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
   const [isFusedMode, setIsFusedMode] = useState<boolean>(true);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
+    const todayIndex = schedules.findIndex(s => s.date === (referenceDateStr || new Date().toISOString().slice(0, 10)));
+    return todayIndex >= 0 ? todayIndex % 7 : 0;
+  });
 
   // Découpage en blocs de 7 jours
   const currentWeekStartIdx = weekOffset * 7;
@@ -130,15 +136,34 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <span>{isFusedMode ? 'Cartes Fusionnées : OUI' : 'Cartes Séparées'}</span>
           </button>
 
-          {/* Bascule Mode d'Affichage (Grille vs Liste) */}
+          {/* Bascule Mode d'Affichage (Jour vs Grille vs Liste) */}
           <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.04)', borderRadius: 'var(--radius-sm)', padding: 2, marginLeft: '6px' }}>
+            <button
+              onClick={() => setViewMode('day')}
+              style={{
+                background: viewMode === 'day' ? 'var(--primary-subtle)' : 'transparent',
+                border: 'none',
+                color: viewMode === 'day' ? 'var(--primary)' : 'var(--text-secondary)',
+                padding: '5px 9px',
+                borderRadius: 4,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: '0.74rem',
+                fontWeight: 600
+              }}
+              title="Affichage par Jour (Recommandé mobile)"
+            >
+              <Calendar size={13} /> Jour
+            </button>
             <button
               onClick={() => setViewMode('grid')}
               style={{
                 background: viewMode === 'grid' ? 'var(--primary-subtle)' : 'transparent',
                 border: 'none',
                 color: viewMode === 'grid' ? 'var(--primary)' : 'var(--text-secondary)',
-                padding: '5px 8px',
+                padding: '5px 9px',
                 borderRadius: 4,
                 cursor: 'pointer',
                 display: 'flex',
@@ -157,7 +182,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 background: viewMode === 'list' ? 'var(--primary-subtle)' : 'transparent',
                 border: 'none',
                 color: viewMode === 'list' ? 'var(--primary)' : 'var(--text-secondary)',
-                padding: '5px 8px',
+                padding: '5px 9px',
                 borderRadius: 4,
                 cursor: 'pointer',
                 display: 'flex',
@@ -189,48 +214,47 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           )}
         </div>
 
-        {/* Filtres par Catégorie */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Filter size={12} /> Filtrer :
+        {/* Filtres par Catégorie (Ruban Scrollable Moderne) */}
+        <div className="filter-chips-scroll">
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+            <Filter size={12} /> Filtres :
           </span>
 
           <button
-            className={`btn-secondary ${filter === 'all' ? 'active' : ''}`}
+            className={`chip-btn ${filter === 'all' ? 'active' : ''}`}
             onClick={() => setFilter('all')}
-            style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'all' ? 'var(--primary)' : undefined }}
           >
             Tous ({countAll})
           </button>
 
           <button
-            className={`btn-secondary ${filter === 'sport' ? 'active' : ''}`}
+            className={`chip-btn ${filter === 'sport' ? 'active' : ''}`}
             onClick={() => setFilter('sport')}
-            style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'sport' ? 'var(--primary)' : undefined }}
+            style={filter === 'sport' ? { borderColor: 'var(--primary)', color: 'var(--primary)' } : undefined}
           >
             🏔️ Séances ({countSport})
           </button>
 
           <button
-            className={`btn-secondary ${filter === 'course' ? 'active' : ''}`}
+            className={`chip-btn ${filter === 'course' ? 'active' : ''}`}
             onClick={() => setFilter('course')}
-            style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'course' ? '#3b82f6' : undefined }}
+            style={filter === 'course' ? { borderColor: '#3b82f6', color: '#60a5fa' } : undefined}
           >
             🏛️ Cours ÉTS ({countCourse})
           </button>
 
           <button
-            className={`btn-secondary ${filter === 'trajet' ? 'active' : ''}`}
+            className={`chip-btn ${filter === 'trajet' ? 'active' : ''}`}
             onClick={() => setFilter('trajet')}
-            style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'trajet' ? '#94a3b8' : undefined }}
+            style={filter === 'trajet' ? { borderColor: '#94a3b8', color: '#cbd5e1' } : undefined}
           >
             🚌 Trajets ({countTrajet})
           </button>
 
           <button
-            className={`btn-secondary ${filter === 'mobility' ? 'active' : ''}`}
+            className={`chip-btn ${filter === 'mobility' ? 'active' : ''}`}
             onClick={() => setFilter('mobility')}
-            style={{ padding: '5px 9px', fontSize: '0.75rem', borderColor: filter === 'mobility' ? '#10b981' : undefined }}
+            style={filter === 'mobility' ? { borderColor: '#10b981', color: '#34d399' } : undefined}
           >
             🧘 Mobilité ({countMobility})
           </button>
@@ -240,341 +264,431 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Widget Météo & Sentiers du Mont-Royal */}
       <WeatherWidget />
 
-      {/* Grille Hebdomadaire ou Vue Liste */}
-      {viewMode === 'grid' ? (
-        <div className="calendar-scroll-wrapper">
-          <div className="week-grid">
-            {displayedDays.map(day => {
-              const dateObj = new Date(day.date + 'T12:00:00');
-              const isToday = day.date === todayKey;
+      {/* Fonction commune de rendu des séances et événements d'un jour */}
+      {(() => {
+        const renderDayEventsContent = (day: DailySchedule, isSingleDayView: boolean = false) => {
+          const eventsToDisplay = day.events.filter(e => {
+            if (filter !== 'all') return e.category === filter;
+            if (isFusedMode) {
+              return e.category === 'sport' || e.category === 'course';
+            }
+            return true;
+          });
 
-              const eventsToDisplay = day.events.filter(e => {
-                if (filter !== 'all') return e.category === filter;
-                if (isFusedMode) {
-                  return e.category === 'sport' || e.category === 'course';
-                }
-                return true;
-              });
+          const mobilityEvent = day.events.find(e => e.category === 'mobility');
+          const catchupForThisDay = comparisons.filter(c => c.isPostponedCatchup && c.executedDate === day.date);
 
-              const mobilityEvent = day.events.find(e => e.category === 'mobility');
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+              {eventsToDisplay.length === 0 && catchupForThisDay.length === 0 && (!isFusedMode || !mobilityEvent) ? (
+                <div style={{ textAlign: 'center', padding: isSingleDayView ? '40px 16px' : '24px 8px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                  <span>😴 Repos complet / Aucun événement prévu ce jour</span>
+                </div>
+              ) : (
+                <>
+                  {eventsToDisplay.map(ev => {
+                    const isSportCard = ev.category === 'sport';
+                    const isGhost = Boolean(ev.metadata?.isPostponedPlaceholder);
+                    const evComp = comparisons.find(c => c.plannedEvent?.id === ev.id);
 
-              const isDragTarget = dragOverDate === day.date;
-
-              return (
-                <div
-                  key={day.date}
-                  className={`day-column ${isToday ? 'today' : ''} ${isDragTarget ? 'drag-over' : ''}`}
-                  onDragOver={(e) => {
-                    if (draggedEvent) {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      if (dragOverDate !== day.date) setDragOverDate(day.date);
+                    if (isGhost) {
+                      return (
+                        <div
+                          key={ev.id}
+                          className="event-card ghost-postponed"
+                          onClick={() => setSelectedEvent(ev)}
+                          title="Séance reportée. Cliquer pour voir les détails ou rétablir."
+                          style={{
+                            borderLeftColor: '#64748b',
+                            borderLeftStyle: 'dashed',
+                            background: 'rgba(100, 116, 139, 0.08)',
+                            border: '1px dashed rgba(148, 163, 184, 0.3)',
+                            padding: isSingleDayView ? '10px 12px' : '7px 9px'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                            <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span>➡️</span> Reportée au {ev.metadata?.postponedToDate}
+                            </span>
+                            {onCancelPostponeWorkout && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCancelPostponeWorkout(ev.id);
+                                }}
+                                style={{
+                                  background: 'rgba(255, 87, 34, 0.12)',
+                                  border: '1px solid var(--primary-border)',
+                                  color: 'var(--primary)',
+                                  borderRadius: 4,
+                                  padding: '3px 8px',
+                                  minHeight: '26px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer'
+                                }}
+                                title="Rétablir la séance à cette date"
+                              >
+                                Rétablir
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.76rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 3 }}>
+                            {ev.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
+                          </div>
+                        </div>
+                      );
                     }
-                  }}
-                  onDragLeave={() => {
-                    if (dragOverDate === day.date) setDragOverDate(null);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragOverDate(null);
-                    if (draggedEvent && onPostponeWorkout && draggedEvent.startDate.slice(0, 10) !== day.date) {
-                      const origDate = draggedEvent.metadata?.originalDate || draggedEvent.startDate.slice(0, 10);
-                      onPostponeWorkout(draggedEvent.id, origDate, day.date);
-                      setDraggedEvent(null);
-                    }
-                  }}
-                  style={isDragTarget ? { outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : undefined}
-                >
-                  <div className="day-header">
-                    <div>
-                      <div className="day-name">{dayNames[day.dayOfWeek]}</div>
-                      <div className="day-number">
-                        {dateObj.getDate()}{' '}
-                        <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-                          {dateObj.toLocaleDateString('fr-CA', { month: 'short' })}
-                        </span>
-                      </div>
-                    </div>
-                    {isToday && <span className="today-indicator">Aujourd'hui</span>}
-                  </div>
 
-                  {/* Séances et cours du jour */}
-                  {(() => {
-                    const catchupForThisDay = comparisons.filter(c => c.isPostponedCatchup && c.executedDate === day.date);
+                    const hasAller = ev.metadata?.commuteAller;
+                    const hasRetour = ev.metadata?.commuteRetour;
 
                     return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-                        {eventsToDisplay.length === 0 && catchupForThisDay.length === 0 && (!isFusedMode || !mobilityEvent) ? (
-                          <div style={{ textAlign: 'center', padding: '24px 8px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                            Repos / Aucun événement
+                      <div
+                        key={ev.id}
+                        className={`event-card ${ev.category} ${isSportCard ? 'draggable-sport' : ''}`}
+                        onClick={() => setSelectedEvent(ev)}
+                        draggable={isSportCard}
+                        onDragStart={(e) => {
+                          if (isSportCard) {
+                            setDraggedEvent(ev);
+                            e.dataTransfer.setData('text/plain', ev.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                          }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedEvent(null);
+                          setDragOverDate(null);
+                        }}
+                        title={`${ev.title}\n${ev.location}\n${ev.durationMinutes} min${isSportCard ? '\n(Glisser-déposer sur un autre jour pour reporter)' : ''}`}
+                        style={{
+                          ...(isSportCard ? { cursor: 'grab' } : {}),
+                          ...(isSingleDayView ? { padding: '10px 14px' } : {})
+                        }}
+                      >
+                        <div className="event-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                            <span style={{ fontSize: isSingleDayView ? '1.05rem' : '0.9rem' }}>{ev.emoji}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: isSingleDayView ? '0.88rem' : '0.8rem' }}>
+                              {ev.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
+                            </span>
                           </div>
-                        ) : (
-                          <>
-                            {eventsToDisplay.map(ev => {
-                              const isSportCard = ev.category === 'sport';
-                              const isGhost = Boolean(ev.metadata?.isPostponedPlaceholder);
-                              const evComp = comparisons.find(c => c.plannedEvent?.id === ev.id);
+                          {isSportCard && onPostponeWorkout && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const currD = ev.startDate.slice(0, 10);
+                                const nextD = new Date(currD + 'T12:00:00');
+                                nextD.setDate(nextD.getDate() + 1);
+                                const targetD = nextD.toISOString().slice(0, 10);
+                                const origD = ev.metadata?.originalDate || currD;
+                                onPostponeWorkout(ev.id, origD, targetD);
+                              }}
+                              style={{
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid var(--border-color)',
+                                borderRadius: 4,
+                                padding: isSingleDayView ? '4px 8px' : '2px 6px',
+                                color: 'var(--text-secondary)',
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                                minHeight: isSingleDayView ? '28px' : '22px'
+                              }}
+                              title="Reporter au lendemain (+1 jour)"
+                            >
+                              <CalendarClock size={11} />
+                              <span>+1j</span>
+                            </button>
+                          )}
+                        </div>
 
-                              // Carte fantôme pour séance reportée vers un autre jour
-                              if (isGhost) {
-                                return (
-                                  <div
-                                    key={ev.id}
-                                    className="event-card ghost-postponed"
-                                    onClick={() => setSelectedEvent(ev)}
-                                    title="Séance reportée. Cliquer pour voir les détails ou rétablir."
-                                    style={{
-                                      borderLeftColor: '#64748b',
-                                      borderLeftStyle: 'dashed',
-                                      background: 'rgba(100, 116, 139, 0.08)',
-                                      border: '1px dashed rgba(148, 163, 184, 0.3)',
-                                      padding: '7px 9px'
-                                    }}
-                                  >
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                                      <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                        <span>➡️</span> Reportée au {ev.metadata?.postponedToDate}
-                                      </span>
-                                      {onCancelPostponeWorkout && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            onCancelPostponeWorkout(ev.id);
-                                          }}
-                                          style={{
-                                            background: 'rgba(255, 87, 34, 0.12)',
-                                            border: '1px solid var(--primary-border)',
-                                            color: 'var(--primary)',
-                                            borderRadius: 3,
-                                            padding: '1px 5px',
-                                            fontSize: '0.64rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer'
-                                          }}
-                                          title="Rétablir la séance à cette date"
-                                        >
-                                          Rétablir
-                                        </button>
-                                      )}
-                                    </div>
-                                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                                      {ev.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
-                                    </div>
-                                  </div>
-                                );
-                              }
+                        <div className="event-meta" style={{ fontSize: isSingleDayView ? '0.76rem' : '0.7rem' }}>
+                          <span>
+                            <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
+                            {formatTime(ev.startDate)} – {formatTime(ev.endDate)}
+                          </span>
+                          <span>•</span>
+                          <span style={{ fontWeight: 700 }}>{ev.durationMinutes}m</span>
+                          {ev.metadata?.room && (
+                            <span style={{ color: ev.metadata?.isDistanciel ? 'var(--accent-purple)' : 'var(--accent-blue)', fontWeight: 600 }}>
+                              <MapPin size={10} style={{ display: 'inline', marginRight: 2 }} />
+                              {ev.metadata.room}
+                            </span>
+                          )}
+                        </div>
 
-                              const hasAller = ev.metadata?.commuteAller;
-                              const hasRetour = ev.metadata?.commuteRetour;
+                        {ev.metadata?.isPostponed && (
+                          <div style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <span>🔄 Reportée du {ev.metadata.originalDate}</span>
+                          </div>
+                        )}
 
-                              return (
-                                <div
-                                  key={ev.id}
-                                  className={`event-card ${ev.category} ${isSportCard ? 'draggable-sport' : ''}`}
-                                  onClick={() => setSelectedEvent(ev)}
-                                  draggable={isSportCard}
-                                  onDragStart={(e) => {
-                                    if (isSportCard) {
-                                      setDraggedEvent(ev);
-                                      e.dataTransfer.setData('text/plain', ev.id);
-                                      e.dataTransfer.effectAllowed = 'move';
-                                    }
-                                  }}
-                                  onDragEnd={() => {
-                                    setDraggedEvent(null);
-                                    setDragOverDate(null);
-                                  }}
-                                  title={`${ev.title}\n${ev.location}\n${ev.durationMinutes} min${isSportCard ? '\n(Glisser-déposer sur un autre jour pour reporter)' : ''}`}
-                                  style={isSportCard ? { cursor: 'grab' } : undefined}
-                                >
-                                  <div className="event-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
-                                      <span>{ev.emoji}</span>
-                                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {ev.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
-                                      </span>
-                                    </div>
-                                    {isSportCard && onPostponeWorkout && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          const currD = ev.startDate.slice(0, 10);
-                                          const nextD = new Date(currD + 'T12:00:00');
-                                          nextD.setDate(nextD.getDate() + 1);
-                                          const targetD = nextD.toISOString().slice(0, 10);
-                                          const origD = ev.metadata?.originalDate || currD;
-                                          onPostponeWorkout(ev.id, origD, targetD);
-                                        }}
-                                        style={{
-                                          background: 'rgba(255, 255, 255, 0.05)',
-                                          border: '1px solid var(--border-color)',
-                                          borderRadius: 3,
-                                          padding: '2px 5px',
-                                          color: 'var(--text-secondary)',
-                                          fontSize: '0.64rem',
-                                          fontWeight: 700,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: 3,
-                                          cursor: 'pointer',
-                                          flexShrink: 0
-                                        }}
-                                        title="Reporter au lendemain (+1 jour)"
-                                      >
-                                        <CalendarClock size={10} />
-                                        <span>+1j</span>
-                                      </button>
-                                    )}
-                                  </div>
+                        {evComp?.isPostponedCatchup && evComp.executedDate && (
+                          <div style={{
+                            fontSize: '0.68rem',
+                            color: '#38bdf8',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            background: 'rgba(56, 189, 248, 0.12)',
+                            border: '1px solid rgba(56, 189, 248, 0.25)',
+                            padding: '3px 6px',
+                            borderRadius: 4,
+                            marginTop: 3
+                          }}>
+                            <span>🔄 Réalisée le {formatFriendlyDateStr(evComp.executedDate)} ({evComp.actualActivity?.durationMinutes}m)</span>
+                          </div>
+                        )}
 
-                                  <div className="event-meta">
-                                    <span>
-                                      <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
-                                      {formatTime(ev.startDate)} – {formatTime(ev.endDate)}
-                                    </span>
-                                    <span>•</span>
-                                    <span>{ev.durationMinutes}m</span>
-                                    {ev.metadata?.room && (
-                                      <span style={{ color: ev.metadata?.isDistanciel ? 'var(--accent-purple)' : 'var(--accent-blue)', fontWeight: 600 }}>
-                                        <MapPin size={10} style={{ display: 'inline', marginRight: 2 }} />
-                                        {ev.metadata.room}
-                                      </span>
-                                    )}
-                                  </div>
+                        {evComp && !evComp.isPostponedCatchup && (evComp.status === 'COMPLIANT' || evComp.status === 'PARTIAL') && (
+                          <div style={{
+                            fontSize: '0.68rem',
+                            color: '#10b981',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            padding: '3px 6px',
+                            borderRadius: 4,
+                            marginTop: 3
+                          }}>
+                            <CheckCircle2 size={11} /> Validée Garmin ({evComp.actualActivity?.durationMinutes}m)
+                          </div>
+                        )}
 
-                                  {/* Badge Séance Reportée Manuellement */}
-                                  {ev.metadata?.isPostponed && (
-                                    <div style={{ fontSize: '0.66rem', color: 'var(--primary)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                      <span>🔄 Reportée du {ev.metadata.originalDate}</span>
-                                    </div>
-                                  )}
+                        {ev.metadata?.targetHeartRate && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 600 }}>
+                            ❤️ {ev.metadata.targetHeartRate}
+                          </div>
+                        )}
 
-                                  {/* Badge Réconciliation Garmin / Rattrapage automatique */}
-                                  {evComp?.isPostponedCatchup && evComp.executedDate && (
-                                    <div style={{
-                                      fontSize: '0.66rem',
-                                      color: '#38bdf8',
-                                      fontWeight: 700,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 3,
-                                      background: 'rgba(56, 189, 248, 0.12)',
-                                      border: '1px solid rgba(56, 189, 248, 0.25)',
-                                      padding: '2px 5px',
-                                      borderRadius: 4,
-                                      marginTop: 3
-                                    }}>
-                                      <span>🔄 Réalisée le {formatFriendlyDateStr(evComp.executedDate)} ({evComp.actualActivity?.durationMinutes}m)</span>
-                                    </div>
-                                  )}
+                        {ev.metadata?.targetElevationM && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--accent-orange)', fontWeight: 600 }}>
+                            ⛰️ +{ev.metadata.targetElevationM}m D+
+                          </div>
+                        )}
 
-                                  {evComp && !evComp.isPostponedCatchup && (evComp.status === 'COMPLIANT' || evComp.status === 'PARTIAL') && (
-                                    <div style={{
-                                      fontSize: '0.66rem',
-                                      color: '#10b981',
-                                      fontWeight: 700,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 3,
-                                      background: 'rgba(16, 185, 129, 0.1)',
-                                      border: '1px solid rgba(16, 185, 129, 0.2)',
-                                      padding: '2px 5px',
-                                      borderRadius: 4,
-                                      marginTop: 3
-                                    }}>
-                                      <CheckCircle2 size={10} /> Validée Garmin ({evComp.actualActivity?.durationMinutes}m)
-                                    </div>
-                                  )}
+                        {ev.metadata?.conflictRescheduled && (
+                          <div style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <span>🔄 Décalé pour cours</span>
+                          </div>
+                        )}
 
-                                  {ev.metadata?.targetHeartRate && (
-                                    <div style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 600 }}>
-                                      ❤️ {ev.metadata.targetHeartRate}
-                                    </div>
-                                  )}
-
-                                  {ev.metadata?.targetElevationM && (
-                                    <div style={{ fontSize: '0.68rem', color: 'var(--accent-orange)', fontWeight: 600 }}>
-                                      ⛰️ +{ev.metadata.targetElevationM}m D+
-                                    </div>
-                                  )}
-
-                                  {ev.metadata?.conflictRescheduled && (
-                                    <div style={{ fontSize: '0.66rem', color: '#38bdf8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                      <span>🔄 Décalé pour cours</span>
-                                    </div>
-                                  )}
-
-                                  {/* Bandeau de Trajet Intégré (Aller / Retour) */}
-                                  {isFusedMode && (hasAller || hasRetour) && (
-                                    <div className="journey-strip">
-                                      <Bus size={11} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-                                      <span>
-                                        {hasAller && `Départ : ${formatTime(hasAller.departureTime)} (${hasAller.durationMinutes}m)`}
-                                        {hasAller && hasRetour && ' • '}
-                                        {hasRetour && `Retour ~${formatTime(hasRetour.arrivalTime)}`}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-
-                            {/* Cartes de séances de rattrapage exécutées ce jour */}
-                            {catchupForThisDay.map(comp => (
-                              <div
-                                key={`catchup-${comp.id}`}
-                                className="event-card sport"
-                                style={{
-                                  borderLeftColor: '#38bdf8',
-                                  background: 'rgba(56, 189, 248, 0.08)',
-                                  border: '1px solid rgba(56, 189, 248, 0.25)',
-                                  padding: '8px 10px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                                  <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <span>🔄</span> Rattrapage Garmin
-                                  </span>
-                                  <span style={{ fontSize: '0.66rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '1px 5px', borderRadius: 3 }}>
-                                    {comp.actualActivity?.durationMinutes}m
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {comp.actualActivity?.activityName || comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
-                                </div>
-                                <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                                  Remplace la séance du {formatFriendlyDateStr(comp.scheduledDate || '')}
-                                </div>
-                              </div>
-                            ))}
-                          </>
+                        {isFusedMode && (hasAller || hasRetour) && (
+                          <div className="journey-strip" style={{ fontSize: isSingleDayView ? '0.72rem' : '0.68rem', padding: '5px 8px' }}>
+                            <Bus size={12} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                            <span>
+                              {hasAller && `Départ : ${formatTime(hasAller.departureTime)} (${hasAller.durationMinutes}m)`}
+                              {hasAller && hasRetour && ' • '}
+                              {hasRetour && `Retour ~${formatTime(hasRetour.arrivalTime)}`}
+                            </span>
+                          </div>
                         )}
                       </div>
                     );
-                  })()}
+                  })}
 
-                  {/* Indicateur compact de mobilité du soir */}
-                  {isFusedMode && mobilityEvent && filter === 'all' && (
+                  {catchupForThisDay.map(comp => (
                     <div
-                      className="mobility-daily-chip"
-                      onClick={() => setSelectedEvent(mobilityEvent)}
-                      title="20 min d'étirements et de mobilité du soir"
+                      key={`catchup-${comp.id}`}
+                      className="event-card sport"
+                      style={{
+                        borderLeftColor: '#38bdf8',
+                        background: 'rgba(56, 189, 248, 0.08)',
+                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        padding: isSingleDayView ? '10px 14px' : '8px 10px'
+                      }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span>🧘</span>
-                        <span>Mobilité 22h00 (20m)</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                        <span style={{ fontSize: '0.74rem', color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>🔄</span> Rattrapage Garmin
+                        </span>
+                        <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 3 }}>
+                          {comp.actualActivity?.durationMinutes}m
+                        </span>
                       </div>
-                      <CheckCircle2 size={12} color="#10b981" />
+                      <div style={{ fontSize: isSingleDayView ? '0.84rem' : '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {comp.actualActivity?.activityName || comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                        Remplace la séance du {formatFriendlyDateStr(comp.scheduledDate || '')}
+                      </div>
                     </div>
-                  )}
+                  ))}
+                </>
+              )}
+
+              {isFusedMode && mobilityEvent && filter === 'all' && (
+                <div
+                  className="mobility-daily-chip"
+                  onClick={() => setSelectedEvent(mobilityEvent)}
+                  title="20 min d'étirements et de mobilité du soir"
+                  style={isSingleDayView ? { padding: '8px 12px', fontSize: '0.75rem' } : undefined}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>🧘</span>
+                    <span style={{ fontWeight: 600 }}>Mobilité 22h00 (20m)</span>
+                  </div>
+                  <CheckCircle2 size={13} color="#10b981" />
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
+              )}
+            </div>
+          );
+        };
+
+        if (viewMode === 'day') {
+          const currentDay = displayedDays[activeDayIndex] || displayedDays[0];
+          const dObj = currentDay ? new Date(currentDay.date + 'T12:00:00') : new Date();
+          const isToday = currentDay ? currentDay.date === todayKey : false;
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Ruban Hebdomadaire Mobile (Lundi -> Dimanche) */}
+              <div className="mobile-week-ribbon">
+                {displayedDays.map((day, idx) => {
+                  const dayObj = new Date(day.date + 'T12:00:00');
+                  const isDayToday = day.date === todayKey;
+                  const isSelected = idx === activeDayIndex;
+                  const shortNames = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+                  const hasSport = day.events.some(e => e.category === 'sport');
+                  const hasCourse = day.events.some(e => e.category === 'course');
+                  const hasMobility = day.events.some(e => e.category === 'mobility');
+
+                  return (
+                    <button
+                      key={day.date}
+                      type="button"
+                      className={`mobile-day-btn ${isSelected ? 'active' : ''} ${isDayToday ? 'is-today' : ''}`}
+                      onClick={() => setActiveDayIndex(idx)}
+                      title={`${dayNames[day.dayOfWeek]} ${dayObj.getDate()}`}
+                    >
+                      <span className="mobile-day-name">{shortNames[day.dayOfWeek]}</span>
+                      <span className="mobile-day-num">{dayObj.getDate()}</span>
+                      <div className="mobile-day-dots">
+                        {hasSport && <span className="mobile-dot sport" />}
+                        {hasCourse && <span className="mobile-dot course" />}
+                        {hasMobility && <span className="mobile-dot mobility" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Navigateur de Jour */}
+              {currentDay && (
+                <>
+                  <div className="mobile-day-nav">
+                    <button
+                      className="btn-secondary"
+                      onClick={() => setActiveDayIndex(prev => Math.max(0, prev - 1))}
+                      disabled={activeDayIndex === 0}
+                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
+                      title="Jour précédent"
+                    >
+                      <ChevronLeft size={14} /> Préc.
+                    </button>
+
+                    <div className="mobile-day-nav-title">
+                      <span>
+                        {dayNames[currentDay.dayOfWeek]}, {dObj.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}
+                      </span>
+                      {isToday && (
+                        <span className="today-indicator" style={{ fontSize: '0.68rem', marginLeft: 4 }}>
+                          (Aujourd'hui)
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      className="btn-secondary"
+                      onClick={() => setActiveDayIndex(prev => Math.min(displayedDays.length - 1, prev + 1))}
+                      disabled={activeDayIndex >= displayedDays.length - 1}
+                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
+                      title="Jour suivant"
+                    >
+                      Suiv. <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  <div
+                    className={`day-column ${isToday ? 'today' : ''}`}
+                    style={{ minHeight: 320, padding: '14px', width: '100%' }}
+                  >
+                    {renderDayEventsContent(currentDay, true)}
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        }
+
+        if (viewMode === 'grid') {
+          return (
+            <div className="calendar-scroll-wrapper">
+              <div className="week-grid">
+                {displayedDays.map(day => {
+                  const dateObj = new Date(day.date + 'T12:00:00');
+                  const isToday = day.date === todayKey;
+                  const isDragTarget = dragOverDate === day.date;
+
+                  return (
+                    <div
+                      key={day.date}
+                      className={`day-column ${isToday ? 'today' : ''} ${isDragTarget ? 'drag-over' : ''}`}
+                      onDragOver={(e) => {
+                        if (draggedEvent) {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverDate !== day.date) setDragOverDate(day.date);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverDate === day.date) setDragOverDate(null);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setDragOverDate(null);
+                        if (draggedEvent && onPostponeWorkout && draggedEvent.startDate.slice(0, 10) !== day.date) {
+                          const origDate = draggedEvent.metadata?.originalDate || draggedEvent.startDate.slice(0, 10);
+                          onPostponeWorkout(draggedEvent.id, origDate, day.date);
+                          setDraggedEvent(null);
+                        }
+                      }}
+                      style={isDragTarget ? { outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : undefined}
+                    >
+                      <div className="day-header">
+                        <div>
+                          <div className="day-name">{dayNames[day.dayOfWeek]}</div>
+                          <div className="day-number">
+                            {dateObj.getDate()}{' '}
+                            <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+                              {dateObj.toLocaleDateString('fr-CA', { month: 'short' })}
+                            </span>
+                          </div>
+                        </div>
+                        {isToday && <span className="today-indicator">Aujourd'hui</span>}
+                      </div>
+
+                      {renderDayEventsContent(day, false)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
         /* Vue Liste Détaillée */
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {displayedDays.map(day => {
             const dateObj = new Date(day.date + 'T12:00:00');
             const isToday = day.date === todayKey;
@@ -743,7 +857,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             );
           })}
         </div>
-      )}
+      );
+    })()}
 
       {/* Modale de Détail de Séance */}
       <WorkoutDetailModal

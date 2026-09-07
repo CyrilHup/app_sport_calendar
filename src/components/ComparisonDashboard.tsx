@@ -48,8 +48,9 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   onPostponeWorkout,
   referenceDateStr
 }) => {
+  const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>(isMobileInitial ? 'cards' : 'table');
   const [statusFilter, setStatusFilter] = useState<StatusFilterType>('ALL');
   const [pairingForPlanId, setPairingForPlanId] = useState<string | null>(null);
 
@@ -199,57 +200,56 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
         </div>
       </div>
 
-      {/* Boutons de Filtre par Statut */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+      {/* Boutons de Filtre par Statut (Ruban Défilable) */}
+      <div className="filter-chips-scroll">
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
           <Filter size={12} /> Statut :
         </span>
 
         <button
-          className={`btn-secondary ${statusFilter === 'ALL' ? 'active' : ''}`}
+          className={`chip-btn ${statusFilter === 'ALL' ? 'active' : ''}`}
           onClick={() => setStatusFilter('ALL')}
-          style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'ALL' ? 'var(--primary)' : undefined }}
         >
           Toutes ({countAll})
         </button>
 
         <button
-          className={`btn-secondary ${statusFilter === 'COMPLIANT' ? 'active' : ''}`}
+          className={`chip-btn ${statusFilter === 'COMPLIANT' ? 'active' : ''}`}
           onClick={() => setStatusFilter('COMPLIANT')}
-          style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'COMPLIANT' ? '#10b981' : undefined }}
+          style={statusFilter === 'COMPLIANT' ? { borderColor: '#10b981', color: '#34d399' } : undefined}
         >
           ✅ Conformes ({countCompliant})
         </button>
 
         <button
-          className={`btn-secondary ${statusFilter === 'PARTIAL' ? 'active' : ''}`}
+          className={`chip-btn ${statusFilter === 'PARTIAL' ? 'active' : ''}`}
           onClick={() => setStatusFilter('PARTIAL')}
-          style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'PARTIAL' ? '#f59e0b' : undefined }}
+          style={statusFilter === 'PARTIAL' ? { borderColor: '#f59e0b', color: '#fbbf24' } : undefined}
         >
           ⚠️ Écarts ({countPartial})
         </button>
 
         <button
-          className={`btn-secondary ${statusFilter === 'MISSED' ? 'active' : ''}`}
+          className={`chip-btn ${statusFilter === 'MISSED' ? 'active' : ''}`}
           onClick={() => setStatusFilter('MISSED')}
-          style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'MISSED' ? '#ef4444' : undefined }}
+          style={statusFilter === 'MISSED' ? { borderColor: '#ef4444', color: '#f87171' } : undefined}
         >
           ❌ Manquées ({countMissed})
         </button>
 
         <button
-          className={`btn-secondary ${statusFilter === 'UNPLANNED' ? 'active' : ''}`}
+          className={`chip-btn ${statusFilter === 'UNPLANNED' ? 'active' : ''}`}
           onClick={() => setStatusFilter('UNPLANNED')}
-          style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'UNPLANNED' ? '#38bdf8' : undefined }}
+          style={statusFilter === 'UNPLANNED' ? { borderColor: '#38bdf8', color: '#38bdf8' } : undefined}
         >
           ➕ Bonus ({countUnplanned})
         </button>
 
         {countPending > 0 && (
           <button
-            className={`btn-secondary ${statusFilter === 'PENDING' ? 'active' : ''}`}
+            className={`chip-btn ${statusFilter === 'PENDING' ? 'active' : ''}`}
             onClick={() => setStatusFilter('PENDING')}
-            style={{ padding: '4px 9px', fontSize: '0.74rem', borderColor: statusFilter === 'PENDING' ? '#818cf8' : undefined }}
+            style={statusFilter === 'PENDING' ? { borderColor: '#818cf8', color: '#a5b4fc' } : undefined}
           >
             ⏳ Aujourd'hui ({countPending})
           </button>
@@ -680,10 +680,10 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           }
                           onPostponeWorkout(comp.plannedEvent!.id, origDate, targetDate, 'Reporté depuis la télémétrie');
                         }}
-                        style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--primary)', borderColor: 'var(--primary-border)', display: 'flex', alignItems: 'center', gap: 3 }}
+                        style={{ padding: '5px 10px', fontSize: '0.74rem', minHeight: '32px', color: 'var(--primary)', borderColor: 'var(--primary-border)', display: 'flex', alignItems: 'center', gap: 4 }}
                         title="Reporter cette séance"
                       >
-                        <CalendarClock size={11} /> Reporter
+                        <CalendarClock size={12} /> Reporter
                       </button>
                     )}
 
@@ -692,17 +692,19 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         <button
                           className="btn-secondary"
                           onClick={() => onManualUnpair && onManualUnpair(planId)}
-                          style={{ padding: '3px 6px', fontSize: '0.68rem', color: '#f87171' }}
+                          style={{ padding: '5px 8px', fontSize: '0.74rem', minHeight: '32px', color: '#f87171' }}
+                          title="Délier l'activité"
                         >
-                          <Unlink size={11} />
+                          <Unlink size={12} />
                         </button>
                       ) : (
                         <button
                           className="btn-secondary"
                           onClick={() => setPairingForPlanId(pairingForPlanId === planId ? null : planId)}
-                          style={{ padding: '3px 6px', fontSize: '0.68rem', color: 'var(--accent-blue)' }}
+                          style={{ padding: '5px 10px', fontSize: '0.74rem', minHeight: '32px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 4 }}
+                          title="Associer avec une activité Garmin"
                         >
-                          <Link2 size={11} /> Lier
+                          <Link2 size={12} /> Lier
                         </button>
                       )
                     )}

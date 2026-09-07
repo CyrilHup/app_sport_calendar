@@ -204,7 +204,8 @@ export async function syncDirectToGoogleCalendar(
 }
 
 export function getStoredGCalClientId(): string {
-  return localStorage.getItem(GCAL_CLIENT_ID_KEY) || '';
+  const envKey = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || (globalThis as any).process?.env?.VITE_GOOGLE_CLIENT_ID || '';
+  return localStorage.getItem(GCAL_CLIENT_ID_KEY) || envKey;
 }
 
 export function saveGCalClientId(clientId: string): void {
