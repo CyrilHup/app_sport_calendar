@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Empêche Dependabot de proposer des montées de versions majeures Capacitor incompatibles
+      - dependency-name: "@capacitor/*"
+        update-types: ["version-update:semver-major"]
+      # Dépendance interne de build pour la CLI, sans impact d'exécution
+      - dependency-name: "tar"
