@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { fetchMontRoyalWeather, MontRoyalWeather } from '../services/weatherService';
 import { ChevronDown, ChevronUp, Mountain, Sparkles, Wind } from 'lucide-react';
 
-export const WeatherWidget: React.FC = () => {
+interface WeatherWidgetProps {
+  compact?: boolean;
+}
+
+export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ compact }) => {
   const [weather, setWeather] = useState<MontRoyalWeather | null>(null);
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -25,6 +29,67 @@ export const WeatherWidget: React.FC = () => {
   }
 
   const cond = weather.trailCondition;
+
+  if (compact) {
+    return (
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="chip-btn"
+          style={{
+            borderColor: cond.badgeColor,
+            color: '#fff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '4px 9px',
+            fontSize: '0.72rem',
+            background: 'rgba(255, 255, 255, 0.04)'
+          }}
+          title="Météo et praticabilité des sentiers du Mont-Royal"
+        >
+          <span>{weather.weatherEmoji}</span>
+          <span>Mont-Royal {weather.currentTempC}°C</span>
+          <span style={{ color: cond.badgeColor, fontWeight: 700 }}>• Sentiers {cond.status === 'OPTIMAL' ? 'Optimaux' : cond.status}</span>
+        </button>
+
+        {isExpanded && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 6px)',
+              left: 0,
+              zIndex: 100,
+              width: 'min(320px, 90vw)',
+              background: 'var(--bg-surface-elevated)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '12px 14px',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+              backdropFilter: 'blur(16px)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <strong style={{ fontSize: '0.82rem', color: '#fff' }}>Météo & Praticabilité Mont-Royal</strong>
+              <button
+                onClick={() => setIsExpanded(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginBottom: 8 }}>{cond.advice}</p>
+            <div style={{ display: 'flex', gap: 10, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+              <span>💨 {weather.windSpeedKmh} km/h</span>
+              <span>🌅 Coucher {weather.sunsetStr}</span>
+              <span>👟 {cond.gearRecommendation}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

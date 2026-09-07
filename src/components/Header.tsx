@@ -86,31 +86,29 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <h1 className="brand-title">QMT-80 Performance Hub</h1>
-              <span className="badge-tag" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
+              <span className="badge-tag desktop-only" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
                 77 KM • +3 370M D+ • LIMITE 19H
               </span>
+              <span className="mobile-only" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', padding: '2px 7px', borderRadius: 9999, fontSize: '0.7rem', fontWeight: 800 }}>
+                <Flame size={11} /> J-{periodContext.daysToRace}
+              </span>
             </div>
-            <p className="brand-subtitle">
+            <p className="brand-subtitle desktop-only">
               Périodisation Ultra-Trail & Moteur de Trajets Universitaires (ÉTS)
             </p>
           </div>
         </div>
 
         <div className="header-actions">
-          {/* Live Sync Status with Quick Refresh Icon */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 10px',
-              borderRadius: 'var(--radius-xs)',
-              background: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
-              fontSize: '0.74rem',
-              color: '#34d399',
-              fontWeight: 600
+          {/* Quick Sync Button */}
+          <button
+            onClick={() => {
+              triggerHapticFeedback('light');
+              onRefreshAll();
             }}
+            disabled={isRecharging}
+            className="sync-action-btn"
+            title={`Dernière synchro : ${formattedSyncTime}. Cliquer pour rafraîchir ÉTS et Garmin.`}
           >
             <span
               style={{
@@ -118,77 +116,51 @@ export const Header: React.FC<HeaderProps> = ({
                 height: 6,
                 borderRadius: '50%',
                 background: isRecharging ? '#f59e0b' : '#10b981',
-                display: 'inline-block'
+                display: 'inline-block',
+                flexShrink: 0
               }}
             />
-            <span>{isRecharging ? 'Synchronisation...' : `Synchronisé (${formattedSyncTime})`}</span>
-            <button
-              onClick={() => {
-                triggerHapticFeedback('light');
-                onRefreshAll();
-              }}
-              disabled={isRecharging}
-              title="Rafraîchir les flux ÉTS et la télémétrie Garmin"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: isRecharging ? '#f59e0b' : '#34d399',
-                cursor: isRecharging ? 'default' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                padding: '2px',
-                marginLeft: '2px',
-                borderRadius: 4
-              }}
-            >
-              <RefreshCw size={12} className={isRecharging ? 'spin-animation' : ''} />
-            </button>
-          </div>
+            <RefreshCw size={13} className={isRecharging ? 'spin-animation' : ''} style={{ color: isRecharging ? '#f59e0b' : '#34d399' }} />
+            <span className="desktop-only" style={{ fontSize: '0.74rem', color: '#34d399', fontWeight: 600 }}>
+              {isRecharging ? 'Synchro...' : `Synchro (${formattedSyncTime})`}
+            </span>
+          </button>
 
-          {/* Unified Athlete Account & Services Hub Button */}
+          {/* Unified Athlete Account Button */}
           <button
-            className="btn-secondary"
+            className="account-action-btn"
             onClick={() => {
               triggerHapticFeedback('light');
               onOpenAccountModal('profile');
             }}
             title="Mon compte athlète, Garmin Connect, Google Agenda et Partage"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '7px 12px',
-              borderRadius: 'var(--radius-xs)',
-              background: isLoggedIn ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.04)',
-              borderColor: isLoggedIn ? 'rgba(16, 185, 129, 0.4)' : 'var(--border-color)',
-              color: '#fff',
-              fontWeight: 600,
-              fontSize: '0.78rem'
-            }}
           >
             <div
               style={{
-                width: 20,
-                height: 20,
-                borderRadius: 4,
+                width: 24,
+                height: 24,
+                borderRadius: '50%',
                 background: isLoggedIn ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'rgba(255, 255, 255, 0.12)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                fontSize: '0.7rem',
-                fontWeight: 700
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                flexShrink: 0
               }}
             >
-              {isLoggedIn && userDisplayName ? userDisplayName[0].toUpperCase() : <User size={12} />}
+              {isLoggedIn && userDisplayName ? userDisplayName[0].toUpperCase() : <User size={13} />}
             </div>
-            <span>{isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Mon Compte & Services'}</span>
-            <Settings size={12} style={{ color: 'var(--text-muted)' }} />
+            <span className="desktop-only" style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 600 }}>
+              {isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Mon Compte & Services'}
+            </span>
+            <Settings size={13} className="desktop-only" style={{ color: 'var(--text-muted)' }} />
           </button>
         </div>
       </div>
 
-      {/* Mobile Compact HUD Summary Strip (Visible only on mobile < 769px) */}
+      {/* Mobile Streamlined Telemetry Progress Strip */}
       <div
         className="mobile-hud-summary"
         onClick={() => setIsHudOpenOnMobile(!isHudOpenOnMobile)}
@@ -196,26 +168,22 @@ export const Header: React.FC<HeaderProps> = ({
         tabIndex={0}
         aria-label="Afficher la télémétrie"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.72rem', flexWrap: 'wrap' }}>
-          <span className="phase-pill" style={{ padding: '2px 7px', fontSize: '0.68rem' }}>
-            <TrendingUp size={11} />
-            <span>{periodContext.label}</span>
-          </span>
-          <span style={{ fontWeight: 800, color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <Flame size={12} /> J-{periodContext.daysToRace}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.73rem', overflow: 'hidden' }}>
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            {periodContext.label.split(' (')[0]}
           </span>
           <span style={{ color: 'var(--text-muted)' }}>•</span>
-          <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>
-            {formatHoursMin(weeklyStats.actualDurationMin)}/{formatHoursMin(weeklyStats.plannedDurationMin)}
+          <span style={{ color: 'var(--accent-blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+            {formatHoursMin(weeklyStats.actualDurationMin)} / {formatHoursMin(weeklyStats.plannedDurationMin)}
           </span>
-          <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
+          <span style={{ color: 'var(--primary)', fontWeight: 700, whiteSpace: 'nowrap' }}>
             +{weeklyStats.actualElevationM}m D+
           </span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 700 }}>
-          <span>{isHudOpenOnMobile ? 'Fermer' : 'Télémétrie'}</span>
-          {isHudOpenOnMobile ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>
+          <span>{isHudOpenOnMobile ? 'Fermer' : 'Détails'}</span>
+          {isHudOpenOnMobile ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
         </div>
       </div>
 

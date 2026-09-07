@@ -203,8 +203,10 @@ export async function syncDirectToGoogleCalendar(
   }
 }
 
+const DEFAULT_GOOGLE_CLIENT_ID = '327072674404-1h805jh4loejfkqjgbjpma8gdcep1iaq.apps.googleusercontent.com';
+
 export function getStoredGCalClientId(): string {
-  const envKey = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || (globalThis as any).process?.env?.VITE_GOOGLE_CLIENT_ID || '';
+  const envKey = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || (globalThis as any).process?.env?.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
   return localStorage.getItem(GCAL_CLIENT_ID_KEY) || envKey;
 }
 

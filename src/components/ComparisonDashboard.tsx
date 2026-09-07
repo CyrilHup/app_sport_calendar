@@ -175,7 +175,8 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Activity size={15} color="var(--primary)" />
           <span>
-            <strong style={{ color: '#fff' }}>Journal de Télémétrie Garmin :</strong> Affichage de {displayedComparisons.length} sur {countAll} séance(s) évaluée(s).
+            <strong style={{ color: '#fff' }}>Télémétrie Garmin</strong>
+            <span className="desktop-only"> : {displayedComparisons.length} sur {countAll} séance(s)</span>
           </span>
         </div>
 

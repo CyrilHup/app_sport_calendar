@@ -132,6 +132,42 @@ body {
   flex-wrap: wrap;
 }
 
+.sync-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 32px;
+}
+
+.sync-action-btn:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+.account-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 32px;
+}
+
+.account-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-hover);
+}
+
 /* Fused Telemetry Strip & Phase Banner */
 .fused-command-bar {
   display: flex;
@@ -379,12 +415,126 @@ body {
   gap: 12px;
 }
 
-.view-controls {
+.calendar-toolbar-card {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.calendar-toolbar-row {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.calendar-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.nav-arrow-btn {
+  padding: 5px 8px !important;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-week-btn {
+  padding: 5px 12px !important;
+  font-size: 0.78rem !important;
+  min-height: 32px;
+}
+
+.calendar-date-range {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+.calendar-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.view-mode-segmented {
+  display: flex;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: var(--radius-xs);
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border-color);
+}
+
+.view-mode-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  min-height: 28px;
+}
+
+.view-mode-btn.active {
+  background: var(--primary-subtle);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.action-icon-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 32px;
+}
+
+.action-icon-pill:hover,
+.action-icon-pill.active {
+  background: var(--primary-subtle);
+  border-color: var(--primary-border);
+  color: var(--primary);
+}
+
+.calendar-subbar-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.calendar-subbar-strip::-webkit-scrollbar {
+  display: none;
 }
 
 .calendar-scroll-wrapper {
@@ -1137,10 +1287,78 @@ body {
   }
 }
 
-/* Visibility Utilities */
+/* Day View Date Header (Sleek, borderless) */
+.day-view-date-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  margin: 2px 0 6px 0;
+}
+
+.day-nav-arrow {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.day-nav-arrow:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.day-nav-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.day-nav-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.today-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 9999px;
+  background: var(--primary-subtle);
+  color: var(--primary);
+  border: 1px solid var(--primary-border);
+  letter-spacing: 0.02em;
+}
+
+/* Visibility Utilities & Mobile Refinements */
 @media (max-width: 768px) {
   .desktop-only {
     display: none !important;
+  }
+  .app-header {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .header-top {
+    padding-bottom: 8px;
+  }
+  .brand-badge {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+  .brand-title {
+    font-size: 1.08rem;
   }
   .fused-command-bar {
     display: none;
@@ -1150,6 +1368,21 @@ body {
   }
   .mobile-hud-summary {
     display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xs);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .mobile-hud-summary:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .event-card {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
   }
 }
 

@@ -24,7 +24,7 @@ export function getApiUrl(endpoint: string): string {
 
   if (isNative()) {
     const metaEnv = (import.meta as any).env || {};
-    const backendUrl = metaEnv.VITE_BACKEND_URL || metaEnv.VITE_API_BASE_URL || '';
+    const backendUrl = metaEnv.VITE_BACKEND_URL || metaEnv.VITE_API_BASE_URL || 'https://appsportcalendar.vercel.app';
     if (backendUrl) {
       const cleanBase = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
       return `${cleanBase}${cleanEndpoint}`;

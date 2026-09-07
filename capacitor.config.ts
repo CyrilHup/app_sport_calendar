@@ -6,11 +6,8 @@ const config: CapacitorConfig = {
   webDir: 'dist',
   server: {
     androidScheme: 'https',
-    cleartext: true
-    // SELF-UPDATING APK (Over-The-Air via Vercel):
-    // To have your APK update automatically on your phone every time you push to Vercel,
-    // uncomment the line below and set your live Vercel URL:
-    // url: 'https://app-sport-calendar.vercel.app'
+    cleartext: true,
+    url: 'https://appsportcalendar.vercel.app'
   },
   plugins: {
     LocalNotifications: {

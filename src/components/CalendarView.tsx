@@ -80,146 +80,110 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   return (
     <div className="calendar-layout">
-      {/* Contrôles de Vue & Filtres */}
-      <div className="view-controls">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <button
-            className="btn-secondary"
-            onClick={() => setWeekOffset(prev => Math.max(0, prev - 1))}
-            disabled={weekOffset === 0}
-            title="Semaine précédente"
-          >
-            <ChevronLeft size={16} />
-          </button>
-
-          <button
-            className="btn-secondary"
-            onClick={() => setWeekOffset(0)}
-            style={{ fontWeight: weekOffset === 0 ? 800 : 500 }}
-          >
-            Semaine Actuelle
-          </button>
-
-          <button
-            className="btn-secondary"
-            onClick={() => setWeekOffset(prev => prev + 1)}
-            disabled={currentWeekStartIdx + 7 >= schedules.length}
-            title="Semaine suivante"
-          >
-            <ChevronRight size={16} />
-          </button>
-
-          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginLeft: '6px' }}>
-            {displayedDays.length > 0 && `${displayedDays[0].date} — ${displayedDays[displayedDays.length - 1].date}`}
-          </span>
-
-          {/* Bascule Mode Cartes Fusionnées */}
-          <button
-            onClick={() => setIsFusedMode(!isFusedMode)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '5px 10px',
-              borderRadius: 'var(--radius-xs)',
-              border: isFusedMode ? '1px solid var(--primary-border)' : '1px solid var(--border-color)',
-              background: isFusedMode ? 'var(--primary-subtle)' : 'rgba(255, 255, 255, 0.04)',
-              color: isFusedMode ? 'var(--primary)' : 'var(--text-secondary)',
-              fontSize: '0.74rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              marginLeft: 4
-            }}
-            title="Basculer entre cartes fusionnées (cours + trajets intégrés) ou cartes séparées"
-          >
-            <Layers size={13} />
-            <span>{isFusedMode ? 'Cartes Fusionnées : OUI' : 'Cartes Séparées'}</span>
-          </button>
-
-          {/* Bascule Mode d'Affichage (Jour vs Grille vs Liste) */}
-          <div style={{ display: 'flex', background: 'rgba(255, 255, 255, 0.04)', borderRadius: 'var(--radius-sm)', padding: 2, marginLeft: '6px' }}>
+      {/* Contrôles de Vue & Navigation Unifiés */}
+      <div className="calendar-toolbar-card">
+        <div className="calendar-toolbar-row">
+          {/* Week Navigation */}
+          <div className="calendar-nav-group">
             <button
-              onClick={() => setViewMode('day')}
-              style={{
-                background: viewMode === 'day' ? 'var(--primary-subtle)' : 'transparent',
-                border: 'none',
-                color: viewMode === 'day' ? 'var(--primary)' : 'var(--text-secondary)',
-                padding: '5px 9px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: '0.74rem',
-                fontWeight: 600
-              }}
-              title="Affichage par Jour (Recommandé mobile)"
+              className="btn-secondary nav-arrow-btn"
+              onClick={() => setWeekOffset(prev => Math.max(0, prev - 1))}
+              disabled={weekOffset === 0}
+              title="Semaine précédente"
             >
-              <Calendar size={13} /> Jour
+              <ChevronLeft size={15} />
             </button>
+
             <button
-              onClick={() => setViewMode('grid')}
-              style={{
-                background: viewMode === 'grid' ? 'var(--primary-subtle)' : 'transparent',
-                border: 'none',
-                color: viewMode === 'grid' ? 'var(--primary)' : 'var(--text-secondary)',
-                padding: '5px 9px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: '0.74rem',
-                fontWeight: 600
-              }}
-              title="Affichage en Grille Hebdomadaire"
+              className="btn-secondary nav-week-btn"
+              onClick={() => setWeekOffset(0)}
+              style={{ fontWeight: weekOffset === 0 ? 800 : 600 }}
             >
-              <LayoutGrid size={13} /> Grille
+              Semaine Actuelle
             </button>
+
             <button
-              onClick={() => setViewMode('list')}
-              style={{
-                background: viewMode === 'list' ? 'var(--primary-subtle)' : 'transparent',
-                border: 'none',
-                color: viewMode === 'list' ? 'var(--primary)' : 'var(--text-secondary)',
-                padding: '5px 9px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: '0.74rem',
-                fontWeight: 600
-              }}
-              title="Affichage en Liste Détaillée"
+              className="btn-secondary nav-arrow-btn"
+              onClick={() => setWeekOffset(prev => prev + 1)}
+              disabled={currentWeekStartIdx + 7 >= schedules.length}
+              title="Semaine suivante"
             >
-              <ListFilter size={13} /> Liste
+              <ChevronRight size={15} />
             </button>
+
+            <span className="calendar-date-range">
+              {displayedDays.length > 0 && `${displayedDays[0].date.slice(5)} — ${displayedDays[displayedDays.length - 1].date.slice(5)}`}
+            </span>
           </div>
 
-          {onOpenGoogleCalendar && (
+          {/* View Mode & Quick Actions */}
+          <div className="calendar-actions-group">
+            {/* View Mode Pills (Jour / Grille / Liste) */}
+            <div className="view-mode-segmented">
+              <button
+                type="button"
+                onClick={() => setViewMode('day')}
+                className={`view-mode-btn ${viewMode === 'day' ? 'active' : ''}`}
+                title="Affichage par Jour (Mobile)"
+              >
+                <Calendar size={13} />
+                <span>Jour</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`view-mode-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                title="Grille Hebdomadaire"
+              >
+                <LayoutGrid size={13} />
+                <span>Grille</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
+                title="Vue Liste"
+              >
+                <ListFilter size={13} />
+                <span>Liste</span>
+              </button>
+            </div>
+
+            {/* Fused Cards Toggle */}
             <button
-              className="btn-secondary"
-              onClick={onOpenGoogleCalendar}
-              style={{
-                padding: '5px 10px',
-                fontSize: '0.75rem',
-                fontWeight: 600,
-                color: 'var(--accent-blue)'
-              }}
-              title="Synchroniser avec Google Agenda"
+              type="button"
+              onClick={() => setIsFusedMode(!isFusedMode)}
+              className={`action-icon-pill ${isFusedMode ? 'active' : ''}`}
+              title={isFusedMode ? 'Mode cartes fusionnées actif (cours + trajets intégrés)' : 'Mode cartes séparées'}
             >
-              <span>📅 Google Agenda</span>
+              <Layers size={13} />
+              <span className="desktop-only">{isFusedMode ? 'Fusion : OUI' : 'Séparé'}</span>
             </button>
-          )}
+
+            {/* Google Calendar Action */}
+            {onOpenGoogleCalendar && (
+              <button
+                type="button"
+                className="action-icon-pill"
+                onClick={onOpenGoogleCalendar}
+                style={{ color: 'var(--accent-blue)' }}
+                title="Synchroniser avec Google Agenda"
+              >
+                <Calendar size={13} />
+                <span className="desktop-only">Agenda</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Filtres par Catégorie (Ruban Scrollable Moderne) */}
-        <div className="filter-chips-scroll">
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-            <Filter size={12} /> Filtres :
-          </span>
+        {/* Integrated Filter Chips & Weather Strip */}
+        <div className="calendar-subbar-strip">
+          {/* Compact Mont-Royal Weather */}
+          <WeatherWidget compact />
 
+          <div style={{ width: 1, height: 18, background: 'var(--border-color)', margin: '0 4px', flexShrink: 0 }} />
+
+          {/* Category Filters */}
           <button
             className={`chip-btn ${filter === 'all' ? 'active' : ''}`}
             onClick={() => setFilter('all')}
@@ -240,15 +204,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             onClick={() => setFilter('course')}
             style={filter === 'course' ? { borderColor: '#3b82f6', color: '#60a5fa' } : undefined}
           >
-            🏛️ Cours ÉTS ({countCourse})
-          </button>
-
-          <button
-            className={`chip-btn ${filter === 'trajet' ? 'active' : ''}`}
-            onClick={() => setFilter('trajet')}
-            style={filter === 'trajet' ? { borderColor: '#94a3b8', color: '#cbd5e1' } : undefined}
-          >
-            🚌 Trajets ({countTrajet})
+            🏛️ Cours ({countCourse})
           </button>
 
           <button
@@ -260,9 +216,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Widget Météo & Sentiers du Mont-Royal */}
-      <WeatherWidget />
 
       {/* Fonction commune de rendu des séances et événements d'un jour */}
       {(() => {
@@ -582,39 +535,39 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 })}
               </div>
 
-              {/* Navigateur de Jour */}
+              {/* En-tête de Jour Épuré */}
               {currentDay && (
                 <>
-                  <div className="mobile-day-nav">
+                  <div className="day-view-date-header">
                     <button
-                      className="btn-secondary"
+                      type="button"
+                      className="day-nav-arrow"
                       onClick={() => setActiveDayIndex(prev => Math.max(0, prev - 1))}
                       disabled={activeDayIndex === 0}
-                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
                       title="Jour précédent"
                     >
-                      <ChevronLeft size={14} /> Préc.
+                      <ChevronLeft size={14} />
                     </button>
 
-                    <div className="mobile-day-nav-title">
+                    <div className="day-nav-title">
                       <span>
-                        {dayNames[currentDay.dayOfWeek]}, {dObj.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}
+                        {dayNames[currentDay.dayOfWeek]}, {dObj.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}
                       </span>
                       {isToday && (
-                        <span className="today-indicator" style={{ fontSize: '0.68rem', marginLeft: 4 }}>
-                          (Aujourd'hui)
+                        <span className="today-badge">
+                          Aujourd'hui
                         </span>
                       )}
                     </div>
 
                     <button
-                      className="btn-secondary"
+                      type="button"
+                      className="day-nav-arrow"
                       onClick={() => setActiveDayIndex(prev => Math.min(displayedDays.length - 1, prev + 1))}
                       disabled={activeDayIndex >= displayedDays.length - 1}
-                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
                       title="Jour suivant"
                     >
-                      Suiv. <ChevronRight size={14} />
+                      <ChevronRight size={14} />
                     </button>
                   </div>
 

@@ -5,8 +5,11 @@ const getEnv = (key: string): string => {
   return (import.meta as any).env?.[key] || (globalThis as any).process?.env?.[key] || '';
 };
 
-const supabaseUrl = getEnv('VITE_SUPABASE_URL');
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
+const DEFAULT_SUPABASE_URL = 'https://iolvxwvjasawlnsxlmpi.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvbHZ4d3ZqYXNhd2xuc3hsbXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NTE3OTUsImV4cCI6MjEwNDEyNzc5NX0.ZXDSu7yBu8h-loaoTkmWUUfmZgkRoMCX201LEJ9__rs';
+
+const supabaseUrl = getEnv('VITE_SUPABASE_URL') || DEFAULT_SUPABASE_URL;
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http'));

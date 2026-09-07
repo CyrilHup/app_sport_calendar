@@ -33,6 +33,11 @@ jobs:
         run: npm install
 
       - name: Build Web Application
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || 'https://iolvxwvjasawlnsxlmpi.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvbHZ4d3ZqYXNhd2xuc3hsbXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NTE3OTUsImV4cCI6MjEwNDEyNzc5NX0.ZXDSu7yBu8h-loaoTkmWUUfmZgkRoMCX201LEJ9__rs' }}
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID || '327072674404-1h805jh4loejfkqjgbjpma8gdcep1iaq.apps.googleusercontent.com' }}
+          VITE_BACKEND_URL: 'https://appsportcalendar.vercel.app'
         run: npm run build
 
       - name: Sync Capacitor Android Project
