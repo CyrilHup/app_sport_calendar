@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile } from '../services/supabaseClient';
+import { saveGarminCredentials } from '../services/garminService';
 
 interface AuthContextType {
   user: User | null;
@@ -14,6 +15,8 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
   refreshProfile: () => Promise<void>;
+  saveCloudGarminCredentials: (email: string, pass: string) => Promise<boolean>;
+  clearCloudGarminCredentials: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -27,11 +30,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isConfigured = isSupabaseConfigured();
 
   const loadProfileForUser = async (u: User) => {
+    // 1. Auto-link Garmin credentials if stored in cloud Google account
+    if (u.user_metadata?.garmin_email && u.user_metadata?.garmin_password) {
+      saveGarminCredentials({
+        email: u.user_metadata.garmin_email,
+        password: u.user_metadata.garmin_password
+      });
+    }
+
     const p = await fetchUserProfile(u.id);
     const googleAvatar = u.user_metadata?.avatar_url || u.user_metadata?.picture;
     if (p) {
       if (!p.avatarUrl && googleAvatar) {
         p.avatarUrl = googleAvatar;
+      }
+      if (!p.icalUrl && u.user_metadata?.ical_url) {
+        p.icalUrl = u.user_metadata.ical_url;
       }
       setProfile(p);
     } else {
@@ -41,6 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: u.email || '',
         displayName: u.user_metadata?.full_name || u.email?.split('@')[0] || 'Athlète QMT',
         avatarUrl: googleAvatar,
+        icalUrl: u.user_metadata?.ical_url,
         isPublic: false
       };
       await upsertUserProfile(newP);
@@ -139,8 +154,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const ok = await upsertUserProfile({ id: user.id, ...data });
     if (ok) {
       setProfile(prev => prev ? { ...prev, ...data } : null);
+      if (data.icalUrl) {
+        supabase.auth.updateUser({ data: { ical_url: data.icalUrl } }).catch(() => {});
+      }
     }
     return ok;
+  };
+
+  const saveCloudGarminCredentials = async (email: string, pass: string): Promise<boolean> => {
+    if (!isConfigured || !user) return false;
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          garmin_email: email,
+          garmin_password: pass
+        }
+      });
+      if (!error && data.user) {
+        setUser(data.user);
+        return true;
+      }
+    } catch (e) {
+      console.warn('Failed to save Garmin credentials to cloud:', e);
+    }
+    return false;
+  };
+
+  const clearCloudGarminCredentials = async (): Promise<boolean> => {
+    if (!isConfigured || !user) return false;
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          garmin_email: null,
+          garmin_password: null
+        }
+      });
+      if (!error && data.user) {
+        setUser(data.user);
+        return true;
+      }
+    } catch (e) {
+      console.warn('Failed to clear Garmin credentials from cloud:', e);
+    }
+    return false;
   };
 
   const refreshProfile = async () => {
@@ -162,7 +218,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signInWithGoogle,
         signOut,
         updateProfile,
-        refreshProfile
+        refreshProfile,
+        saveCloudGarminCredentials,
+        clearCloudGarminCredentials
       }}
     >
       {children}

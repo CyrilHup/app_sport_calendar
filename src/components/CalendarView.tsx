@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ActivityComparison } from '../types/garmin';
 import {
@@ -26,6 +26,7 @@ import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
 import { pushWeekWorkoutsToGarmin } from '../services/garminService';
 import { triggerHapticFeedback } from '../services/hapticsService';
+import { formatDateKey } from '../services/icsParser';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -57,18 +58,32 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [filter, setFilter] = useState<FilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
   const [isFusedMode, setIsFusedMode] = useState<boolean>(true);
+  const todayKey = referenceDateStr || formatDateKey(new Date());
+  const currentTodayIndex = schedules.findIndex(s => s.date === todayKey);
+  const currentWeekOffset = currentTodayIndex >= 0 ? Math.floor(currentTodayIndex / 7) : 0;
+
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
-  const [weekOffset, setWeekOffset] = useState<number>(0);
+  const [weekOffset, setWeekOffset] = useState<number>(() => currentWeekOffset);
+  const [hasInitializedOffset, setHasInitializedOffset] = useState<boolean>(false);
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
   const [isPushingWeek, setIsPushingWeek] = useState<boolean>(false);
   const [weekPushStatus, setWeekPushStatus] = useState<{ text: string; isError: boolean } | null>(null);
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
-    const todayIndex = schedules.findIndex(s => s.date === (referenceDateStr || new Date().toISOString().slice(0, 10)));
-    return todayIndex >= 0 ? todayIndex % 7 : 0;
+    return currentTodayIndex >= 0 ? currentTodayIndex % 7 : 0;
   });
 
-  const todayKey = referenceDateStr || new Date().toISOString().slice(0, 10);
+  useEffect(() => {
+    if (!hasInitializedOffset && schedules.length > 0) {
+      const idx = schedules.findIndex(s => s.date === todayKey);
+      if (idx >= 0) {
+        setWeekOffset(Math.floor(idx / 7));
+        setActiveDayIndex(idx % 7);
+        setHasInitializedOffset(true);
+      }
+    }
+  }, [schedules, todayKey, hasInitializedOffset]);
+
   const todayWellness = getWellnessForDate(todayKey);
   const readiness = calculateReadinessScore(todayWellness);
   const todaySchedule = schedules.find(s => s.date === todayKey);
@@ -140,8 +155,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const handleResetToToday = () => {
-    setWeekOffset(0);
     const todayIndex = schedules.findIndex(s => s.date === todayKey);
+    const targetOffset = todayIndex >= 0 ? Math.floor(todayIndex / 7) : 0;
+    setWeekOffset(targetOffset);
     if (todayIndex >= 0) {
       setActiveDayIndex(todayIndex % 7);
     }
@@ -186,7 +202,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <ChevronRight size={15} />
             </button>
 
-            {weekOffset !== 0 ? (
+            {weekOffset !== currentWeekOffset ? (
               <button
                 type="button"
                 className="btn-secondary nav-today-quick-btn"

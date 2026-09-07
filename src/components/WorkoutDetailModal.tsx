@@ -22,6 +22,8 @@ import {
 import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { pushWorkoutToGarmin, buildWorkoutPayloadFromEvent } from '../services/garminService';
+import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
+import { useAuth } from '../contexts/AuthContext';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -45,6 +47,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   onOpenGarminSync
 }) => {
   if (!event) return null;
+
+  const { profile } = useAuth();
+  const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
 
   const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
   const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
@@ -436,7 +441,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             <div style={{ background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)', padding: '12px', borderRadius: 'var(--radius-xs)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 700, marginBottom: '4px', fontSize: '0.82rem' }}>
                 <Heart size={14} />
-                <span>Zone Cardiaque Cible (FCmax = 203 bpm)</span>
+                <span>Zone Cardiaque Cible (FCmax = {athleteFcMax} bpm)</span>
               </div>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
                 {event.metadata.targetHeartRate}

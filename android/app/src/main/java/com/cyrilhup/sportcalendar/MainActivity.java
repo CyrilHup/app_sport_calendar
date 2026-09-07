@@ -10,26 +10,13 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        configureWebViewStorage();
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        try {
-            if (getBridge() != null) {
-                WebView webView = getBridge().getWebView();
-                if (webView != null) {
-                    WebSettings settings = webView.getSettings();
-                    settings.setDomStorageEnabled(true);
-                    settings.setDatabaseEnabled(true);
-                    CookieManager cookieManager = CookieManager.getInstance();
-                    cookieManager.setAcceptCookie(true);
-                    cookieManager.setAcceptThirdPartyCookies(webView, true);
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        configureWebViewStorage();
     }
 
     @Override
@@ -37,6 +24,26 @@ public class MainActivity extends BridgeActivity {
         super.onPause();
         try {
             CookieManager.getInstance().flush();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void configureWebViewStorage() {
+        try {
+            if (getBridge() != null) {
+                WebView webView = getBridge().getWebView();
+                if (webView != null) {
+                    WebSettings settings = webView.getSettings();
+                    settings.setDomStorageEnabled(true);
+                    settings.setDatabaseEnabled(true);
+                    settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+                    CookieManager cookieManager = CookieManager.getInstance();
+                    cookieManager.setAcceptCookie(true);
+                    cookieManager.setAcceptThirdPartyCookies(webView, true);
+                    cookieManager.flush();
+                }
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }

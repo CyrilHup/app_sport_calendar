@@ -6,6 +6,8 @@ import { WeeklyStatsSummary } from '../services/comparisonEngine';
 import { AccountModalTab } from './AccountModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { getWellnessForDate, calculateReadinessScore } from '../services/readinessEngine';
+import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
+import { useAuth } from '../contexts/AuthContext';
 
 
 interface HeaderProps {
@@ -37,6 +39,9 @@ export const Header: React.FC<HeaderProps> = ({
   userAvatarUrl,
   isLoggedIn
 }) => {
+  const { profile } = useAuth();
+  const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+
   const [isHudOpenOnMobile, setIsHudOpenOnMobile] = useState<boolean>(false);
 
   const formattedSyncTime = lastSyncTime
@@ -144,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
               triggerHapticFeedback('light');
               onOpenAccountModal('profile');
             }}
-            title="Mon compte athlète, Garmin Connect, Google Agenda et Partage"
+            title={isLoggedIn ? `Connecté : ${userDisplayName || 'Athlète'} • Google, Garmin & Agenda synchronisés` : "Mon compte athlète, Garmin Connect, Google Agenda et Partage"}
           >
             <div
               style={{
@@ -182,6 +187,9 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="desktop-only" style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 600 }}>
               {isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Mon Compte & Services'}
             </span>
+            {isLoggedIn && garminState.connected && (
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', flexShrink: 0 }} title="Garmin synchronisé" />
+            )}
             <Settings size={13} className="desktop-only" style={{ color: 'var(--text-muted)' }} />
           </button>
         </div>
@@ -386,7 +394,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="telemetry-item">
             <div className="telemetry-label">
               <span><Zap size={11} style={{ display: 'inline', marginRight: 3 }} /> Intensité Cardiaque</span>
-              <span style={{ color: 'var(--text-muted)' }}>FCmax 203</span>
+              <span style={{ color: 'var(--text-muted)' }}>FCmax {athleteFcMax}</span>
             </div>
             <div className="telemetry-value-row">
               <span className="telemetry-val">{weeklyStats.avgHeartRate > 0 ? weeklyStats.avgHeartRate : '--'}</span>

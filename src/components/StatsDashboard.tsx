@@ -59,7 +59,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 }) => {
   // Default to 'plan' (Focus on official preparation start: 1er sept. 2026)
   const [scope, setScope] = useState<TimeRangeScope>('plan');
-  const [includeBonuses, setIncludeBonuses] = useState<boolean>(false);
+  const [includeBonuses, setIncludeBonuses] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<SubSectionTab>('overview');
   const [hoveredWeekKey, setHoveredWeekKey] = useState<string | null>(null);
   const [hoveredFitnessDay, setHoveredFitnessDay] = useState<FitnessDayPoint | null>(null);
@@ -179,9 +179,9 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               fontSize: '0.76rem',
               padding: '6px 10px',
               borderRadius: 'var(--radius-sm)',
-              background: !includeBonuses ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-              border: !includeBonuses ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid var(--border-color)',
-              color: !includeBonuses ? 'var(--accent-cyan)' : 'var(--text-muted)',
+              background: includeBonuses ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+              border: includeBonuses ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid var(--border-color)',
+              color: includeBonuses ? 'var(--accent-cyan)' : 'var(--text-muted)',
               cursor: 'pointer',
               display: 'inline-flex',
               alignItems: 'center',
@@ -189,10 +189,10 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               fontWeight: 700,
               transition: 'all 0.15s ease'
             }}
-            title="Exclut les activités libres/marches non prescrites pour ne pas fausser le volume du plan"
+            title="Active ou désactive l'intégration des activités libres/bonus (courses imprévues, sorties d'appoint) dans les totaux"
           >
             <Filter size={12} />
-            {!includeBonuses ? 'Séances du plan uniquement' : 'Bonus inclus'}
+            {includeBonuses ? 'Toutes activités (avec bonus)' : 'Séances du plan uniquement'}
           </button>
         </div>
       </div>

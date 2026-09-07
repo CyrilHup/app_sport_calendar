@@ -11,7 +11,10 @@ import { CalendarEvent } from '../types/calendar';
 import { classifyGarminActivityType } from './activityClassifier';
 import { getApiUrl } from './apiConfig';
 import { saveWellnessData } from './readinessEngine';
+import { setAppConfigOverrides } from './periodizationEngine';
 
+
+import { Preferences } from '@capacitor/preferences';
 
 const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
 const GARMIN_STATE_KEY = 'garmin_sync_state';
@@ -23,33 +26,86 @@ export interface GarminCredentials {
 }
 
 /**
- * Saves Garmin credentials in local storage for seamless background sync.
+ * Saves Garmin credentials in local storage, preferences, and cookie for seamless background sync.
  */
 export function saveGarminCredentials(creds: GarminCredentials): void {
+  const jsonStr = JSON.stringify(creds);
   try {
-    localStorage.setItem(GARMIN_CREDS_KEY, JSON.stringify(creds));
+    localStorage.setItem(GARMIN_CREDS_KEY, jsonStr);
   } catch (e) {
-    console.error("Failed to save garmin credentials", e);
+    console.error("Failed to save garmin credentials to localStorage", e);
   }
+  // Native Preferences (Android SharedPreferences)
+  try {
+    Preferences.set({ key: GARMIN_CREDS_KEY, value: jsonStr }).catch(() => {});
+  } catch {}
+  // Cookie fallback (365 days)
+  try {
+    if (typeof document !== 'undefined') {
+      const d = new Date();
+      d.setTime(d.getTime() + 365 * 24 * 60 * 60 * 1000);
+      document.cookie = `${encodeURIComponent(GARMIN_CREDS_KEY)}=${encodeURIComponent(jsonStr)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
+    }
+  } catch {}
 }
 
 /**
- * Loads saved Garmin credentials from local storage.
+ * Loads saved Garmin credentials from local storage or cookie.
  */
 export function loadGarminCredentials(): GarminCredentials | null {
   try {
     const raw = localStorage.getItem(GARMIN_CREDS_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
+  // Cookie fallback
+  try {
+    if (typeof document !== 'undefined' && document.cookie) {
+      const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(GARMIN_CREDS_KEY).replace(/[-.+*]/g, '\\$&') + '=([^;]*)'));
+      if (match && match[1]) {
+        const parsed = JSON.parse(decodeURIComponent(match[1]));
+        if (parsed?.email) {
+          try { localStorage.setItem(GARMIN_CREDS_KEY, JSON.stringify(parsed)); } catch {}
+          return parsed;
+        }
+      }
+    }
+  } catch {}
   return null;
 }
 
 /**
- * Clears saved Garmin credentials.
+ * Asynchronously loads Garmin credentials, also checking native Preferences.
+ */
+export async function loadGarminCredentialsAsync(): Promise<GarminCredentials | null> {
+  const existing = loadGarminCredentials();
+  if (existing) return existing;
+  try {
+    const { value } = await Preferences.get({ key: GARMIN_CREDS_KEY });
+    if (value) {
+      const parsed = JSON.parse(value);
+      if (parsed?.email) {
+        saveGarminCredentials(parsed);
+        return parsed;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+/**
+ * Clears saved Garmin credentials across all storage layers.
  */
 export function clearGarminCredentials(): void {
   try {
     localStorage.removeItem(GARMIN_CREDS_KEY);
+  } catch {}
+  try {
+    Preferences.remove({ key: GARMIN_CREDS_KEY }).catch(() => {});
+  } catch {}
+  try {
+    if (typeof document !== 'undefined') {
+      document.cookie = `${encodeURIComponent(GARMIN_CREDS_KEY)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    }
   } catch {}
 }
 
@@ -137,7 +193,7 @@ export function saveGarminSyncState(state: GarminSyncState): void {
 export async function syncWithGarminAPI(credentials?: {
   email?: string;
   password?: string;
-}): Promise<{ success: boolean; activities: GarminActivity[]; count: number; error?: string }> {
+}): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string }> {
   try {
     const credsToUse = (credentials?.email && credentials?.password)
       ? credentials
@@ -169,6 +225,14 @@ export async function syncWithGarminAPI(credentials?: {
       saveWellnessData(data.wellness);
     }
 
+    // If athleteMaxHr is detected from Garmin userSettings or recorded peak HR
+    if (typeof data.athleteMaxHr === 'number' && data.athleteMaxHr > 140) {
+      setAppConfigOverrides({ fcMax: data.athleteMaxHr });
+      try {
+        localStorage.setItem('athlete_fc_max', String(data.athleteMaxHr));
+      } catch {}
+    }
+
     // Persist credentials locally so future reloads and "Synchro Directe" work automatically
     if (credsToUse?.email && credsToUse?.password) {
       saveGarminCredentials({ email: credsToUse.email, password: credsToUse.password });
@@ -186,7 +250,8 @@ export async function syncWithGarminAPI(credentials?: {
     return {
       success: true,
       activities,
-      count: activities.length
+      count: activities.length,
+      athleteMaxHr: data.athleteMaxHr
     };
   } catch (err: any) {
     return {

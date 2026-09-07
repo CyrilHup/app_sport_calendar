@@ -17,33 +17,87 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 /**
- * Hybrid persistent storage adapter:
- * Uses @capacitor/preferences (backed by Android native SharedPreferences)
- * on mobile to ensure sessions persist across app restarts, updates, and process kills.
- * Seamlessly falls back to localStorage on standard web browsers.
+ * Resilient Triple-Layer persistent storage adapter:
+ * Layer 1: @capacitor/preferences (native SharedPreferences on Android, immune to process kills)
+ * Layer 2: HTML5 window.localStorage (web DOM storage)
+ * Layer 3: Persistent Document Cookie (365-day expiry with SameSite=Lax)
+ * Includes bidirectional automatic recovery to prevent session loss.
  */
 export const persistentAuthStorage = {
   getItem: async (key: string): Promise<string | null> => {
+    // 1. Try Capacitor Native Preferences
     try {
-      const { value } = await Preferences.get({ key });
-      if (value !== null && value !== undefined) {
-        return value;
+      const res = await Preferences.get({ key });
+      if (res && typeof res.value === 'string' && res.value.trim().length > 0) {
+        // Backfill localStorage and cookie to keep all layers in sync
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem(key, res.value);
+          }
+        } catch {}
+        return res.value;
       }
-    } catch {}
+    } catch (e) {
+      console.warn('Preferences.get notice:', e);
+    }
+
+    // 2. Try window.localStorage
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        return window.localStorage.getItem(key);
+        const localVal = window.localStorage.getItem(key);
+        if (localVal && localVal.trim().length > 0) {
+          // Backfill Capacitor Preferences so native storage is permanently populated
+          try {
+            await Preferences.set({ key, value: localVal });
+          } catch {}
+          return localVal;
+        }
       }
     } catch {}
+
+    // 3. Try Document Cookies fallback (useful if WebView restarted with clean web cache)
+    try {
+      if (typeof document !== 'undefined' && document.cookie) {
+        const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(key).replace(/[-.+*]/g, '\\$&') + '=([^;]*)'));
+        if (match && match[1]) {
+          const cookieVal = decodeURIComponent(match[1]);
+          if (cookieVal && cookieVal.trim().length > 0) {
+            // Restore both Preferences and localStorage from Cookie
+            try {
+              await Preferences.set({ key, value: cookieVal });
+              if (typeof window !== 'undefined' && window.localStorage) {
+                window.localStorage.setItem(key, cookieVal);
+              }
+            } catch {}
+            return cookieVal;
+          }
+        }
+      }
+    } catch {}
+
     return null;
   },
   setItem: async (key: string, value: string): Promise<void> => {
+    // 1. Save to Capacitor Preferences (Android SharedPreferences)
     try {
       await Preferences.set({ key, value });
-    } catch {}
+    } catch (e) {
+      console.warn('Preferences.set notice:', e);
+    }
+
+    // 2. Save to window.localStorage
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.setItem(key, value);
+      }
+    } catch {}
+
+    // 3. Save to Document Cookie (365 days)
+    try {
+      if (typeof document !== 'undefined') {
+        const d = new Date();
+        d.setTime(d.getTime() + 365 * 24 * 60 * 60 * 1000);
+        document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
       }
     } catch {}
   },
@@ -54,6 +108,11 @@ export const persistentAuthStorage = {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         window.localStorage.removeItem(key);
+      }
+    } catch {}
+    try {
+      if (typeof document !== 'undefined') {
+        document.cookie = `${encodeURIComponent(key)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       }
     } catch {}
   }

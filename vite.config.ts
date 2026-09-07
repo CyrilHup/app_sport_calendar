@@ -323,8 +323,31 @@ export default defineConfig(({ mode }) => {
                   };
                 });
 
+                let athleteMaxHr: number | undefined = undefined;
+                try {
+                  const userSettings: any = await gc.getUserSettings();
+                  const settingsMax = userSettings?.userData?.maxHeartRate || userSettings?.userProfile?.maxHeartRate || userSettings?.maxHeartRate;
+                  if (typeof settingsMax === 'number' && settingsMax > 140 && settingsMax < 240) {
+                    athleteMaxHr = Math.round(settingsMax);
+                  }
+                } catch (settingsErr) {
+                  console.warn('Dev middleware maxHeartRate fetch error:', settingsErr);
+                }
+
+                if (activities.length > 0) {
+                  const recordedPeaks = activities
+                    .map((a: any) => a.maxHeartRate)
+                    .filter((hr: any) => typeof hr === 'number' && hr > 150 && hr < 240);
+                  if (recordedPeaks.length > 0) {
+                    const peakRecorded = Math.max(...recordedPeaks);
+                    if (!athleteMaxHr || peakRecorded > athleteMaxHr) {
+                      athleteMaxHr = peakRecorded;
+                    }
+                  }
+                }
+
                 res.setHeader('Content-Type', 'application/json');
-                res.end(JSON.stringify({ success: true, count: activities.length, activities, wellness }));
+                res.end(JSON.stringify({ success: true, count: activities.length, activities, wellness, athleteMaxHr }));
               } catch (err: any) {
                 res.statusCode = 500;
                 res.setHeader('Content-Type', 'application/json');

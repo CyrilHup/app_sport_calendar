@@ -341,7 +341,31 @@ export default async function handler(req: any, res: any) {
       };
     });
 
-    res.status(200).json({ success: true, count: activities.length, activities, wellness });
+    let athleteMaxHr: number | undefined = undefined;
+    try {
+      const userSettings: any = await gc.getUserSettings();
+      const settingsMax = userSettings?.userData?.maxHeartRate || userSettings?.userProfile?.maxHeartRate || userSettings?.maxHeartRate;
+      if (typeof settingsMax === 'number' && settingsMax > 140 && settingsMax < 240) {
+        athleteMaxHr = Math.round(settingsMax);
+      }
+    } catch (settingsErr) {
+      console.warn('Could not fetch user settings for maxHeartRate:', settingsErr);
+    }
+
+    // Fallback or validation: check actual highest peak heart rate recorded in activities
+    if (activities.length > 0) {
+      const recordedPeaks = activities
+        .map((a: any) => a.maxHeartRate)
+        .filter((hr: any) => typeof hr === 'number' && hr > 150 && hr < 240);
+      if (recordedPeaks.length > 0) {
+        const peakRecorded = Math.max(...recordedPeaks);
+        if (!athleteMaxHr || peakRecorded > athleteMaxHr) {
+          athleteMaxHr = peakRecorded;
+        }
+      }
+    }
+
+    res.status(200).json({ success: true, count: activities.length, activities, wellness, athleteMaxHr });
   } catch (err: any) {
     res.status(500).json({
       success: false,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/garmin';
+import { formatDateKey } from '../services/icsParser';
 import {
   Activity,
   AlertTriangle,
@@ -496,7 +497,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   const origDate = comp.plannedEvent?.metadata?.originalDate || comp.plannedEvent!.startDate.slice(0, 10);
-                                  const todayStr = referenceDateStr || new Date().toISOString().slice(0, 10);
+                                  const todayStr = referenceDateStr || formatDateKey(new Date());
                                   let targetDate = todayStr;
                                   if (origDate >= todayStr) {
                                     const nextD = new Date(todayStr + 'T12:00:00');
@@ -672,7 +673,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         onClick={(e) => {
                           e.stopPropagation();
                           const origDate = comp.plannedEvent?.metadata?.originalDate || comp.plannedEvent!.startDate.slice(0, 10);
-                          const todayStr = referenceDateStr || new Date().toISOString().slice(0, 10);
+                          const todayStr = referenceDateStr || formatDateKey(new Date());
                           let targetDate = todayStr;
                           if (origDate >= todayStr) {
                             const nextD = new Date(todayStr + 'T12:00:00');

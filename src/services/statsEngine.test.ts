@@ -344,5 +344,75 @@ describe('statsEngine unit tests', () => {
     expect(report.trailSpecific.avgVamMPerHour).toBeGreaterThan(0);
     expect(report.trailSpecific.gradeAdjustedPaceMinKm).not.toBe('-');
   });
+
+  it('includes unplanned and bonus runs by default in volume, distance and load', () => {
+    const activitiesWithBonus: GarminActivity[] = [
+      {
+        activityId: 'act-plan-run',
+        activityName: 'Sortie Mont-Royal',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-02T08:00:00',
+        durationMinutes: 45,
+        distanceKm: 7.5,
+        avgHeartRate: 155,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-bonus-run-today',
+        activityName: 'Montreal Running (Bonus)',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-07T14:00:00',
+        durationMinutes: 18,
+        distanceKm: 3.8,
+        elevationGainM: 15,
+        elevationLossM: 8,
+        avgHeartRate: 162,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const comparisons = [
+      {
+        id: 'comp-unplanned-bonus',
+        date: '2026-09-07',
+        status: 'UNPLANNED' as const,
+        actualActivity: activitiesWithBonus[1],
+        durationDeltaMinutes: 18,
+        complianceScore: 100,
+        heartRateCompliance: 'OPTIMAL' as const,
+        feedbackNotes: ['Séance bonus']
+      }
+    ];
+
+    // By default (includeBonusActivities omitted), bonus run is included
+    const defaultReport = computeFullStatsReport(
+      activitiesWithBonus,
+      comparisons,
+      [],
+      'plan',
+      new Date('2026-09-07T18:00:00')
+    );
+
+    expect(defaultReport.global.totalSessionsCount).toBe(2);
+    expect(defaultReport.global.totalDurationMinutes).toBe(63); // 45 + 18
+    expect(defaultReport.running.totalDistanceKm).toBe(11.3); // 7.5 + 3.8
+    expect(defaultReport.global.isFilteringBonuses).toBe(false);
+
+    // If explicitly filtered
+    const filteredReport = computeFullStatsReport(
+      activitiesWithBonus,
+      comparisons,
+      [],
+      'plan',
+      new Date('2026-09-07T18:00:00'),
+      false
+    );
+
+    expect(filteredReport.global.totalSessionsCount).toBe(1);
+    expect(filteredReport.global.totalDurationMinutes).toBe(45);
+    expect(filteredReport.running.totalDistanceKm).toBe(7.5);
+    expect(filteredReport.global.excludedBonusCount).toBe(1);
+    expect(filteredReport.global.isFilteringBonuses).toBe(true);
+  });
 });
 

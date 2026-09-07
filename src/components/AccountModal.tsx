@@ -77,7 +77,18 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
-  const { user, profile, isConfigured, signIn, signUp, signInWithGoogle, signOut, updateProfile } = useAuth();
+  const {
+    user,
+    profile,
+    isConfigured,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    signOut,
+    updateProfile,
+    saveCloudGarminCredentials,
+    clearCloudGarminCredentials
+  } = useAuth();
 
   // Auth form state
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -108,13 +119,30 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     }
   }, [profile]);
 
-  // Garmin state
+  // Garmin state: Check local storage OR cloud user_metadata from Google account
   const storedGarminCreds = loadGarminCredentials();
-  const [garminEmail, setGarminEmail] = useState(storedGarminCreds?.email || garminState.accountEmail || '');
-  const [garminPassword, setGarminPassword] = useState(storedGarminCreds?.password || '');
+  const cloudGarminEmail = user?.user_metadata?.garmin_email;
+  const cloudGarminPassword = user?.user_metadata?.garmin_password;
+
+  const [garminEmail, setGarminEmail] = useState(
+    storedGarminCreds?.email || cloudGarminEmail || garminState.accountEmail || ''
+  );
+  const [garminPassword, setGarminPassword] = useState(
+    storedGarminCreds?.password || cloudGarminPassword || ''
+  );
   const [garminSyncMsg, setGarminSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [isGarminProcessing, setIsGarminProcessing] = useState(false);
-  const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.email);
+  const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.email && !cloudGarminEmail);
+
+  useEffect(() => {
+    if (user?.user_metadata?.garmin_email) {
+      setGarminEmail(user.user_metadata.garmin_email);
+      if (user.user_metadata.garmin_password) {
+        setGarminPassword(user.user_metadata.garmin_password);
+      }
+      setShowGarminCredsEdit(false);
+    }
+  }, [user]);
 
   // Google Calendar state
   const [gcalCopied, setGcalCopied] = useState(false);
@@ -217,6 +245,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     if (result.success) {
       if (garminEmail && garminPassword) {
         saveGarminCredentials({ email: garminEmail, password: garminPassword });
+        if (user) {
+          saveCloudGarminCredentials(garminEmail, garminPassword);
+        }
       }
       onActivitiesSynced(result.activities);
       onUpdateGarminState({
@@ -226,8 +257,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         activitiesCount: result.count,
         isSyncing: false
       });
+      if (result.athleteMaxHr) {
+        setProfFcMax(result.athleteMaxHr);
+        updateProfile({ fcMax: result.athleteMaxHr }).catch(() => {});
+      }
       setGarminSyncMsg({
-        text: `✅ ${result.count} activité(s) Garmin synchronisées avec votre Compte Google !`,
+        text: `✅ ${result.count} activité(s) Garmin synchronisées et liées à votre Compte Google !${result.athleteMaxHr ? ` (FCmax Garmin détectée : ${result.athleteMaxHr} bpm)` : ''}`,
         isError: false
       });
     } else {
@@ -240,6 +275,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
   const handleGarminDisconnect = () => {
     clearGarminCredentials();
+    if (user) {
+      clearCloudGarminCredentials();
+    }
     setGarminEmail('');
     setGarminPassword('');
     setShowGarminCredsEdit(true);
@@ -251,7 +289,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       activitiesCount: 0
     });
     setGarminSyncMsg({
-      text: 'Identifiants locaux supprimés.',
+      text: 'Identifiants Garmin dissociés (local et Cloud).',
       isError: false
     });
   };
@@ -768,7 +806,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
                   <div>
                     <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
-                      FC Max Personnalisée (bpm)
+                      FC Max de l'Athlète (bpm)
                     </label>
                     <input
                       type="number"
@@ -776,6 +814,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                       onChange={e => setProfFcMax(parseInt(e.target.value, 10) || 203)}
                       style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.82rem' }}
                     />
+                    <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)' }}>
+                      ⚡ Synchronisée automatiquement depuis votre profil et vos pics Garmin Connect.
+                    </span>
                   </div>
                 </div>
 
@@ -1069,32 +1110,68 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     <Activity size={16} />
                     <span>
                       {garminState.connected
-                        ? `Connecté : ${garminState.activitiesCount} activités dans le cloud`
+                        ? `Connecté : ${garminState.activitiesCount} activités synchronisées`
                         : 'Garmin Connect'}
                     </span>
+                    {user && (user.user_metadata?.garmin_email || garminEmail) && (
+                      <span
+                        style={{
+                          fontSize: '0.66rem',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          color: '#34d399',
+                          padding: '2px 7px',
+                          borderRadius: 9999,
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          fontWeight: 700
+                        }}
+                      >
+                        🟢 Lié au Compte Google
+                      </span>
+                    )}
                   </div>
                   <p style={{ margin: '3px 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                    Toutes vos séances Garmin sont persistées sur votre Compte Google et accessibles sur votre téléphone.
+                    {user
+                      ? `Vos accès Garmin sont rattachés à votre compte Google (${user.email}). Ils se reconnectent et s'actualisent automatiquement à chaque ouverture.`
+                      : 'Connectez votre compte Google pour sauvegarder vos identifiants Garmin et les synchroniser sur votre smartphone.'}
                   </p>
                 </div>
 
-                {garminState.connected && (
-                  <button
-                    type="button"
-                    onClick={handleGarminDisconnect}
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.12)',
-                      border: '1px solid rgba(239, 68, 68, 0.3)',
-                      color: '#f87171',
-                      borderRadius: 4,
-                      padding: '4px 8px',
-                      fontSize: '0.72rem',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Déconnecter
-                  </button>
-                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {(!showGarminCredsEdit && (storedGarminCreds?.email || cloudGarminEmail)) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowGarminCredsEdit(true)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-secondary)',
+                        borderRadius: 4,
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Modifier
+                    </button>
+                  )}
+                  {garminState.connected && (
+                    <button
+                      type="button"
+                      onClick={handleGarminDisconnect}
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.12)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        color: '#f87171',
+                        borderRadius: 4,
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Dissocier
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Latest Garmin Telemetry & Wellness Ingestion */}

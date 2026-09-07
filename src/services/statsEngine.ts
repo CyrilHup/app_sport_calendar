@@ -102,6 +102,7 @@ export interface HeartRateStats {
   summaryText: string;
   comparisonBaselineText: string;
   historicalPrePlanAvgHr: number | null;
+  overallPeriodAvgHr: number | null;
 }
 
 export interface AidStationSplit {
@@ -248,7 +249,7 @@ export function computeFullStatsReport(
   _plannedEvents: CalendarEvent[] = [],
   scope: TimeRangeScope = 'plan',
   asOfDate: Date = new Date(),
-  includeBonusActivities: boolean = false
+  includeBonusActivities: boolean = true
 ): FullStatsReport {
   // Identify which activities are "Bonus" (unplanned non-prescribed activities)
   const bonusActIds = new Set<string>();
@@ -444,26 +445,43 @@ export function computeFullStatsReport(
   let progressionStatus: GlobalStats['progressionStatus'] = 'STARTING';
   let progressionComparisonText = `Volume actuel : ${formatMinutes(totalDurationMinutes)} sur la première semaine du plan QMT.`;
 
+  const curMondayKey = getMondayWeekKey(formatDateKey(asOfDate));
+
   if (weeklyTrend.length >= 2) {
     const curW = weeklyTrend[weeklyTrend.length - 1];
     const prevW = weeklyTrend[weeklyTrend.length - 2];
-    const diffMin = curW.totalMinutes - prevW.totalMinutes;
+    const isCurWeekInProgress = curW.weekKey === curMondayKey;
 
-    if (prevW.totalMinutes > 0) {
-      weeklyProgressionPct = Math.round((diffMin / prevW.totalMinutes) * 100);
-    }
-
-    const curLabel = curW.weekLabel.replace('Sem. ', '');
-    const prevLabel = prevW.weekLabel.replace('Sem. ', '');
-
-    progressionComparisonText = `Volume sem. ${curLabel} (${formatMinutes(curW.totalMinutes)}) comparé à sem. ${prevLabel} (${formatMinutes(prevW.totalMinutes)}) : ${diffMin >= 0 ? '+' : ''}${formatMinutes(Math.abs(diffMin))} (${weeklyProgressionPct > 0 ? '+' : ''}${weeklyProgressionPct}%)`;
-
-    if (weeklyProgressionPct > 20) {
-      progressionStatus = 'OVERLOAD_WARNING';
-    } else if (weeklyProgressionPct >= 5 && weeklyProgressionPct <= 20) {
-      progressionStatus = 'SAFE_PROGRESSION';
+    if (isCurWeekInProgress) {
+      if (weeklyTrend.length >= 3) {
+        // Compare the two previous completed weeks
+        const lastComplete = weeklyTrend[weeklyTrend.length - 2];
+        const prevComplete = weeklyTrend[weeklyTrend.length - 3];
+        const diffMin = lastComplete.totalMinutes - prevComplete.totalMinutes;
+        if (prevComplete.totalMinutes > 0) {
+          weeklyProgressionPct = Math.round((diffMin / prevComplete.totalMinutes) * 100);
+        }
+        const lastLabel = lastComplete.weekLabel.replace('Sem. ', '');
+        const prevLabel = prevComplete.weekLabel.replace('Sem. ', '');
+        progressionComparisonText = `Semaines complètes : Sem. ${lastLabel} (${formatMinutes(lastComplete.totalMinutes)}) vs Sem. ${prevLabel} (${formatMinutes(prevComplete.totalMinutes)}) : ${diffMin >= 0 ? '+' : ''}${formatMinutes(Math.abs(diffMin))} (${weeklyProgressionPct > 0 ? '+' : ''}${weeklyProgressionPct}%). Semaine actuelle en cours (${formatMinutes(curW.totalMinutes)}).`;
+        progressionStatus = weeklyProgressionPct > 20 ? 'OVERLOAD_WARNING' : (weeklyProgressionPct >= 5 ? 'SAFE_PROGRESSION' : 'RECOVERY_MAINTENANCE');
+      } else {
+        // Only 1 completed week + current week in progress
+        weeklyProgressionPct = 0;
+        progressionStatus = 'STARTING';
+        progressionComparisonText = `Semaine 1 complétée : ${formatMinutes(prevW.totalMinutes)}. Semaine 2 en cours : ${formatMinutes(curW.totalMinutes)} ce lundi.`;
+      }
     } else {
-      progressionStatus = 'RECOVERY_MAINTENANCE';
+      const diffMin = curW.totalMinutes - prevW.totalMinutes;
+      if (prevW.totalMinutes > 0) {
+        weeklyProgressionPct = Math.round((diffMin / prevW.totalMinutes) * 100);
+      }
+      const curLabel = curW.weekLabel.replace('Sem. ', '');
+      const prevLabel = prevW.weekLabel.replace('Sem. ', '');
+      progressionComparisonText = `Volume sem. ${curLabel} (${formatMinutes(curW.totalMinutes)}) comparé à sem. ${prevLabel} (${formatMinutes(prevW.totalMinutes)}) : ${diffMin >= 0 ? '+' : ''}${formatMinutes(Math.abs(diffMin))} (${weeklyProgressionPct > 0 ? '+' : ''}${weeklyProgressionPct}%)`;
+      if (weeklyProgressionPct > 20) progressionStatus = 'OVERLOAD_WARNING';
+      else if (weeklyProgressionPct >= 5 && weeklyProgressionPct <= 20) progressionStatus = 'SAFE_PROGRESSION';
+      else progressionStatus = 'RECOVERY_MAINTENANCE';
     }
   }
 

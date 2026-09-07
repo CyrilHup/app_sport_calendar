@@ -8,14 +8,13 @@ import { AccountModal, AccountModalTab } from './components/AccountModal';
 import { QMTPlanOverview } from './components/QMTPlanOverview';
 import { StatsDashboard } from './components/StatsDashboard';
 import { MobileNav } from './components/MobileNav';
-import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
-import { getPeriodizationContext } from './services/periodizationEngine';
-import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
+import { buildCompleteCalendar, parseICSString, RawIcsEvent, formatDateKey } from './services/icsParser';
+import { getPeriodizationContext, GLOBAL_APP_CONFIG, setAppConfigOverrides } from './services/periodizationEngine';
+import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { setAppConfigOverrides } from './services/periodizationEngine';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
 import { getApiUrl } from './services/apiConfig';
 
@@ -64,7 +63,7 @@ export const App: React.FC = () => {
     setAccountModal({ isOpen: true, tab });
   };
 
-  const { user, profile } = useAuth();
+  const { user, profile, saveCloudGarminCredentials } = useAuth();
 
   // Apply user profile overrides to periodization & transit engine
   useEffect(() => {
@@ -94,9 +93,23 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Bidirectional sync for activities and manual pairs when user logs in with Google / Supabase
+  // Bidirectional sync for activities, credentials, and manual pairs when user logs in with Google / Supabase
   useEffect(() => {
     if (user?.id) {
+      // Auto-link cloud Garmin credentials if present in user Google account
+      const cloudGarminEmail = user.user_metadata?.garmin_email;
+      const cloudGarminPassword = user.user_metadata?.garmin_password;
+      const localCreds = loadGarminCredentials();
+
+      if (cloudGarminEmail && cloudGarminPassword) {
+        if (!localCreds?.email || localCreds.email !== cloudGarminEmail) {
+          saveGarminCredentials({ email: cloudGarminEmail, password: cloudGarminPassword });
+        }
+      } else if (localCreds?.email && localCreds?.password) {
+        // Automatically save existing local credentials to user's Google cloud account
+        saveCloudGarminCredentials(localCreds.email, localCreds.password);
+      }
+
       const localActs = loadStoredGarminActivities();
       fetchActivitiesFromCloud(user.id).then(async cloudActs => {
         if (cloudActs && cloudActs.length > 0) {
@@ -117,6 +130,9 @@ export const App: React.FC = () => {
           await syncPairsToCloud(user.id, localPairs);
         }
       });
+
+      // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
+      autoRechargeAll();
     }
   }, [user?.id]);
 
@@ -155,12 +171,15 @@ export const App: React.FC = () => {
       }
     }
 
-    // Start calendar exactly on Monday of current week
-    const calendarStartMonday = getMondayOfWeek(referenceDate);
+    // Start calendar on Monday of the training plan start week (2026-08-31)
+    // to preserve Week 1 (from 1er sept.), past microcycles, history, and telemetry reconciliation
+    const planStartMonday = getMondayOfWeek(new Date(GLOBAL_APP_CONFIG.SPORT_START_DATE + 'T00:00:00'));
+    const currentMonday = getMondayOfWeek(referenceDate);
+    const calendarStartMonday = planStartMonday.getTime() < currentMonday.getTime() ? planStartMonday : currentMonday;
     const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
       rawCourses,
       calendarStartMonday,
-      42 // 6 full weeks
+      84 // 12 full weeks (covers Week 1 to late November)
     );
 
     setBaseCalendar({ schedules: builtSchedules, allEvents: builtEvents });
@@ -177,7 +196,16 @@ export const App: React.FC = () => {
 
     // 2. Load stored real Garmin activities and attempt sync for latest activities
     let loadedActivities = loadStoredGarminActivities();
-    const creds = loadGarminCredentials();
+    const creds = loadGarminCredentials() || (
+      user?.user_metadata?.garmin_email && user?.user_metadata?.garmin_password
+        ? { email: user.user_metadata.garmin_email, password: user.user_metadata.garmin_password }
+        : null
+    );
+
+    if (creds?.email && creds?.password) {
+      saveGarminCredentials(creds);
+    }
+
     try {
       if (creds?.email && creds?.password) {
         const result = await syncWithGarminAPI(creds);
@@ -212,10 +240,12 @@ export const App: React.FC = () => {
     const nowIso = new Date().toISOString();
     setLastSyncTime(nowIso);
 
+    const isGarminConnected = loadedActivities.length > 0 || Boolean(creds?.email);
     const updatedGarminState: GarminSyncState = {
       ...garminState,
-      connected: loadedActivities.length > 0,
-      lastSyncTime: loadedActivities.length > 0 ? nowIso : undefined,
+      connected: isGarminConnected,
+      accountEmail: creds?.email || garminState.accountEmail || (user ? 'Compte Garmin lié à Google' : 'Compte Garmin'),
+      lastSyncTime: loadedActivities.length > 0 ? nowIso : (garminState.lastSyncTime || nowIso),
       activitiesCount: loadedActivities.length,
       isSyncing: false
     };
@@ -308,13 +338,16 @@ export const App: React.FC = () => {
   };
 
   // Compute full current week's targets for accurate microcycle telemetry progress
-  const calendarStartMonday = getMondayOfWeek(referenceDate);
-  const weekStartStr = calendarStartMonday.toISOString().slice(0, 10);
-  const weekEndDate = new Date(calendarStartMonday);
-  weekEndDate.setDate(calendarStartMonday.getDate() + 6);
+  const currentMonday = getMondayOfWeek(referenceDate);
+  const weekStartStr = currentMonday.toISOString().slice(0, 10);
+  const weekEndDate = new Date(currentMonday);
+  weekEndDate.setDate(currentMonday.getDate() + 6);
   const weekEndStr = weekEndDate.toISOString().slice(0, 10);
 
-  const currentWeekSchedules = schedules.slice(0, 7);
+  const refDateKey = formatDateKey(referenceDate);
+  const todayIdx = schedules.findIndex(s => s.date === refDateKey);
+  const currentWeekStartIdx = todayIdx >= 0 ? Math.floor(todayIdx / 7) * 7 : 0;
+  const currentWeekSchedules = schedules.slice(currentWeekStartIdx, currentWeekStartIdx + 7);
   const plannedDurationMin = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession?.durationMinutes || 0), 0);
   const plannedElevationM = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession?.metadata?.targetElevationM || 0), 0);
   const weeklyStats = computeWeeklyTelemetry(
@@ -425,7 +458,7 @@ export const App: React.FC = () => {
         <CalendarView
           schedules={schedules}
           onOpenGoogleCalendar={() => handleOpenAccountModal('google')}
-          referenceDateStr={referenceDate.toISOString().slice(0, 10)}
+          referenceDateStr={formatDateKey(referenceDate)}
           onPostponeWorkout={handlePostponeWorkout}
           onCancelPostponeWorkout={handleCancelPostpone}
           comparisons={comparisons}
@@ -443,7 +476,7 @@ export const App: React.FC = () => {
             onManualPair={handleManualPair}
             onManualUnpair={handleManualUnpair}
             onPostponeWorkout={handlePostponeWorkout}
-            referenceDateStr={referenceDate.toISOString().slice(0, 10)}
+            referenceDateStr={formatDateKey(referenceDate)}
           />
         </div>
       )}
