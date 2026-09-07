@@ -104,10 +104,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     if (!isConfigured) return { error: "Supabase n'est pas encore configuré." };
+
+    // On mobile or production, redirect to the live Vercel domain to prevent localhost fallback
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const isLocalViteDev = origin.includes('localhost:5173') || origin.includes('127.0.0.1:5173');
+    const targetRedirectUrl = isLocalViteDev ? origin : 'https://appsportcalendar.vercel.app';
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: targetRedirectUrl
       }
     });
     if (error) return { error: error.message };
