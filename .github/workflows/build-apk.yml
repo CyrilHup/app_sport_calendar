@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Java 21
         uses: actions/setup-java@v4
@@ -51,20 +53,54 @@ jobs:
           cd android
           ./gradlew assembleDebug --no-daemon
 
+      - name: Prepare Versioned Release Assets
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          BUILD_NUM=${{ github.run_number }}
+          TAG="v${VERSION}.${BUILD_NUM}"
+          TITLE="Release v${VERSION} (Build #${BUILD_NUM})"
+          APK_NAME="sport-calendar-v${VERSION}-b${BUILD_NUM}.apk"
+          
+          # Copy to versioned name and generic name in root
+          cp android/app/build/outputs/apk/debug/app-debug.apk "${APK_NAME}"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "app-debug.apk"
+          
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "title=${TITLE}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "apk_name=${APK_NAME}" >> $GITHUB_OUTPUT
+
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
+          name: ${{ steps.meta.outputs.apk_name }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
-      - name: Publish Direct APK Download in GitHub Releases
+      - name: Publish Versioned GitHub Release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          tag_name: latest-build
-          name: "Sport Calendar - Latest Android APK"
-          body: "Dernière version compilée automatiquement de l'application Android. Téléchargeable directement sur mobile sans passer par un câble USB ni Android Studio."
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ### 📱 Sport Calendar Android — ${{ steps.meta.outputs.title }}
+            
+            - **Version :** `${{ steps.meta.outputs.version }}`
+            - **Numéro de build :** `#${{ github.run_number }}`
+            - **Commit :** `${{ github.sha }}`
+            - **Message du commit :** `${{ github.event.head_commit.message }}`
+            - **Hôte de mise à jour live :** `https://appsportcalendar.vercel.app`
+            
+            ---
+            #### 📥 Téléchargement direct pour votre téléphone :
+            Cliquez sur **`${{ steps.meta.outputs.apk_name }}`** (ou **`app-debug.apk`**) ci-dessous pour l'installer sur votre téléphone Android.
+          files: |
+            ${{ steps.meta.outputs.apk_name }}
+            app-debug.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
