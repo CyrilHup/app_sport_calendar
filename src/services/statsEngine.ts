@@ -767,7 +767,15 @@ export function computeFullStatsReport(
       comparisonBaselineText = `FC moyenne actuelle : ${currentAvgHeartRate} bpm sur la semaine active.`;
       hrSummaryText = `FC moyenne de reprise : ${currentAvgHeartRate} bpm. Poursuivez l'enregistrement pour mesurer la baisse au fil des semaines.`;
     }
+  let scopedHrSum = 0;
+  let scopedHrDuration = 0;
+  for (const a of activeActivities) {
+    if (a.avgHeartRate && a.avgHeartRate > 0) {
+      scopedHrSum += a.avgHeartRate * a.durationMinutes;
+      scopedHrDuration += a.durationMinutes;
+    }
   }
+  const overallPeriodAvgHr = scopedHrDuration > 0 ? Math.round(scopedHrSum / scopedHrDuration) : currentAvgHeartRate;
 
   const heartRate: HeartRateStats = {
     currentAvgHeartRate,
@@ -778,7 +786,8 @@ export function computeFullStatsReport(
     aerobicEfficiencyDeltaPct,
     summaryText: hrSummaryText,
     comparisonBaselineText,
-    historicalPrePlanAvgHr
+    historicalPrePlanAvgHr,
+    overallPeriodAvgHr
   };
 
   // Training Load & Fatigue (CTL / ATL / TSB / ACWR)
