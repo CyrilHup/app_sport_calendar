@@ -6,13 +6,14 @@ import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
 import { AccountModal, AccountModalTab } from './components/AccountModal';
 import { QMTPlanOverview } from './components/QMTPlanOverview';
+import { StatsDashboard } from './components/StatsDashboard';
 import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
 import { getPeriodizationContext } from './services/periodizationEngine';
 import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
-import { Activity, Calendar, TrendingUp } from 'lucide-react';
+import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { setAppConfigOverrides } from './services/periodizationEngine';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
@@ -50,7 +51,7 @@ export const App: React.FC = () => {
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
   const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
   const [comparisons, setComparisons] = useState<ActivityComparison[]>([]);
-  const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization'>('calendar');
+  const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization' | 'stats'>('calendar');
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
   const [accountModal, setAccountModal] = useState<{ isOpen: boolean; tab: AccountModalTab }>({
@@ -405,6 +406,13 @@ export const App: React.FC = () => {
         </button>
 
         <button
+          className={`nav-tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
+          onClick={() => setActiveTab('stats')}
+        >
+          <BarChart3 size={15} /> Statistiques
+        </button>
+
+        <button
           className={`nav-tab-btn ${activeTab === 'periodization' ? 'active' : ''}`}
           onClick={() => setActiveTab('periodization')}
         >
@@ -438,6 +446,16 @@ export const App: React.FC = () => {
             referenceDateStr={referenceDate.toISOString().slice(0, 10)}
           />
         </div>
+      )}
+
+      {activeTab === 'stats' && (
+        <StatsDashboard
+          garminActivities={garminActivities}
+          comparisons={comparisons}
+          allEvents={allEvents}
+          referenceDate={referenceDate}
+          onOpenGarminSync={() => handleOpenAccountModal('garmin')}
+        />
       )}
 
       {activeTab === 'periodization' && (
