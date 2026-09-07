@@ -213,3 +213,75 @@ export function getStoredGCalClientId(): string {
 export function saveGCalClientId(clientId: string): void {
   localStorage.setItem(GCAL_CLIENT_ID_KEY, clientId.trim());
 }
+
+/**
+ * 1-Click Direct Google Calendar Sync without requiring manual client ID input.
+ */
+export async function triggerGoogleCalendarOAuthSync(
+  calendarEvents: CalendarEvent[],
+  onProgress?: (p: GCalSyncProgress) => void
+): Promise<{ success: boolean; count: number; error?: string }> {
+  const clientId = getStoredGCalClientId();
+  if (!clientId) {
+    return { success: false, count: 0, error: 'Identifiant Google Client ID manquant.' };
+  }
+
+  if (onProgress) {
+    onProgress({
+      total: calendarEvents.length,
+      current: 0,
+      status: 'SYNCING',
+      message: 'Demande d\'autorisation auprès de Google Agenda...'
+    });
+  }
+
+  return new Promise(resolve => {
+    try {
+      const runClient = () => {
+        const client = (window as any).google?.accounts?.oauth2?.initTokenClient({
+          client_id: clientId,
+          scope: 'https://www.googleapis.com/auth/calendar.events',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse.error) {
+              const err = `Autorisation refusée : ${tokenResponse.error}`;
+              if (onProgress) onProgress({ total: calendarEvents.length, current: 0, status: 'ERROR', message: err });
+              resolve({ success: false, count: 0, error: err });
+              return;
+            }
+            const res = await syncDirectToGoogleCalendar(calendarEvents, tokenResponse.access_token, 'primary', onProgress);
+            resolve(res);
+          }
+        });
+
+        if (!client) {
+          const err = 'Impossible d\'initialiser le client Google Identity Services';
+          if (onProgress) onProgress({ total: calendarEvents.length, current: 0, status: 'ERROR', message: err });
+          resolve({ success: false, count: 0, error: err });
+          return;
+        }
+
+        client.requestAccessToken();
+      };
+
+      if (!(window as any).google?.accounts?.oauth2) {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.onload = () => runClient();
+        script.onerror = () => {
+          const err = 'Échec du chargement du module Google Identity';
+          if (onProgress) onProgress({ total: calendarEvents.length, current: 0, status: 'ERROR', message: err });
+          resolve({ success: false, count: 0, error: err });
+        };
+        document.body.appendChild(script);
+      } else {
+        runClient();
+      }
+    } catch (err: any) {
+      const msg = err.message || 'Erreur OAuth';
+      if (onProgress) onProgress({ total: calendarEvents.length, current: 0, status: 'ERROR', message: msg });
+      resolve({ success: false, count: 0, error: msg });
+    }
+  });
+}
+

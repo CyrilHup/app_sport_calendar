@@ -17,6 +17,7 @@ interface HeaderProps {
   lastSyncTime?: string;
   onSelectPeriodizationTab?: () => void;
   userDisplayName?: string;
+  userAvatarUrl?: string;
   isLoggedIn?: boolean;
 }
 
@@ -31,6 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
   lastSyncTime,
   onSelectPeriodizationTab,
   userDisplayName,
+  userAvatarUrl,
   isLoggedIn
 }) => {
   const [isHudOpenOnMobile, setIsHudOpenOnMobile] = useState<boolean>(false);
@@ -79,18 +81,20 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="app-header">
-      {/* Top Brand & Actions Bar */}
+      {/* Top Brand & Actions Bar - Sleek Single Line */}
       <div className="header-top">
         <div className="brand-section">
-          <div className="brand-badge">🏔️</div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <h1 className="brand-title">QMT-80 Performance Hub</h1>
+              <h1 className="brand-title">
+                <span className="mobile-only">QMT-80</span>
+                <span className="desktop-only">QMT-80 Performance Hub</span>
+              </h1>
               <span className="badge-tag desktop-only" style={{ background: 'var(--primary-subtle)', color: 'var(--primary)', border: '1px solid var(--primary-border)' }}>
                 77 KM • +3 370M D+ • LIMITE 19H
               </span>
-              <span className="mobile-only" style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', padding: '2px 7px', borderRadius: 9999, fontSize: '0.7rem', fontWeight: 800 }}>
-                <Flame size={11} /> J-{periodContext.daysToRace}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', padding: '2px 7px', borderRadius: 9999, fontSize: '0.72rem', fontWeight: 800 }}>
+                <Flame size={12} /> J-{periodContext.daysToRace}
               </span>
             </div>
             <p className="brand-subtitle desktop-only">
@@ -126,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </button>
 
-          {/* Unified Athlete Account Button */}
+          {/* Unified Athlete Account Button with Google Photo */}
           <button
             className="account-action-btn"
             onClick={() => {
@@ -137,8 +141,8 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <div
               style={{
-                width: 24,
-                height: 24,
+                width: 26,
+                height: 26,
                 borderRadius: '50%',
                 background: isLoggedIn ? 'linear-gradient(135deg, #10b981, #06b6d4)' : 'rgba(255, 255, 255, 0.12)',
                 display: 'flex',
@@ -147,10 +151,26 @@ export const Header: React.FC<HeaderProps> = ({
                 color: '#fff',
                 fontSize: '0.72rem',
                 fontWeight: 700,
-                flexShrink: 0
+                flexShrink: 0,
+                overflow: 'hidden',
+                border: '1px solid rgba(255, 255, 255, 0.15)'
               }}
             >
-              {isLoggedIn && userDisplayName ? userDisplayName[0].toUpperCase() : <User size={13} />}
+              {isLoggedIn && userAvatarUrl ? (
+                <img
+                  src={userAvatarUrl}
+                  alt={userDisplayName || 'Athlète'}
+                  referrerPolicy="no-referrer"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : isLoggedIn && userDisplayName ? (
+                userDisplayName[0].toUpperCase()
+              ) : (
+                <User size={13} />
+              )}
             </div>
             <span className="desktop-only" style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 600 }}>
               {isLoggedIn ? (userDisplayName || 'Mon Compte') : 'Mon Compte & Services'}

@@ -70,6 +70,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // Clé du jour courant
   const todayKey = referenceDateStr || new Date().toISOString().slice(0, 10);
 
+  // Format compact et lisible de la semaine (ex: 7 — 13 sept.)
+  const formatWeekRange = () => {
+    if (displayedDays.length === 0) return '';
+    try {
+      const start = new Date(displayedDays[0].date + 'T12:00:00');
+      const end = new Date(displayedDays[displayedDays.length - 1].date + 'T12:00:00');
+      const startDay = start.getDate();
+      const endDay = end.getDate();
+      const endMonth = end.toLocaleDateString('fr-CA', { month: 'short' });
+      return `${startDay} — ${endDay} ${endMonth}`;
+    } catch {
+      return `${displayedDays[0].date.slice(5)} — ${displayedDays[displayedDays.length - 1].date.slice(5)}`;
+    }
+  };
+
+  const handleResetToToday = () => {
+    setWeekOffset(0);
+    const todayIndex = schedules.findIndex(s => s.date === todayKey);
+    if (todayIndex >= 0) {
+      setActiveDayIndex(todayIndex % 7);
+    }
+  };
+
   // Compteurs pour la semaine affichée
   const currentWeekEvents = displayedDays.flatMap(d => d.events);
   const countAll = currentWeekEvents.length;
@@ -80,7 +103,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   return (
     <div className="calendar-layout">
-      {/* Contrôles de Vue & Navigation Unifiés */}
+      {/* Contrôles de Vue & Navigation Unifiés (Ligne Unique Compacte) */}
       <div className="calendar-toolbar-card">
         <div className="calendar-toolbar-row">
           {/* Week Navigation */}
@@ -90,30 +113,39 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               onClick={() => setWeekOffset(prev => Math.max(0, prev - 1))}
               disabled={weekOffset === 0}
               title="Semaine précédente"
+              aria-label="Semaine précédente"
             >
               <ChevronLeft size={15} />
             </button>
 
-            <button
-              className="btn-secondary nav-week-btn"
-              onClick={() => setWeekOffset(0)}
-              style={{ fontWeight: weekOffset === 0 ? 800 : 600 }}
-            >
-              Semaine Actuelle
-            </button>
+            <span className="calendar-date-range">
+              {formatWeekRange()}
+            </span>
 
             <button
               className="btn-secondary nav-arrow-btn"
               onClick={() => setWeekOffset(prev => prev + 1)}
               disabled={currentWeekStartIdx + 7 >= schedules.length}
               title="Semaine suivante"
+              aria-label="Semaine suivante"
             >
               <ChevronRight size={15} />
             </button>
 
-            <span className="calendar-date-range">
-              {displayedDays.length > 0 && `${displayedDays[0].date.slice(5)} — ${displayedDays[displayedDays.length - 1].date.slice(5)}`}
-            </span>
+            {weekOffset !== 0 ? (
+              <button
+                type="button"
+                className="btn-secondary nav-today-quick-btn"
+                onClick={handleResetToToday}
+                title="Revenir à la semaine actuelle"
+              >
+                Aujourd'hui
+              </button>
+            ) : (
+              <span className="calendar-current-week-tag desktop-only">
+                Actuelle
+              </span>
+            )}
           </div>
 
           {/* View Mode & Quick Actions */}
@@ -125,27 +157,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 onClick={() => setViewMode('day')}
                 className={`view-mode-btn ${viewMode === 'day' ? 'active' : ''}`}
                 title="Affichage par Jour (Mobile)"
+                aria-label="Affichage par Jour"
               >
                 <Calendar size={13} />
-                <span>Jour</span>
+                <span className="desktop-only">Jour</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
                 className={`view-mode-btn ${viewMode === 'grid' ? 'active' : ''}`}
                 title="Grille Hebdomadaire"
+                aria-label="Grille Hebdomadaire"
               >
                 <LayoutGrid size={13} />
-                <span>Grille</span>
+                <span className="desktop-only">Grille</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
                 title="Vue Liste"
+                aria-label="Vue Liste"
               >
                 <ListFilter size={13} />
-                <span>Liste</span>
+                <span className="desktop-only">Liste</span>
               </button>
             </div>
 
@@ -155,6 +190,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               onClick={() => setIsFusedMode(!isFusedMode)}
               className={`action-icon-pill ${isFusedMode ? 'active' : ''}`}
               title={isFusedMode ? 'Mode cartes fusionnées actif (cours + trajets intégrés)' : 'Mode cartes séparées'}
+              aria-label="Mode cartes fusionnées"
             >
               <Layers size={13} />
               <span className="desktop-only">{isFusedMode ? 'Fusion : OUI' : 'Séparé'}</span>
@@ -168,6 +204,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 onClick={onOpenGoogleCalendar}
                 style={{ color: 'var(--accent-blue)' }}
                 title="Synchroniser avec Google Agenda"
+                aria-label="Google Agenda"
               >
                 <Calendar size={13} />
                 <span className="desktop-only">Agenda</span>
@@ -535,20 +572,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 })}
               </div>
 
-              {/* En-tête de Jour Épuré */}
+              {/* En-tête de Jour Épuré (Titre de section sans flèches redondantes) */}
               {currentDay && (
                 <>
                   <div className="day-view-date-header">
-                    <button
-                      type="button"
-                      className="day-nav-arrow"
-                      onClick={() => setActiveDayIndex(prev => Math.max(0, prev - 1))}
-                      disabled={activeDayIndex === 0}
-                      title="Jour précédent"
-                    >
-                      <ChevronLeft size={14} />
-                    </button>
-
                     <div className="day-nav-title">
                       <span>
                         {dayNames[currentDay.dayOfWeek]}, {dObj.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}
@@ -559,16 +586,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         </span>
                       )}
                     </div>
-
-                    <button
-                      type="button"
-                      className="day-nav-arrow"
-                      onClick={() => setActiveDayIndex(prev => Math.min(displayedDays.length - 1, prev + 1))}
-                      disabled={activeDayIndex >= displayedDays.length - 1}
-                      title="Jour suivant"
-                    >
-                      <ChevronRight size={14} />
-                    </button>
                   </div>
 
                   <div

@@ -28,7 +28,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loadProfileForUser = async (u: User) => {
     const p = await fetchUserProfile(u.id);
+    const googleAvatar = u.user_metadata?.avatar_url || u.user_metadata?.picture;
     if (p) {
+      if (!p.avatarUrl && googleAvatar) {
+        p.avatarUrl = googleAvatar;
+      }
       setProfile(p);
     } else {
       // Create initial profile if missing
@@ -36,6 +40,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: u.id,
         email: u.email || '',
         displayName: u.user_metadata?.full_name || u.email?.split('@')[0] || 'Athlète QMT',
+        avatarUrl: googleAvatar,
         isPublic: false
       };
       await upsertUserProfile(newP);

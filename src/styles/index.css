@@ -88,7 +88,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 12px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
@@ -455,11 +455,40 @@ body {
   min-height: 32px;
 }
 
-.calendar-date-range {
-  font-size: 0.76rem;
-  color: var(--text-secondary);
-  font-weight: 600;
+.nav-today-quick-btn {
+  padding: 3px 8px !important;
+  font-size: 0.7rem !important;
+  min-height: 26px;
+  background: var(--primary-subtle) !important;
+  color: var(--primary) !important;
+  border: 1px solid var(--primary-border) !important;
+  border-radius: var(--radius-xs);
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.nav-today-quick-btn:hover {
+  background: rgba(255, 87, 34, 0.25) !important;
+}
+
+.calendar-current-week-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   margin-left: 2px;
+}
+
+.calendar-date-range {
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  color: #ffffff;
+  font-weight: 700;
+  margin: 0 4px;
+  white-space: nowrap;
 }
 
 .calendar-actions-group {
@@ -1291,32 +1320,9 @@ body {
 .day-view-date-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 6px;
+  justify-content: flex-start;
+  padding: 2px 4px;
   margin: 2px 0 6px 0;
-}
-
-.day-nav-arrow {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-xs);
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-}
-
-.day-nav-arrow:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-}
-
-.day-nav-arrow:disabled {
-  opacity: 0.3;
-  cursor: default;
 }
 
 .day-nav-title {
@@ -1346,19 +1352,77 @@ body {
     display: none !important;
   }
   .app-header {
-    gap: 8px;
+    gap: 6px;
     margin-bottom: 8px;
   }
   .header-top {
-    padding-bottom: 8px;
-  }
-  .brand-badge {
-    width: 32px;
-    height: 32px;
-    font-size: 16px;
+    padding-bottom: 6px;
+    flex-wrap: nowrap !important;
+    gap: 8px;
   }
   .brand-title {
-    font-size: 1.08rem;
+    font-size: 1.05rem;
+    white-space: nowrap;
+  }
+  .header-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .sync-action-btn {
+    padding: 5px 8px;
+    min-height: 28px;
+  }
+  .account-action-btn {
+    padding: 2px;
+    min-height: 28px;
+    border-radius: 50%;
+  }
+  .calendar-toolbar-card {
+    padding: 6px 8px;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .calendar-toolbar-row {
+    flex-wrap: nowrap !important;
+    gap: 6px;
+  }
+  .calendar-nav-group {
+    flex-wrap: nowrap;
+    gap: 3px;
+  }
+  .nav-arrow-btn {
+    padding: 3px 6px !important;
+    min-height: 26px;
+  }
+  .calendar-date-range {
+    font-size: 0.74rem;
+    margin: 0 2px;
+  }
+  .calendar-actions-group {
+    flex-wrap: nowrap;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .view-mode-btn {
+    padding: 4px 6px;
+    min-height: 24px;
+  }
+  .action-icon-pill {
+    padding: 4px 6px;
+    min-height: 26px;
+  }
+  .mobile-week-ribbon {
+    padding: 3px;
+    margin-bottom: 6px;
+    gap: 3px;
+  }
+  .mobile-day-btn {
+    min-height: 46px;
+    padding: 4px 1px;
+  }
+  .mobile-day-num {
+    font-size: 0.9rem;
   }
   .fused-command-bar {
     display: none;
@@ -1370,7 +1434,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 12px;
+    padding: 5px 10px;
     background: rgba(255, 255, 255, 0.025);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-xs);
@@ -1381,7 +1445,7 @@ body {
     background: rgba(255, 255, 255, 0.04);
   }
   .event-card {
-    padding: 10px 12px;
+    padding: 8px 10px;
     border-radius: var(--radius-sm);
   }
 }

@@ -28,6 +28,7 @@ export interface UserProfile {
   id: string;
   email: string;
   displayName: string;
+  avatarUrl?: string;
   homeAddress?: string;
   campusAddress?: string;
   trailAddress?: string;
@@ -57,6 +58,7 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
       id: data.id,
       email: data.email,
       displayName: data.display_name || 'Athlète QMT',
+      avatarUrl: data.avatar_url,
       homeAddress: data.home_address,
       campusAddress: data.campus_address,
       trailAddress: data.trail_address,
@@ -84,6 +86,7 @@ export async function upsertUserProfile(profile: Partial<UserProfile> & { id: st
       updated_at: new Date().toISOString()
     };
     if (profile.displayName !== undefined) row.display_name = profile.displayName;
+    if (profile.avatarUrl !== undefined) row.avatar_url = profile.avatarUrl;
     if (profile.email !== undefined) row.email = profile.email;
     if (profile.homeAddress !== undefined) row.home_address = profile.homeAddress;
     if (profile.campusAddress !== undefined) row.campus_address = profile.campusAddress;

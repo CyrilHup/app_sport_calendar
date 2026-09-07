@@ -16,8 +16,10 @@ import { Activity, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { setAppConfigOverrides } from './services/periodizationEngine';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
+import { getApiUrl } from './services/apiConfig';
 
 const MANUAL_PAIRS_STORAGE_KEY = 'garmin_manual_pairs';
+const CACHED_ETS_ICS_KEY = 'cached_ets_ics';
 
 function loadManualPairs(): Record<string, string> {
   try {
@@ -91,20 +93,27 @@ export const App: React.FC = () => {
     }
   }, []);
 
-  // Fetch activities and manual pairs from cloud when user logs in
+  // Bidirectional sync for activities and manual pairs when user logs in with Google / Supabase
   useEffect(() => {
     if (user?.id) {
-      fetchActivitiesFromCloud(user.id).then(cloudActs => {
+      const localActs = loadStoredGarminActivities();
+      fetchActivitiesFromCloud(user.id).then(async cloudActs => {
         if (cloudActs && cloudActs.length > 0) {
           setGarminActivities(cloudActs);
           saveGarminActivities(cloudActs);
+        } else if (localActs && localActs.length > 0) {
+          // Push existing local activities to the newly logged-in user cloud account!
+          await syncActivitiesToCloud(user.id, localActs);
         }
       });
 
-      fetchPairsFromCloud(user.id).then(cloudPairs => {
+      const localPairs = loadManualPairs();
+      fetchPairsFromCloud(user.id).then(async cloudPairs => {
         if (cloudPairs && Object.keys(cloudPairs).length > 0) {
           setManualPairs(cloudPairs);
           saveManualPairs(cloudPairs);
+        } else if (localPairs && Object.keys(localPairs).length > 0) {
+          await syncPairsToCloud(user.id, localPairs);
         }
       });
     }
@@ -114,20 +123,35 @@ export const App: React.FC = () => {
   const referenceDate = new Date();
   const currentPeriodContext = getPeriodizationContext(referenceDate);
 
-  // Function to recharge both ÉTS iCal and Garmin Connect
+  // Function to recharge both ÉTS iCal and Garmin Connect (Mobile & Web)
   const autoRechargeAll = async () => {
     setIsRecharging(true);
     let rawCourses: RawIcsEvent[] = [];
 
-    // 1. Fetch ÉTS iCal feed via proxy
+    // 1. Fetch ÉTS iCal feed via proxy (custom profile URL or default proxy)
     try {
-      const res = await fetch('/api/ets-ical');
+      const customUrlParam = profile?.icalUrl ? `?url=${encodeURIComponent(profile.icalUrl)}` : '';
+      const endpoint = getApiUrl(`/api/ets-ical${customUrlParam}`);
+      const res = await fetch(endpoint);
       if (res.ok) {
         const icsText = await res.text();
-        rawCourses = parseICSString(icsText);
+        if (icsText && icsText.includes('BEGIN:VCALENDAR')) {
+          localStorage.setItem(CACHED_ETS_ICS_KEY, icsText);
+          rawCourses = parseICSString(icsText);
+        }
       }
     } catch (err) {
-      console.warn("Could not fetch from proxy, using fallback", err);
+      console.warn("Could not fetch ÉTS iCal from proxy, checking local cache", err);
+    }
+
+    // Offline / Network fallback for calendar courses
+    if (rawCourses.length === 0) {
+      const cachedIcs = localStorage.getItem(CACHED_ETS_ICS_KEY);
+      if (cachedIcs) {
+        try {
+          rawCourses = parseICSString(cachedIcs);
+        } catch {}
+      }
     }
 
     // Start calendar exactly on Monday of current week
@@ -160,7 +184,8 @@ export const App: React.FC = () => {
           loadedActivities = result.activities;
         }
       } else {
-        const garminRes = await fetch('/api/garmin-sync');
+        const garminEndpoint = getApiUrl('/api/garmin-sync');
+        const garminRes = await fetch(garminEndpoint);
         if (garminRes.ok) {
           const garminData = await garminRes.json();
           if (garminData.activities && Array.isArray(garminData.activities) && garminData.activities.length > 0) {
@@ -174,6 +199,11 @@ export const App: React.FC = () => {
     }
 
     setGarminActivities(loadedActivities);
+
+    // Automatically persist fresh activities to Supabase cloud if authenticated
+    if (user?.id && loadedActivities.length > 0) {
+      syncActivitiesToCloud(user.id, loadedActivities);
+    }
 
     const compResults = compareWorkoutsWithGarmin(transformedEvents, loadedActivities, manualPairs, referenceDate);
     setComparisons(compResults);
@@ -196,7 +226,8 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     autoRechargeAll();
-  }, []);
+  }, [profile?.icalUrl]);
+
 
   const handleUpdateGarminState = (newState: GarminSyncState) => {
     setGarminState(newState);
@@ -339,6 +370,7 @@ export const App: React.FC = () => {
         lastSyncTime={lastSyncTime}
         onSelectPeriodizationTab={() => setActiveTab('periodization')}
         userDisplayName={profile?.displayName}
+        userAvatarUrl={profile?.avatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture}
         isLoggedIn={Boolean(user)}
       />
 
