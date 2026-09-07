@@ -61,3 +61,64 @@ export interface GarminSyncState {
   activitiesCount: number;
   isSyncing: boolean;
 }
+
+export interface GarminSleepSummary {
+  score?: number; // 0-100
+  totalMinutes: number;
+  deepMinutes?: number;
+  remMinutes?: number;
+  lightMinutes?: number;
+  awakeMinutes?: number;
+  qualityMessage?: string;
+}
+
+export interface GarminHrvSummary {
+  lastNightAvg?: number; // ms
+  weeklyAvg?: number; // ms
+  baselineLow?: number;
+  baselineHigh?: number;
+  status: 'BALANCED' | 'LOW' | 'UNBALANCED' | 'POOR' | 'UNKNOWN';
+}
+
+export interface GarminWellnessData {
+  date: string; // YYYY-MM-DD
+  sleep?: GarminSleepSummary;
+  restingHeartRate?: number; // bpm
+  hrv?: GarminHrvSummary;
+  trainingReadinessScore?: number; // 0-100 Firstbeat readiness
+  bodyBattery?: number; // 0-100
+  syncedAt: string; // ISO
+}
+
+export interface WorkoutStepDefinition {
+  stepType: 'WARMUP' | 'INTERVAL' | 'RECOVERY' | 'REST' | 'COOLDOWN';
+  durationSeconds?: number;
+  distanceMeters?: number;
+  useLapButton?: boolean;
+  targetType?: 'HR_ZONE' | 'HR_RANGE' | 'PACE' | 'NONE';
+  targetHrLow?: number;
+  targetHrHigh?: number;
+  targetPaceMinKm?: string;
+  stepNotes?: string;
+  reps?: number;
+}
+
+export interface WorkoutPushPayload {
+  title: string;
+  sportType: 'RUNNING' | 'CARDIO' | 'STRENGTH';
+  scheduledDate: string; // YYYY-MM-DD
+  description: string;
+  steps: WorkoutStepDefinition[];
+  targetWatch?: 'FORERUNNER_55' | 'STANDARD';
+}
+
+export interface WorkoutPushResult {
+  success: boolean;
+  workoutId?: string;
+  workoutName?: string;
+  scheduledDate?: string;
+  sportType?: string;
+  message?: string;
+  error?: string;
+}
+

@@ -1,9 +1,31 @@
 import React, { useState } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ActivityComparison } from '../types/garmin';
-import { ChevronLeft, ChevronRight, Filter, Clock, MapPin, ListFilter, LayoutGrid, Layers, Bus, CheckCircle2, ArrowRight, CalendarClock, RotateCcw, Calendar } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Clock,
+  MapPin,
+  ListFilter,
+  LayoutGrid,
+  Layers,
+  Bus,
+  CheckCircle2,
+  ArrowRight,
+  CalendarClock,
+  RotateCcw,
+  Calendar,
+  Watch,
+  AlertTriangle,
+  Loader2,
+  Sparkles
+} from 'lucide-react';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
+import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
+import { pushWeekWorkoutsToGarmin } from '../services/garminService';
+import { triggerHapticFeedback } from '../services/hapticsService';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -39,10 +61,45 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [isPushingWeek, setIsPushingWeek] = useState<boolean>(false);
+  const [weekPushStatus, setWeekPushStatus] = useState<{ text: string; isError: boolean } | null>(null);
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
     const todayIndex = schedules.findIndex(s => s.date === (referenceDateStr || new Date().toISOString().slice(0, 10)));
     return todayIndex >= 0 ? todayIndex % 7 : 0;
   });
+
+  const todayKey = referenceDateStr || new Date().toISOString().slice(0, 10);
+  const todayWellness = getWellnessForDate(todayKey);
+  const readiness = calculateReadinessScore(todayWellness);
+  const todaySchedule = schedules.find(s => s.date === todayKey);
+  const proactiveRec = getProactivePlanRecommendation(readiness, todaySchedule?.sportSession);
+
+  const handlePushWeekToGarmin = async () => {
+    setIsPushingWeek(true);
+    setWeekPushStatus(null);
+    triggerHapticFeedback('light');
+
+    const weekSportEvents = displayedDays
+      .map(d => d.sportSession)
+      .filter((e): e is CalendarEvent => Boolean(e));
+
+    const result = await pushWeekWorkoutsToGarmin(weekSportEvents, 'FORERUNNER_55');
+    setIsPushingWeek(false);
+
+    if (result.success) {
+      triggerHapticFeedback('success');
+      setWeekPushStatus({
+        text: `✓ ${result.pushedCount} séances de la semaine programmées avec succès sur Garmin Connect (Forerunner 55) !`,
+        isError: false
+      });
+    } else {
+      triggerHapticFeedback('warning');
+      setWeekPushStatus({
+        text: result.error || 'Erreur lors de l\'envoi de la semaine vers Garmin Connect.',
+        isError: true
+      });
+    }
+  };
 
   // Découpage en blocs de 7 jours
   const currentWeekStartIdx = weekOffset * 7;
@@ -66,9 +123,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-
-  // Clé du jour courant
-  const todayKey = referenceDateStr || new Date().toISOString().slice(0, 10);
 
   // Format compact et lisible de la semaine (ex: 7 — 13 sept.)
   const formatWeekRange = () => {
@@ -197,6 +251,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </button>
 
             {/* Google Calendar Action */}
+            {/* Garmin Week Sync Button */}
+            <button
+              type="button"
+              className="action-icon-pill"
+              onClick={handlePushWeekToGarmin}
+              disabled={isPushingWeek}
+              style={{ color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}
+              title="Envoyer toutes les séances de cette semaine vers Garmin Connect (Forerunner 55)"
+              aria-label="Envoyer semaine vers Garmin"
+            >
+              {isPushingWeek ? <Loader2 size={13} className="spin-animation" /> : <Watch size={13} />}
+              <span className="desktop-only">Sync Garmin</span>
+            </button>
+
             {onOpenGoogleCalendar && (
               <button
                 type="button"
@@ -254,7 +322,155 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </div>
 
+      {/* Week Push Feedback Banner */}
+      {weekPushStatus && (
+        <div
+          style={{
+            background: weekPushStatus.isError ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+            border: `1px solid ${weekPushStatus.isError ? '#ef4444' : '#10b981'}`,
+            padding: '8px 14px',
+            borderRadius: 'var(--radius-xs)',
+            fontSize: '0.78rem',
+            color: weekPushStatus.isError ? '#f87171' : '#34d399',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '10px'
+          }}
+        >
+          <span>{weekPushStatus.text}</span>
+          <button
+            onClick={() => setWeekPushStatus(null)}
+            style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Daily Physiological Readiness & Proactive Plan Adaptation HUD */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.95), rgba(15, 23, 42, 0.98))',
+          border: `1px solid ${readiness.status === 'LOW' ? 'rgba(239, 68, 68, 0.4)' : (readiness.status === 'MODERATE' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(16, 185, 129, 0.3)')}`,
+          borderRadius: 'var(--radius-sm)',
+          padding: '12px 16px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          marginBottom: '12px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: '1.2rem' }}>{readiness.badgeEmoji}</span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#ffffff' }}>
+                  Préparation Physiologique Garmin (Readiness)
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    padding: '2px 8px',
+                    borderRadius: 9999,
+                    background: `${readiness.badgeColorHex}22`,
+                    color: readiness.badgeColorHex
+                  }}
+                >
+                  {readiness.score} / 100 — {readiness.statusLabel}
+                </span>
+              </div>
+              <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
+                {readiness.summary}
+              </p>
+            </div>
+          </div>
+
+          {/* Quick Metrics Strip */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+            <span>💤 Sommeil : <strong style={{ color: '#e2e8f0' }}>{readiness.factors.sleepDurationHours}h</strong></span>
+            <span>⚡ VFC : <strong style={{ color: readiness.factors.hrvStatus === 'LOW' || readiness.factors.hrvStatus === 'POOR' ? '#f87171' : '#34d399' }}>{readiness.factors.hrvStatus}</strong></span>
+            {readiness.factors.rhrBpm && (
+              <span>❤️ FC Repos : <strong style={{ color: '#e2e8f0' }}>{readiness.factors.rhrBpm} bpm</strong></span>
+            )}
+          </div>
+        </div>
+
+        {/* Proactive Plan Adaptation Suggestion if fatigue detected */}
+        {proactiveRec.shouldAdapt && todaySchedule?.sportSession && (
+          <div
+            style={{
+              background: 'rgba(239, 68, 68, 0.08)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: 6,
+              padding: '8px 12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.76rem', color: '#fca5a5' }}>
+              <AlertTriangle size={15} color="#ef4444" />
+              <span>{proactiveRec.recommendationText}</span>
+            </div>
+
+            {proactiveRec.actionType === 'POSTPONE' && onPostponeWorkout ? (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  const tmrw = new Date();
+                  tmrw.setDate(tmrw.getDate() + 1);
+                  onPostponeWorkout(
+                    todaySchedule.sportSession!.id,
+                    todayKey,
+                    tmrw.toISOString().slice(0, 10),
+                    'Adaptation VFC Garmin basse'
+                  );
+                }}
+                style={{
+                  fontSize: '0.74rem',
+                  padding: '4px 10px',
+                  color: '#fbbf24',
+                  borderColor: 'rgba(245, 158, 11, 0.4)'
+                }}
+              >
+                <CalendarClock size={12} /> Décaler à demain (+1 j)
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  if (onPostponeWorkout && todaySchedule.sportSession) {
+                    onPostponeWorkout(
+                      todaySchedule.sportSession.id,
+                      todayKey,
+                      todayKey,
+                      'Séance allégée Z1 automatique'
+                    );
+                  }
+                }}
+                style={{
+                  fontSize: '0.74rem',
+                  padding: '4px 10px',
+                  color: '#60a5fa',
+                  borderColor: 'rgba(59, 130, 246, 0.4)'
+                }}
+              >
+                <Sparkles size={12} /> {proactiveRec.actionButtonText || 'Adapter la séance'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Fonction commune de rendu des séances et événements d'un jour */}
+
       {(() => {
         const renderDayEventsContent = (day: DailySchedule, isSingleDayView: boolean = false) => {
           const eventsToDisplay = day.events.filter(e => {

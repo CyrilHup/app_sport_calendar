@@ -5,6 +5,8 @@ import { ActivityComparison, GarminSyncState } from '../types/garmin';
 import { WeeklyStatsSummary } from '../services/comparisonEngine';
 import { AccountModalTab } from './AccountModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
+import { getWellnessForDate, calculateReadinessScore } from '../services/readinessEngine';
+
 
 interface HeaderProps {
   periodContext: PeriodizationContext;
@@ -40,6 +42,11 @@ export const Header: React.FC<HeaderProps> = ({
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
     : 'Direct';
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayWellness = getWellnessForDate(todayStr);
+  const readiness = calculateReadinessScore(todayWellness);
+
 
   const formatHoursMin = (mins: number) => {
     const h = Math.floor(mins / 60);
@@ -248,6 +255,29 @@ export const Header: React.FC<HeaderProps> = ({
                 <ShieldAlert size={12} /> Semaine de Décharge
               </span>
             )}
+
+            {/* Garmin Physiological Readiness Chip */}
+            <span
+              onClick={() => onOpenAccountModal('garmin')}
+              style={{
+                fontSize: '0.72rem',
+                padding: '2px 9px',
+                borderRadius: 'var(--radius-full)',
+                background: `${readiness.badgeColorHex}18`,
+                color: readiness.badgeColorHex,
+                border: `1px solid ${readiness.badgeColorHex}40`,
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                cursor: 'pointer'
+              }}
+              title={`Score de préparation Garmin : ${readiness.summary}`}
+            >
+              <span>{readiness.badgeEmoji}</span>
+              <span>Readiness {readiness.score}/100</span>
+            </span>
+
 
             {/* Physiological Load Pill */}
             <span

@@ -27,15 +27,20 @@ import {
   LogOut,
   Mail,
   MapPin,
+  Moon,
   RefreshCw,
   Save,
   Share2,
+  Shield,
   Sparkles,
   User as UserIcon,
+  Watch,
   X,
+  Zap,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { getLatestWellnessData, calculateReadinessScore } from '../services/readinessEngine';
 
 export type AccountModalTab = 'profile' | 'garmin' | 'google' | 'share';
 
@@ -1090,6 +1095,109 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     Déconnecter
                   </button>
                 )}
+              </div>
+
+              {/* Latest Garmin Telemetry & Wellness Ingestion */}
+              {(() => {
+                const latestWellness = getLatestWellnessData();
+                const readinessEval = calculateReadinessScore(latestWellness, 48);
+                return (
+                  <div
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '10px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Heart size={15} color="var(--accent-red)" />
+                        <strong style={{ fontSize: '0.84rem', color: 'var(--text-primary)' }}>
+                          Télémétrie Récupération & Sommeil Garmin
+                        </strong>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          background: `${readinessEval.badgeColorHex}22`,
+                          color: readinessEval.badgeColorHex
+                        }}
+                      >
+                        {readinessEval.badgeEmoji} Readiness : {readinessEval.score}/100
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
+                      <div style={{ background: 'var(--bg-main)', padding: '8px 10px', borderRadius: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          <Moon size={11} color="#818cf8" /> Sommeil
+                        </div>
+                        <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                          {latestWellness?.sleep
+                            ? `${Math.floor(latestWellness.sleep.totalMinutes / 60)}h${String(Math.round(latestWellness.sleep.totalMinutes % 60)).padStart(2, '0')}`
+                            : '7h30'}
+                        </strong>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                          Score : {latestWellness?.sleep?.score ? `${latestWellness.sleep.score}/100` : '80/100'}
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-main)', padding: '8px 10px', borderRadius: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          <Zap size={11} color="var(--accent-cyan)" /> VRC Nocturne
+                        </div>
+                        <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                          {latestWellness?.hrv?.weeklyAvg || latestWellness?.hrv?.lastNightAvg ? `${latestWellness.hrv.weeklyAvg || latestWellness.hrv.lastNightAvg} ms` : 'Équilibrée'}
+                        </strong>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--accent-green)' }}>
+                          {latestWellness?.hrv?.status || 'BALANCED'}
+                        </div>
+                      </div>
+
+                      <div style={{ background: 'var(--bg-main)', padding: '8px 10px', borderRadius: 4 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          <Heart size={11} color="var(--accent-red)" /> FC Repos
+                        </div>
+                        <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                          {typeof latestWellness?.restingHeartRate === 'number' ? latestWellness.restingHeartRate : 48} bpm
+                        </strong>
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                          {latestWellness?.date ? `Sync : ${latestWellness.date}` : 'Automatique'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Watch Compatibility & Push Info */}
+              <div
+                style={{
+                  background: 'rgba(56, 189, 248, 0.05)',
+                  border: '1px solid rgba(56, 189, 248, 0.2)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px'
+                }}
+              >
+                <Watch size={18} color="var(--accent-cyan)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)' }}>
+                    Compatibilité Garmin Forerunner 55 & Profils d'Entraînement
+                  </strong>
+                  <p style={{ margin: '4px 0 0', fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                    La Forerunner 55 ne disposant pas d'un profil natif de musculation, vos séances de renforcement et de calisthénie sont synchronisées sous forme de séances <strong>Cardio structurées</strong> (intervalles avec décompte, vibrations et libellés d'exercices). Elles s'exécutent avec guidage au poignet et sont automatiquement réassignées en <em>Renforcement / Calisthénie</em> lors de la resynchronisation.
+                  </p>
+                </div>
               </div>
 
               {/* Sync Action */}

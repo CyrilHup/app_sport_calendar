@@ -4,7 +4,7 @@ import { isNative } from './apiConfig';
 /**
  * Provides smooth tactile feedback on Android/iOS with fallback on Web.
  */
-export async function triggerHapticFeedback(type: 'light' | 'medium' | 'heavy' | 'success' | 'warning' = 'light'): Promise<void> {
+export async function triggerHapticFeedback(type: 'light' | 'medium' | 'heavy' | 'success' | 'warning' | 'error' = 'light'): Promise<void> {
   try {
     if (isNative()) {
       if (type === 'light') {
@@ -17,9 +17,11 @@ export async function triggerHapticFeedback(type: 'light' | 'medium' | 'heavy' |
         await Haptics.notification({ type: NotificationType.Success });
       } else if (type === 'warning') {
         await Haptics.notification({ type: NotificationType.Warning });
+      } else if (type === 'error') {
+        await Haptics.notification({ type: NotificationType.Error });
       }
     } else if ('vibrate' in navigator) {
-      if (type === 'heavy' || type === 'warning') {
+      if (type === 'heavy' || type === 'warning' || type === 'error') {
         navigator.vibrate([40, 60, 40]);
       } else if (type === 'medium') {
         navigator.vibrate(30);

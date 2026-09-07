@@ -1,5 +1,17 @@
-// Vercel Serverless Function: Live Garmin Connect Sync
-import { GarminConnect } from '@flow-js/garmin-connect';
+// Vercel Serverless Function: Live Garmin Connect Sync & Push Engine
+import garminPkg from '@flow-js/garmin-connect';
+const GarminConnect = (garminPkg as any).GarminConnect || (garminPkg as any).default || garminPkg;
+const WorkoutBuilder = (garminPkg as any).WorkoutBuilder;
+const WorkoutType = (garminPkg as any).WorkoutType;
+const Step = (garminPkg as any).Step;
+const StepType = (garminPkg as any).StepType;
+const TimeDuration = (garminPkg as any).TimeDuration;
+const DistanceDuration = (garminPkg as any).DistanceDuration;
+const LapPressDuration = (garminPkg as any).LapPressDuration;
+const HrmZoneTarget = (garminPkg as any).HrmZoneTarget;
+const HrmTarget = (garminPkg as any).HrmTarget;
+const NoTarget = (garminPkg as any).NoTarget;
+
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -66,25 +78,26 @@ export default async function handler(req: any, res: any) {
 
   const username = body.email || process.env.GARMIN_EMAIL;
   const password = body.password || process.env.GARMIN_PASSWORD;
+  const action = body.action || 'sync'; // 'sync' | 'push-workout' | 'get-wellness'
 
   try {
     let gc = new GarminConnect({ username: username || 'user', password: password || 'pass' });
-    let rawActivities: any[] | null = null;
     const cached = loadCachedSession();
+    let isAuthenticated = false;
 
     // 1. Try reusing cached OAuth tokens
     if (cached?.tokens?.oauth1 && cached?.tokens?.oauth2 && (!username || cached.username === username)) {
       try {
         gc.loadToken(cached.tokens.oauth1, cached.tokens.oauth2);
-        rawActivities = await gc.getActivities(0, 100);
+        isAuthenticated = true;
       } catch (tokenErr) {
         console.warn('Cached Garmin token expired or invalid, will re-authenticate:', tokenErr);
-        rawActivities = null;
+        isAuthenticated = false;
       }
     }
 
     // 2. Authenticate if no valid cached session
-    if (!rawActivities) {
+    if (!isAuthenticated) {
       if (!username || !password) {
         res.status(400).json({
           error: 'Veuillez renseigner votre email et mot de passe Garmin Connect (ou configurer GARMIN_EMAIL/PASSWORD).'
@@ -101,9 +114,168 @@ export default async function handler(req: any, res: any) {
       } catch (tokenExportErr) {
         console.warn('Could not export tokens:', tokenExportErr);
       }
-
-      rawActivities = await gc.getActivities(0, 100);
     }
+
+    // ----------------------------------------------------
+    // ACTION: PUSH WORKOUT TO GARMIN CONNECT & SCHEDULE
+    // ----------------------------------------------------
+    if (action === 'push-workout') {
+      const workout = body.workout;
+      if (!workout || !workout.title || !workout.steps) {
+        res.status(400).json({ success: false, error: 'Workout payload with title and steps is required.' });
+        return;
+      }
+
+      const isFR55 = workout.targetWatch === 'FORERUNNER_55' || true;
+      let wt = WorkoutType.Running;
+
+      if (workout.sportType === 'CARDIO') {
+        wt = WorkoutType.Cardio;
+      } else if (workout.sportType === 'STRENGTH') {
+        // Forerunner 55 lacks native Strength profile, so we format it as structured Cardio
+        // with exercise descriptions and intervals so it runs smoothly on FR55!
+        wt = isFR55 ? WorkoutType.Cardio : WorkoutType.Strength;
+      }
+
+      const wb = new WorkoutBuilder(wt, workout.title, workout.description || 'Séance QMT-80 Performance Hub');
+
+      for (const st of workout.steps) {
+        let stepType = StepType.Run;
+        if (st.stepType === 'WARMUP') stepType = StepType.WarmUp;
+        else if (st.stepType === 'INTERVAL') stepType = (wt === WorkoutType.Running ? StepType.Run : StepType.Interval || StepType.Run);
+        else if (st.stepType === 'RECOVERY') stepType = StepType.Recovery;
+        else if (st.stepType === 'REST') stepType = StepType.Rest;
+        else if (st.stepType === 'COOLDOWN') stepType = StepType.Cooldown;
+
+        let duration: any = new LapPressDuration();
+        if (st.durationSeconds && st.durationSeconds > 0) {
+          duration = TimeDuration.fromSeconds(st.durationSeconds);
+        } else if (st.distanceMeters && st.distanceMeters > 0) {
+          duration = DistanceDuration.fromMeters(st.distanceMeters);
+        }
+
+        let target: any = new NoTarget();
+        if (st.targetType === 'HR_RANGE' && st.targetHrLow && st.targetHrHigh) {
+          const mid = Math.round((st.targetHrLow + st.targetHrHigh) / 2);
+          const delta = Math.max(5, Math.round((st.targetHrHigh - st.targetHrLow) / 2));
+          target = HrmTarget.hrm(mid, delta);
+        } else if (st.targetType === 'HR_ZONE' && st.targetHrLow) {
+          target = new HrmZoneTarget(st.targetHrLow);
+        }
+
+        wb.addStep(new Step(stepType, duration, target, st.stepNotes || ''));
+      }
+
+      const builtWorkout = wb.build();
+      const createdWorkout: any = await gc.createWorkout(builtWorkout);
+
+      let scheduledDateResult = workout.scheduledDate;
+      if (workout.scheduledDate && createdWorkout?.workoutId) {
+        try {
+          await gc.scheduleWorkout({ workoutId: String(createdWorkout.workoutId) }, workout.scheduledDate);
+        } catch (schedErr) {
+          console.warn('Could not schedule workout to calendar:', schedErr);
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        workoutId: createdWorkout?.workoutId ? String(createdWorkout.workoutId) : undefined,
+        workoutName: workout.title,
+        scheduledDate: scheduledDateResult,
+        sportType: workout.sportType,
+        message: `Séance "${workout.title}" créée et programmée avec succès sur votre Garmin !`
+      });
+      return;
+    }
+
+    // ----------------------------------------------------
+    // WELLNESS DATA EXTRACTION (Sleep, HRV, Resting HR, Readiness)
+    // ----------------------------------------------------
+    let wellness: any = null;
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+
+    try {
+      let sleepSummary: any = null;
+      try {
+        const sleepRes: any = await gc.getSleepData(today);
+        if (sleepRes?.dailySleepDTO) {
+          const dto = sleepRes.dailySleepDTO;
+          sleepSummary = {
+            score: dto.sleepScores?.overall?.value || dto.sleepScoreFeedback || undefined,
+            totalMinutes: dto.sleepTimeSeconds ? Math.round(dto.sleepTimeSeconds / 60) : 0,
+            deepMinutes: dto.deepSleepSeconds ? Math.round(dto.deepSleepSeconds / 60) : undefined,
+            remMinutes: dto.remSleepSeconds ? Math.round(dto.remSleepSeconds / 60) : undefined,
+            lightMinutes: dto.lightSleepSeconds ? Math.round(dto.lightSleepSeconds / 60) : undefined,
+            awakeMinutes: dto.awakeSleepSeconds ? Math.round(dto.awakeSleepSeconds / 60) : undefined,
+            qualityMessage: dto.sleepScores?.overall?.qualifierKey || undefined
+          };
+        }
+      } catch (sleepErr) {
+        console.warn('Could not fetch sleep data:', sleepErr);
+      }
+
+      let restingHeartRate: number | undefined = undefined;
+      try {
+        const hrRes: any = await gc.getHeartRate(today);
+        if (typeof hrRes?.restingHeartRate === 'number') {
+          restingHeartRate = hrRes.restingHeartRate;
+        }
+      } catch (hrErr) {
+        console.warn('Could not fetch HR data:', hrErr);
+      }
+
+      let hrvSummary: any = null;
+      try {
+        const hrvRes: any = await (gc.client as any).get(`https://connectapi.garmin.com/hrv-service/hrv/daily/${todayStr}`);
+        if (hrvRes?.hrvSummary) {
+          const hs = hrvRes.hrvSummary;
+          hrvSummary = {
+            lastNightAvg: hs.lastNightAvg || undefined,
+            weeklyAvg: hs.weeklyAvg || undefined,
+            baselineLow: hs.baseline?.lowUpper || undefined,
+            baselineHigh: hs.baseline?.balancedLow || undefined,
+            status: hs.status || 'UNKNOWN'
+          };
+        }
+      } catch (hrvErr) {
+        console.warn('Could not fetch HRV data:', hrvErr);
+      }
+
+      let trainingReadinessScore: number | undefined = undefined;
+      try {
+        const trRes: any = await (gc.client as any).get(`https://connectapi.garmin.com/metrics-service/metrics/trainingreadiness/${todayStr}`);
+        if (Array.isArray(trRes) && trRes.length > 0 && typeof trRes[0]?.score === 'number') {
+          trainingReadinessScore = trRes[0].score;
+        } else if (typeof trRes?.score === 'number') {
+          trainingReadinessScore = trRes.score;
+        }
+      } catch (trErr) {
+        console.warn('Could not fetch Training Readiness:', trErr);
+      }
+
+      wellness = {
+        date: todayStr,
+        sleep: sleepSummary,
+        restingHeartRate,
+        hrv: hrvSummary,
+        trainingReadinessScore,
+        syncedAt: new Date().toISOString()
+      };
+    } catch (wellnessErr) {
+      console.warn('General wellness extraction failure:', wellnessErr);
+    }
+
+    if (action === 'get-wellness') {
+      res.status(200).json({ success: true, wellness });
+      return;
+    }
+
+    // ----------------------------------------------------
+    // ACTION: SYNC ACTIVITIES
+    // ----------------------------------------------------
+    const rawActivities = await gc.getActivities(0, 100);
 
     const activities = (rawActivities || []).map((a: any) => {
       const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');
@@ -169,13 +341,14 @@ export default async function handler(req: any, res: any) {
       };
     });
 
-    res.status(200).json({ success: true, count: activities.length, activities });
+    res.status(200).json({ success: true, count: activities.length, activities, wellness });
   } catch (err: any) {
     res.status(500).json({
       success: false,
       activities: [],
+      wellness: null,
       count: 0,
-      error: err.message || 'Erreur lors de la synchronisation Garmin Connect'
+      error: err.message || 'Erreur lors de la communication avec Garmin Connect'
     });
   }
 }

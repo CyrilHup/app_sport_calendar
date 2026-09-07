@@ -1,6 +1,17 @@
-import { GarminActivity, GarminActivityType, GarminSyncState } from '../types/garmin';
+import {
+  GarminActivity,
+  GarminActivityType,
+  GarminSyncState,
+  GarminWellnessData,
+  WorkoutPushPayload,
+  WorkoutPushResult,
+  WorkoutStepDefinition
+} from '../types/garmin';
+import { CalendarEvent } from '../types/calendar';
 import { classifyGarminActivityType } from './activityClassifier';
 import { getApiUrl } from './apiConfig';
+import { saveWellnessData } from './readinessEngine';
+
 
 const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
 const GARMIN_STATE_KEY = 'garmin_sync_state';
@@ -153,6 +164,11 @@ export async function syncWithGarminAPI(credentials?: {
     const activities: GarminActivity[] = rawActivities.map(normalizeGarminActivity);
     saveGarminActivities(activities);
 
+    // If wellness data is returned, persist it immediately
+    if (data.wellness) {
+      saveWellnessData(data.wellness);
+    }
+
     // Persist credentials locally so future reloads and "Synchro Directe" work automatically
     if (credsToUse?.email && credsToUse?.password) {
       saveGarminCredentials({ email: credsToUse.email, password: credsToUse.password });
@@ -271,3 +287,360 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
+/**
+ * Constructs a structured Garmin workout payload from a planned CalendarEvent.
+ * Calibrated specifically for Garmin Forerunner 55 compatibility.
+ */
+export function buildWorkoutPayloadFromEvent(
+  event: CalendarEvent,
+  targetDateStr?: string,
+  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
+): WorkoutPushPayload {
+  const dateKey = targetDateStr || event.startDate.slice(0, 10);
+  const durMin = event.durationMinutes || 45;
+  const isFR55 = targetWatch === 'FORERUNNER_55';
+
+  let sportType: WorkoutPushPayload['sportType'] = 'RUNNING';
+  let steps: WorkoutStepDefinition[] = [];
+  const titlePrefix = '[QMT-80] ';
+
+  if (event.sportType === 'TRAIL_INTENSE') {
+    // Hill Repeats
+    sportType = 'RUNNING';
+    steps = [
+      {
+        stepType: 'WARMUP',
+        durationSeconds: 15 * 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 135,
+        targetHrHigh: 150,
+        stepNotes: 'Échauffement progressif Zone 2'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 172,
+        targetHrHigh: 190,
+        stepNotes: 'Répétition côte raide (Zone 4/5)'
+      },
+      {
+        stepType: 'RECOVERY',
+        durationSeconds: 90,
+        targetType: 'NONE',
+        stepNotes: 'Descente trot très souple ou marche'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 172,
+        targetHrHigh: 190,
+        stepNotes: 'Répétition côte raide (Zone 4/5)'
+      },
+      {
+        stepType: 'RECOVERY',
+        durationSeconds: 90,
+        targetType: 'NONE',
+        stepNotes: 'Descente trot très souple'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 172,
+        targetHrHigh: 190,
+        stepNotes: 'Répétition côte raide (Zone 4/5)'
+      },
+      {
+        stepType: 'RECOVERY',
+        durationSeconds: 90,
+        targetType: 'NONE',
+        stepNotes: 'Descente trot souple'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 172,
+        targetHrHigh: 190,
+        stepNotes: 'Dernière montée tonique !'
+      },
+      {
+        stepType: 'COOLDOWN',
+        durationSeconds: 10 * 60,
+        targetType: 'NONE',
+        stepNotes: 'Retour au calme & décrassage'
+      }
+    ];
+  } else if (event.sportType === 'RUN_EASY') {
+    sportType = 'RUNNING';
+    const mainDurSec = Math.max(10 * 60, (durMin - 15) * 60);
+    steps = [
+      {
+        stepType: 'WARMUP',
+        durationSeconds: 10 * 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 130,
+        targetHrHigh: 145,
+        stepNotes: 'Échauffement allure douce'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: mainDurSec,
+        targetType: 'HR_RANGE',
+        targetHrLow: 135,
+        targetHrHigh: 148,
+        stepNotes: 'Endurance fondamentale stricte (100% aisance respiratoire)'
+      },
+      {
+        stepType: 'COOLDOWN',
+        durationSeconds: 5 * 60,
+        targetType: 'NONE',
+        stepNotes: 'Retour au calme'
+      }
+    ];
+  } else if (event.sportType === 'TRAIL_LONG') {
+    sportType = 'RUNNING';
+    const mainDurSec = Math.max(30 * 60, (durMin - 20) * 60);
+    steps = [
+      {
+        stepType: 'WARMUP',
+        durationSeconds: 15 * 60,
+        targetType: 'HR_RANGE',
+        targetHrLow: 135,
+        targetHrHigh: 150,
+        stepNotes: 'Échauffement progressif sur sentier'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: mainDurSec,
+        targetType: 'HR_RANGE',
+        targetHrLow: 138,
+        targetHrHigh: 155,
+        stepNotes: 'Allure Ultra-Trail Z2. Ravitaillement glucides toutes les 30 min !'
+      },
+      {
+        stepType: 'COOLDOWN',
+        durationSeconds: 5 * 60,
+        targetType: 'NONE',
+        stepNotes: 'Marche active et étirements doux'
+      }
+    ];
+  } else if (event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.sportType === 'MOBILITY') {
+    // Forerunner 55 optimized: uses CARDIO so FR55 watch can run it natively with intervals & vibration
+    sportType = isFR55 ? 'CARDIO' : 'STRENGTH';
+    const isPush = event.title.toLowerCase().includes('push') || event.sportType === 'CALISTHENICS';
+
+    steps = [
+      {
+        stepType: 'WARMUP',
+        durationSeconds: 300,
+        stepNotes: 'Échauffement poignets, épaules et activation articulaire'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 45,
+        stepNotes: isPush ? 'Série 1 : Dips aux barres (4x6-8 reps)' : 'Série 1 : Tractions strictes (4x6-8 reps)'
+      },
+      {
+        stepType: 'REST',
+        durationSeconds: 90,
+        stepNotes: 'Repos récupération passive'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 45,
+        stepNotes: isPush ? 'Série 2 : Dips aux barres' : 'Série 2 : Tractions strictes'
+      },
+      {
+        stepType: 'REST',
+        durationSeconds: 90,
+        stepNotes: 'Repos'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 45,
+        stepNotes: isPush ? 'Série 3 : Pompes aux anneaux (3x12 reps)' : 'Série 3 : Tirages horizontaux / Rows (3x10 reps)'
+      },
+      {
+        stepType: 'REST',
+        durationSeconds: 75,
+        stepNotes: 'Repos'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 45,
+        stepNotes: isPush ? 'Série 4 : Pompes aux anneaux' : 'Série 4 : Tirages horizontaux'
+      },
+      {
+        stepType: 'REST',
+        durationSeconds: 75,
+        stepNotes: 'Repos'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 60,
+        stepNotes: 'Core : Gainage Hollow body hold (3x45s)'
+      },
+      {
+        stepType: 'REST',
+        durationSeconds: 60,
+        stepNotes: 'Repos'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: 60,
+        stepNotes: 'Core : Suspension / Hanging leg raises'
+      },
+      {
+        stepType: 'COOLDOWN',
+        durationSeconds: 300,
+        stepNotes: 'Mobilité active & retour au calme'
+      }
+    ];
+  } else {
+    sportType = 'CARDIO';
+    steps = [
+      {
+        stepType: 'WARMUP',
+        durationSeconds: 10 * 60,
+        stepNotes: 'Échauffement libre'
+      },
+      {
+        stepType: 'INTERVAL',
+        durationSeconds: Math.max(10, durMin - 15) * 60,
+        stepNotes: event.title
+      },
+      {
+        stepType: 'COOLDOWN',
+        durationSeconds: 5 * 60,
+        stepNotes: 'Retour au calme'
+      }
+    ];
+  }
+
+  return {
+    title: `${titlePrefix}${event.title}`,
+    sportType,
+    scheduledDate: dateKey,
+    description: `${event.title} - ${durMin} min.\n${event.description || ''}`,
+    steps,
+    targetWatch
+  };
+}
+
+/**
+ * Pushes an individual workout to Garmin Connect and schedules it on the user's watch calendar.
+ */
+export async function pushWorkoutToGarmin(
+  event: CalendarEvent,
+  targetDateStr?: string,
+  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
+): Promise<WorkoutPushResult> {
+  try {
+    const creds = loadGarminCredentials();
+    const payload = buildWorkoutPayloadFromEvent(event, targetDateStr, targetWatch);
+
+    const response = await fetch(getApiUrl('/api/garmin-sync'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: creds?.email,
+        password: creds?.password,
+        action: 'push-workout',
+        workout: payload
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      return {
+        success: false,
+        error: data.error || 'Erreur lors de l\'envoi de la séance vers Garmin Connect.'
+      };
+    }
+
+    return {
+      success: true,
+      workoutId: data.workoutId,
+      workoutName: data.workoutName,
+      scheduledDate: data.scheduledDate,
+      sportType: data.sportType,
+      message: data.message || `Séance programmée avec succès sur Garmin Connect pour le ${payload.scheduledDate} !`
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Erreur réseau lors de la communication avec le proxy Garmin.'
+    };
+  }
+}
+
+/**
+ * Pushes an entire week of workouts to Garmin Connect in one click.
+ */
+export async function pushWeekWorkoutsToGarmin(
+  events: CalendarEvent[],
+  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
+): Promise<{ success: boolean; pushedCount: number; results: WorkoutPushResult[]; error?: string }> {
+  const sportEvents = events.filter(e => e.category === 'sport' && !e.metadata?.isPostponedPlaceholder);
+  if (sportEvents.length === 0) {
+    return { success: false, pushedCount: 0, results: [], error: 'Aucune séance sportive trouvée pour cette semaine.' };
+  }
+
+  const results: WorkoutPushResult[] = [];
+  let pushedCount = 0;
+
+  for (const ev of sportEvents) {
+    const dateStr = ev.startDate.slice(0, 10);
+    const res = await pushWorkoutToGarmin(ev, dateStr, targetWatch);
+    results.push(res);
+    if (res.success) pushedCount++;
+  }
+
+  return {
+    success: pushedCount > 0,
+    pushedCount,
+    results
+  };
+}
+
+/**
+ * Fetches the latest wellness data (sleep, HRV, RHR, readiness) from Garmin Connect.
+ */
+export async function fetchGarminWellness(): Promise<{ success: boolean; wellness?: GarminWellnessData; error?: string }> {
+  try {
+    const creds = loadGarminCredentials();
+    const response = await fetch(getApiUrl('/api/garmin-sync'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: creds?.email,
+        password: creds?.password,
+        action: 'get-wellness'
+      })
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.success || !data.wellness) {
+      return {
+        success: false,
+        error: data.error || 'Données bien-être Garmin indisponibles.'
+      };
+    }
+
+    saveWellnessData(data.wellness);
+    return {
+      success: true,
+      wellness: data.wellness
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || 'Erreur réseau lors de la récupération des données santé Garmin.'
+    };
+  }
+}
+

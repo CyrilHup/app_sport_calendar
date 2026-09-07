@@ -120,6 +120,55 @@ describe('statsEngine unit tests', () => {
     expect(report.heartRate.heartRateDeltaBpm).toBe(-8);
     expect(report.heartRate.currentAvgHeartRate).toBe(152);
     expect(report.heartRate.previousAvgHeartRate).toBe(160);
+    expect(report.heartRate.comparisonBaselineText).toContain('152 bpm');
+  });
+
+  it('filters out pre-September activities and bonus walks when focusing on the plan', () => {
+    const mixedActivities: GarminActivity[] = [
+      {
+        activityId: 'act-july',
+        activityName: 'Course été juillet',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-07-15T08:00:00',
+        durationMinutes: 45,
+        distanceKm: 7.5,
+        avgHeartRate: 165,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-plan-run',
+        activityName: 'Côtes Mont-Royal',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-02T08:00:00',
+        durationMinutes: 50,
+        distanceKm: 8.0,
+        elevationGainM: 350,
+        avgHeartRate: 148,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-plan-walk',
+        activityName: 'Marche balade bonus',
+        activityType: 'WALKING',
+        startTimeLocal: '2026-09-03T18:00:00',
+        durationMinutes: 40,
+        distanceKm: 3.0,
+        avgHeartRate: 98,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    // Under 'plan' scope and includeBonusActivities: false
+    const reportPlan = computeFullStatsReport(mixedActivities, [], [], 'plan', new Date('2026-09-07T12:00:00'), false);
+
+    // July activity is excluded because scope is 'plan' (starts 2026-09-01)
+    // Walk bonus activity is excluded from training volume
+    expect(reportPlan.global.totalSessionsCount).toBe(1);
+    expect(reportPlan.global.totalDurationMinutes).toBe(50);
+    expect(reportPlan.global.excludedBonusCount).toBe(1);
+    expect(reportPlan.global.excludedBonusMinutes).toBe(40);
+    expect(reportPlan.running.totalDistanceKm).toBe(8.0);
+    expect(reportPlan.heartRate.historicalPrePlanAvgHr).toBe(165); // Detected pre-plan HR baseline from July!
   });
 
   it('calculates QMT-80 finish time with quad armor bonus from strength workouts', () => {
@@ -130,6 +179,7 @@ describe('statsEngine unit tests', () => {
         totalElevationGainM: 1200,
         totalElevationLossM: 1200,
         elevationDensityMPerKm: 30,
+        densityComparisonText: '',
         avgPaceMinKm: '5:45',
         avgCadenceSpm: 168,
         longestRun: null,
@@ -160,7 +210,9 @@ describe('statsEngine unit tests', () => {
         heartRateTrend: 'STABLE',
         aerobicEfficiencyIndex: 1.1,
         aerobicEfficiencyDeltaPct: 0,
-        summaryText: ''
+        summaryText: '',
+        comparisonBaselineText: '',
+        historicalPrePlanAvgHr: null
       },
       {
         totalDurationMinutes: 240,
@@ -169,6 +221,10 @@ describe('statsEngine unit tests', () => {
         weeklyAverageMinutes: 60,
         weeklyProgressionPct: 0,
         progressionStatus: 'STARTING',
+        progressionComparisonText: '',
+        excludedBonusCount: 0,
+        excludedBonusMinutes: 0,
+        isFilteringBonuses: true,
         sportBreakdown: {
           running: { minutes: 240, pct: 100, count: 4 },
           strength: { minutes: 0, pct: 0, count: 0 },
@@ -186,6 +242,7 @@ describe('statsEngine unit tests', () => {
         totalElevationGainM: 1200,
         totalElevationLossM: 1200,
         elevationDensityMPerKm: 30,
+        densityComparisonText: '',
         avgPaceMinKm: '5:45',
         avgCadenceSpm: 168,
         longestRun: null,
@@ -216,7 +273,9 @@ describe('statsEngine unit tests', () => {
         heartRateTrend: 'STABLE',
         aerobicEfficiencyIndex: 1.1,
         aerobicEfficiencyDeltaPct: 0,
-        summaryText: ''
+        summaryText: '',
+        comparisonBaselineText: '',
+        historicalPrePlanAvgHr: null
       },
       {
         totalDurationMinutes: 420,
@@ -225,6 +284,10 @@ describe('statsEngine unit tests', () => {
         weeklyAverageMinutes: 105,
         weeklyProgressionPct: 5,
         progressionStatus: 'SAFE_PROGRESSION',
+        progressionComparisonText: '',
+        excludedBonusCount: 0,
+        excludedBonusMinutes: 0,
+        isFilteringBonuses: true,
         sportBreakdown: {
           running: { minutes: 240, pct: 57, count: 4 },
           strength: { minutes: 180, pct: 43, count: 4 },
@@ -239,4 +302,47 @@ describe('statsEngine unit tests', () => {
     expect(reportWithStrength.predictedMinutes).toBeLessThan(reportWithoutStrength.predictedMinutes);
     expect(reportWithStrength.factors.downhillResistanceImpactMin).toBe(-40);
   });
+
+  it('computes CTL, ATL, TSB and ACWR injury ratio correctly', () => {
+    const mockActivities: GarminActivity[] = [
+      {
+        activityId: 'act-1',
+        activityName: 'Course longue',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-01T08:00:00',
+        durationMinutes: 90,
+        trainingLoad: 110,
+        elevationGainM: 400,
+        elevationLossM: 400,
+        distanceKm: 14,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-2',
+        activityName: 'Intervalles côtes',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-04T18:00:00',
+        durationMinutes: 60,
+        trainingLoad: 85,
+        elevationGainM: 350,
+        elevationLossM: 350,
+        distanceKm: 9,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const report = computeFullStatsReport(mockActivities, [], [], 'all', new Date('2026-09-07T12:00:00'));
+
+    expect(report.trainingLoad).toBeDefined();
+    expect(report.trainingLoad.fitnessTrend.length).toBeGreaterThan(0);
+    expect(report.trainingLoad.currentCtl).toBeGreaterThan(0);
+    expect(report.trainingLoad.currentAtl).toBeGreaterThan(0);
+    expect(typeof report.trainingLoad.acwrRatio).toBe('number');
+
+    expect(report.trailSpecific).toBeDefined();
+    expect(report.trailSpecific.totalElevationLossM).toBe(750);
+    expect(report.trailSpecific.avgVamMPerHour).toBeGreaterThan(0);
+    expect(report.trailSpecific.gradeAdjustedPaceMinKm).not.toBe('-');
+  });
 });
+

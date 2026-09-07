@@ -1,8 +1,27 @@
 import React, { useState } from 'react';
 import { CalendarEvent } from '../types/calendar';
-import { Bell, CalendarClock, CheckSquare, Clock, Compass, Heart, MapPin, RotateCcw, ShieldCheck, Square, X, Zap, ArrowRight } from 'lucide-react';
+import {
+  Bell,
+  CalendarClock,
+  CheckCircle2,
+  CheckSquare,
+  Clock,
+  Compass,
+  Heart,
+  Loader2,
+  MapPin,
+  RotateCcw,
+  Send,
+  ShieldCheck,
+  Square,
+  Watch,
+  X,
+  Zap,
+  ArrowRight
+} from 'lucide-react';
 import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
+import { pushWorkoutToGarmin, buildWorkoutPayloadFromEvent } from '../services/garminService';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -15,13 +34,15 @@ interface WorkoutDetailModalProps {
     targetStartTime?: string
   ) => void;
   onCancelPostpone?: (eventId: string) => void;
+  onOpenGarminSync?: () => void;
 }
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   event,
   onClose,
   onPostpone,
-  onCancelPostpone
+  onCancelPostpone,
+  onOpenGarminSync
 }) => {
   if (!event) return null;
 
@@ -45,6 +66,28 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [reasonInput, setReasonInput] = useState<string>(event.metadata?.postponedReason || 'Déplacée / Reportée');
   const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(event.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
+
+  // Garmin Workout Push state
+  const [isPushingGarmin, setIsPushingGarmin] = useState<boolean>(false);
+  const [garminPushResult, setGarminPushResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
+  const [selectedWatch, setSelectedWatch] = useState<'FORERUNNER_55' | 'STANDARD'>('FORERUNNER_55');
+
+  const workoutPreview = event.category === 'sport' ? buildWorkoutPayloadFromEvent(event, event.startDate.slice(0, 10), selectedWatch) : null;
+
+  const handlePushToGarmin = async () => {
+    setIsPushingGarmin(true);
+    setGarminPushResult(null);
+    triggerHapticFeedback('light');
+
+    const result = await pushWorkoutToGarmin(event, event.startDate.slice(0, 10), selectedWatch);
+    setIsPushingGarmin(false);
+    setGarminPushResult(result);
+    if (result.success) {
+      triggerHapticFeedback('success');
+    } else {
+      triggerHapticFeedback('warning');
+    }
+  };
 
   const toggleGear = (item: string) => {
     setCheckedGear(prev => ({ ...prev, [item]: !prev[item] }));
@@ -498,7 +541,162 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               )}
             </div>
           )}
+
+          {/* SECTION: Synchronisation Montre Garmin (Forerunner 55) */}
+          {isSport && !event.metadata?.isPostponedPlaceholder && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.85), rgba(15, 23, 42, 0.95))',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Watch size={18} color="#60a5fa" />
+                  <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#ffffff' }}>
+                    Synchronisation Montre Garmin
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      padding: '2px 8px',
+                      borderRadius: 9999,
+                      background: 'rgba(59, 130, 246, 0.18)',
+                      color: '#93c5fd',
+                      fontWeight: 700
+                    }}
+                  >
+                    Forerunner 55 Compatible
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Montre :</label>
+                  <select
+                    value={selectedWatch}
+                    onChange={e => setSelectedWatch(e.target.value as any)}
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      color: '#ffffff',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 4,
+                      padding: '3px 6px',
+                      fontSize: '0.72rem'
+                    }}
+                  >
+                    <option value="FORERUNNER_55">Garmin Forerunner 55 (Cardio/Run)</option>
+                    <option value="STANDARD">Garmin Standard (Fenix/Forerunner 265+)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Résumé des étapes Garmin */}
+              {workoutPreview && (
+                <div
+                  style={{
+                    background: 'rgba(0, 0, 0, 0.25)',
+                    padding: '8px 10px',
+                    borderRadius: 4,
+                    border: '1px solid rgba(255, 255, 255, 0.05)',
+                    fontSize: '0.74rem',
+                    color: 'var(--text-secondary)'
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>
+                    Structure envoyée à la montre : {workoutPreview.title}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {workoutPreview.steps.slice(0, 4).map((st, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>•</span>
+                        <span>{st.stepNotes || `${st.stepType} (${st.durationSeconds ? st.durationSeconds + 's' : ''})`}</span>
+                      </div>
+                    ))}
+                    {workoutPreview.steps.length > 4 && (
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        + {workoutPreview.steps.length - 4} autres intervalles et temps de repos programmés
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Message de succès ou d'erreur */}
+              {garminPushResult && (
+                <div
+                  style={{
+                    background: garminPushResult.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                    border: `1px solid ${garminPushResult.success ? '#10b981' : '#ef4444'}`,
+                    padding: '8px 12px',
+                    borderRadius: 4,
+                    fontSize: '0.78rem',
+                    color: garminPushResult.success ? '#34d399' : '#f87171',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {garminPushResult.success ? <CheckCircle2 size={15} /> : <X size={15} />}
+                    <span>{garminPushResult.message || garminPushResult.error}</span>
+                  </div>
+                  {!garminPushResult.success && onOpenGarminSync && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={onOpenGarminSync}
+                      style={{ fontSize: '0.7rem', padding: '2px 8px' }}
+                    >
+                      Connecter Garmin
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Bouton d'action */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 2 }}>
+                <button
+                  type="button"
+                  onClick={handlePushToGarmin}
+                  disabled={isPushingGarmin}
+                  style={{
+                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '8px 14px',
+                    fontWeight: 700,
+                    fontSize: '0.8rem',
+                    cursor: isPushingGarmin ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)'
+                  }}
+                >
+                  {isPushingGarmin ? (
+                    <>
+                      <Loader2 size={14} className="spin-animation" />
+                      <span>Envoi vers Garmin Connect...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send size={14} />
+                      <span>Envoyer vers ma Garmin</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
+
 
         <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <button
