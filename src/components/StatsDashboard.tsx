@@ -8,6 +8,8 @@ import {
   PLAN_START_DATE,
   FitnessDayPoint
 } from '../services/statsEngine';
+import { getMondayWeekKey } from '../services/comparisonEngine';
+import { formatDateKey } from '../services/icsParser';
 import {
   Activity,
   AlertTriangle,
@@ -48,7 +50,7 @@ interface StatsDashboardProps {
   onOpenGarminSync?: () => void;
 }
 
-type SubSectionTab = 'overview' | 'running' | 'strength' | 'cardio' | 'qmt' | 'load';
+type SubSectionTab = 'overview' | 'running' | 'strength' | 'cardio' | 'qmt' | 'load' | 'all';
 
 export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   garminActivities,
@@ -78,6 +80,84 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
   // Max minutes in a week for relative bar chart heights
   const maxWeeklyMinutes = Math.max(...global.weeklyTrend.map(w => w.totalMinutes), 360);
+
+  // Date context and week bounds
+  const isWeekScope = typeof scope === 'string' && scope.startsWith('week:');
+  const selectedWeekKey = isWeekScope ? scope.replace('week:', '') : null;
+
+  const refDate = referenceDate || new Date();
+  const refDateKey = formatDateKey(refDate);
+  const currentMondayKey = getMondayWeekKey(refDateKey);
+
+  const activeMondayKey = (isWeekScope && selectedWeekKey) ? selectedWeekKey : currentMondayKey;
+  const activeMondayDate = new Date(activeMondayKey + 'T12:00:00');
+  const activeSundayDate = new Date(activeMondayDate);
+  activeSundayDate.setDate(activeMondayDate.getDate() + 6);
+  const activeSundayKey = formatDateKey(activeSundayDate);
+
+  // Planned targets for the active week
+  const activeWeekPlannedEvents = allEvents.filter(e => {
+    const d = e.startDate.slice(0, 10);
+    return d >= activeMondayKey && d <= activeSundayKey && e.category === 'sport';
+  });
+  const activeWeekPlannedMin = activeWeekPlannedEvents.reduce((acc, e) => acc + e.durationMinutes, 0) || 435;
+  const activeWeekPlannedElevation = activeWeekPlannedEvents.reduce((acc, e) => acc + (e.metadata?.targetElevationM || 0), 0) || 903;
+
+  // Realized data for active week from weeklyTrend
+  const activeWeekTrend = global.weeklyTrend.find(w => w.weekKey === activeMondayKey);
+  const activeWeekActualMin = activeWeekTrend ? activeWeekTrend.totalMinutes : (isWeekScope ? global.totalDurationMinutes : 0);
+  const activeWeekActualKm = activeWeekTrend ? activeWeekTrend.distanceKm : (isWeekScope ? running.totalDistanceKm : 0);
+  const activeWeekActualDPlus = activeWeekTrend ? activeWeekTrend.elevationGainM : (isWeekScope ? running.totalElevationGainM : 0);
+  const activeWeekActualDMinus = activeWeekTrend ? activeWeekTrend.elevationLossM : (isWeekScope ? running.totalElevationLossM : 0);
+  const activeWeekActualSessions = activeWeekTrend ? activeWeekTrend.sessionCount : (isWeekScope ? global.totalSessionsCount : 0);
+  const activeWeekProgressPct = Math.min(100, Math.round((activeWeekActualMin / activeWeekPlannedMin) * 100));
+
+  let scopeInfo: { label: string; shortTag: string; periodRange: string; desc: string };
+  if (isWeekScope && selectedWeekKey) {
+    const monDate = new Date(selectedWeekKey + 'T12:00:00');
+    const sunDate = new Date(monDate);
+    sunDate.setDate(monDate.getDate() + 6);
+    const label = `Semaine du ${monDate.getDate()} ${monDate.toLocaleDateString('fr-CA', { month: 'short' })}`;
+    scopeInfo = {
+      label,
+      shortTag: label,
+      periodRange: `${monDate.getDate()} — ${sunDate.getDate()} ${sunDate.toLocaleDateString('fr-CA', { month: 'short' })}`,
+      desc: `Microcycle dédié : ${monDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })} au ${sunDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'long' })}`
+    };
+  } else {
+    const defaultScopes = {
+      plan: {
+        label: 'Plan QMT (Depuis le 1er sept.)',
+        shortTag: 'Plan QMT',
+        periodRange: 'Du 1er sept. 2026 à aujourd\'hui',
+        desc: 'Préparation officielle démarrée le 1er septembre 2026'
+      },
+      '4w': {
+        label: '4 dernières semaines',
+        shortTag: '4 sem.',
+        periodRange: '28 derniers jours glissants',
+        desc: 'Cycle d\'entraînement récent sur les 4 dernières semaines'
+      },
+      '12w': {
+        label: '12 dernières semaines',
+        shortTag: '12 sem.',
+        periodRange: '84 derniers jours glissants',
+        desc: 'Macrocycle de préparation sur 12 semaines'
+      },
+      all: {
+        label: 'Tout l\'historique',
+        shortTag: 'Tout l\'historique',
+        periodRange: 'Ensemble des données Garmin Connect',
+        desc: 'Historique complet des séances enregistrées sur la montre Garmin'
+      }
+    };
+    scopeInfo = (defaultScopes as any)[scope] || {
+      label: 'Période personnalisée',
+      shortTag: 'Période',
+      periodRange: '',
+      desc: ''
+    };
+  }
 
   return (
     <div className="stats-dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -114,7 +194,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               <BarChart3 size={13} /> STATISTIQUES & ANALYTICS
             </span>
             <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-              {global.totalSessionsCount} séances planifiées
+              {global.totalSessionsCount} séances réalisées ({formatMinutes(global.totalDurationMinutes)})
             </span>
             {scope === 'plan' && (
               <span
@@ -139,36 +219,67 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         {/* Filters Controls: Scope + Bonus Toggle */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {/* Time Scope Filter Buttons */}
-          <div className="filter-chips" style={{ display: 'flex', gap: '6px' }}>
+          <div className="filter-chips" style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               className={`chip-btn ${scope === 'plan' ? 'active' : ''}`}
               onClick={() => setScope('plan')}
               style={{ fontSize: '0.78rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               title="Focalisé sur la préparation officielle démarrée le 1er septembre 2026"
             >
-              <Target size={13} /> Plan (1er sept.)
+              <Target size={13} /> Plan Global (1er sept.)
             </button>
+
+            {/* Direct Week Selector Dropdown */}
+            {global.weeklyTrend.length > 0 && (
+              <select
+                value={isWeekScope ? scope : ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) setScope(val as TimeRangeScope);
+                  else setScope('plan');
+                }}
+                className="chip-btn"
+                style={{
+                  fontSize: '0.78rem',
+                  padding: '6px 10px',
+                  background: isWeekScope ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                  color: isWeekScope ? 'var(--primary)' : 'var(--text-secondary)',
+                  borderColor: isWeekScope ? 'var(--primary)' : 'var(--border-color)',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+                title="Afficher les statistiques spécifiques d'une semaine précise"
+              >
+                <option value="">📅 Semaine par semaine...</option>
+                {global.weeklyTrend.map(w => (
+                  <option key={w.weekKey} value={`week:${w.weekKey}`}>
+                    {w.weekLabel} {w.totalMinutes > 0 ? `(${formatMinutes(w.totalMinutes)})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+
             <button
               className={`chip-btn ${scope === '4w' ? 'active' : ''}`}
               onClick={() => setScope('4w')}
               style={{ fontSize: '0.78rem', padding: '6px 12px' }}
             >
-              4 semaines
+              4 sem.
             </button>
             <button
               className={`chip-btn ${scope === '12w' ? 'active' : ''}`}
               onClick={() => setScope('12w')}
               style={{ fontSize: '0.78rem', padding: '6px 12px' }}
             >
-              12 semaines
+              12 sem.
             </button>
             <button
               className={`chip-btn ${scope === 'all' ? 'active' : ''}`}
               onClick={() => setScope('all')}
               style={{ fontSize: '0.78rem', padding: '6px 12px' }}
-              title="Inclut tout l'historique Garmin Connect (avril, juillet, etc.)"
+              title="Inclut tout l'historique Garmin Connect"
             >
-              Tout l'historique
+              Historique
             </button>
           </div>
 
@@ -197,55 +308,145 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         </div>
       </div>
 
-      {/* Bonus Exclusion Notice Banner */}
-      {global.excludedBonusCount > 0 && !includeBonuses && (
+      {/* Microcycle Specific HUD (Displayed when user selects a specific week from dropdown) */}
+      {isWeekScope && (
         <div
           style={{
-            background: 'rgba(56, 189, 248, 0.08)',
-            border: '1px solid rgba(56, 189, 248, 0.25)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '8px 14px',
-            fontSize: '0.76rem',
-            color: 'var(--accent-cyan)',
+            background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.85), rgba(15, 23, 42, 0.98))',
+            border: '1px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: 'var(--radius-md)',
+            padding: '14px 18px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '8px'
+            flexDirection: 'column',
+            gap: '10px'
           }}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <Info size={14} />
-            <strong>Focus Plan QMT :</strong> {global.totalSessionsCount} séances planifiées comptabilisées ({global.excludedBonusCount} activités bonus / marches non prescrites exclues du volume).
-          </span>
-          <button
-            onClick={() => setIncludeBonuses(true)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-primary)',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-              fontSize: '0.74rem'
-            }}
-          >
-            Inclure les séances bonus
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '8px',
+                  background: 'rgba(56, 189, 248, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-cyan)'
+                }}
+              >
+                <Zap size={18} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontWeight: 800, fontSize: '0.94rem', color: '#ffffff' }}>
+                    Microcycle Sélectionné : Semaine du {activeMondayDate.getDate()} — {activeSundayDate.getDate()} {activeSundayDate.toLocaleDateString('fr-CA', { month: 'short' })}
+                  </span>
+                  <span
+                    style={{
+                      background: 'rgba(255, 87, 34, 0.15)',
+                      color: 'var(--primary)',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      fontSize: '0.72rem',
+                      fontWeight: 700
+                    }}
+                  >
+                    🎯 Semaine ciblée
+                  </span>
+                  <button
+                    onClick={() => setScope('plan')}
+                    style={{
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      border: '1px solid var(--border-color)',
+                      color: 'var(--text-secondary)',
+                      borderRadius: '4px',
+                      padding: '2px 7px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                    title="Revenir au cumul global du plan"
+                  >
+                    ↺ Revenir au Plan Global
+                  </button>
+                </div>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  Statistiques exactes réalisées lors de ce microcycle comparées aux cibles prescrites.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '18px', flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Volume Réalisé</div>
+                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {formatMinutes(activeWeekActualMin)}{' '}
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.82rem' }}>
+                    / {formatMinutes(activeWeekPlannedMin)}
+                  </span>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--accent-cyan)', marginLeft: '6px' }}>
+                    ({activeWeekProgressPct}%)
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Course</div>
+                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--primary)' }}>
+                  {activeWeekActualKm.toFixed(1)} km
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Dénivelé</div>
+                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--accent-green)' }}>
+                  +{activeWeekActualDPlus} m{' '}
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>/ -{activeWeekActualDMinus} m</span>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Séance(s)</div>
+                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#f8fafc' }}>
+                  {activeWeekActualSessions}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '9999px', overflow: 'hidden' }}>
+            <div
+              style={{
+                width: `${Math.min(100, Math.max(2, activeWeekProgressPct))}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, var(--accent-cyan), var(--primary))',
+                borderRadius: '9999px',
+                transition: 'width 0.3s ease'
+              }}
+            />
+          </div>
         </div>
       )}
 
-      {/* Hero KPI Grid (4 High-Impact Cards with explicit "Compared to What?" baselines) */}
+      {/* Hero KPI Grid (6 High-Impact Cards for the Active Scope) */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
           gap: '12px'
         }}
       >
-        {/* Card 1: Total Training Time & Weekly Average */}
+        {/* Card 1: Total Training Time on Active Scope */}
         <div className="stats-kpi-card">
           <div className="kpi-header">
-            <span className="kpi-title">Temps Total d'Entraînement</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Temps Total d'Entraînement</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
+                {scopeInfo.shortTag}
+              </span>
+            </div>
             <div className="kpi-icon" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)' }}>
               <Clock size={16} />
             </div>
@@ -255,23 +456,11 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           </div>
           <div className="kpi-sub-row">
             <span style={{ color: 'var(--text-secondary)' }}>
-              Moyenne : <strong>{formatMinutes(global.weeklyAverageMinutes)}/sem</strong>
+              {global.totalSessionsCount} séances réalisées
             </span>
-            {global.weeklyProgressionPct !== 0 && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                  fontWeight: 700,
-                  fontSize: '0.75rem',
-                  color: global.weeklyProgressionPct > 0 ? 'var(--accent-green)' : 'var(--accent-amber)'
-                }}
-              >
-                {global.weeklyProgressionPct > 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                {global.weeklyProgressionPct > 0 ? `+${global.weeklyProgressionPct}%` : `${global.weeklyProgressionPct}%`}
-              </span>
-            )}
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+              Moy. {formatMinutes(global.weeklyAverageMinutes)}/sem
+            </span>
           </div>
 
           {/* Mini discipline distribution bar */}
@@ -288,28 +477,18 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           >
             <div
               title={`Course: ${global.sportBreakdown.running.pct}%`}
-              style={{
-                width: `${global.sportBreakdown.running.pct}%`,
-                background: 'var(--primary)'
-              }}
+              style={{ width: `${global.sportBreakdown.running.pct}%`, background: 'var(--primary)' }}
             />
             <div
               title={`Force: ${global.sportBreakdown.strength.pct}%`}
-              style={{
-                width: `${global.sportBreakdown.strength.pct}%`,
-                background: 'var(--accent-purple)'
-              }}
+              style={{ width: `${global.sportBreakdown.strength.pct}%`, background: 'var(--accent-purple)' }}
             />
             <div
               title="Cross / Autres"
-              style={{
-                width: `${global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%`,
-                background: 'var(--accent-cyan)'
-              }}
+              style={{ width: `${global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%`, background: 'var(--accent-cyan)' }}
             />
           </div>
 
-          {/* Explicit "Compared to What?" */}
           <div
             style={{
               fontSize: '0.72rem',
@@ -321,16 +500,215 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               borderRadius: '4px'
             }}
           >
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>📍 Comparé à quoi ?</span>
+            <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>📍 Répartition ({scopeInfo.shortTag}) :</span>
             <br />
-            {global.progressionComparisonText}
+            🏃 {formatMinutes(global.sportBreakdown.running.minutes)} ({global.sportBreakdown.running.pct}%) • 🏋️ {formatMinutes(global.sportBreakdown.strength.minutes)} ({global.sportBreakdown.strength.pct}%) • 🚴 {formatMinutes(global.sportBreakdown.crossTraining.minutes + global.sportBreakdown.other.minutes)} ({global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%)
           </div>
         </div>
 
-        {/* Card 2: Dynamic QMT-80 Race Prediction */}
+        {/* Card 2: Total Running Distance (Prominently Restored) */}
+        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--primary)' }}>
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Distance Course & Trail</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
+                {scopeInfo.shortTag}
+              </span>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)' }}>
+              <Footprints size={16} />
+            </div>
+          </div>
+          <div className="kpi-main-value" style={{ color: 'var(--primary)' }}>
+            {running.totalDistanceKm.toFixed(1)} km
+          </div>
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              {global.sportBreakdown.running.count} sorties • Allure moy. {running.avgPaceMinKm}
+            </span>
+            {running.avgCadenceSpm > 0 && (
+              <span style={{ fontSize: '0.74rem', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                {running.avgCadenceSpm} spm
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              marginTop: '8px',
+              lineHeight: 1.35,
+              background: 'rgba(255,255,255,0.02)',
+              padding: '4px 6px',
+              borderRadius: '4px'
+            }}
+          >
+            <span style={{ color: 'var(--primary)', fontWeight: 700 }}>📍 Plus longue sortie :</span>
+            <br />
+            {running.longestRun ? `${running.longestRun.distanceKm} km (${running.longestRun.name})` : 'Aucune sortie enregistrée sur cette période'}
+          </div>
+        </div>
+
+        {/* Card 3: Cumulative Mountain Elevation D+ */}
+        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-cyan)' }}>
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Dénivelé D+ Cumulé</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                {scopeInfo.shortTag}
+              </span>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
+              <TrendingUp size={16} />
+            </div>
+          </div>
+          <div className="kpi-main-value" style={{ color: 'var(--accent-cyan)' }}>
+            +{running.totalElevationGainM.toLocaleString('fr-CA')} m
+          </div>
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Descente : -{running.totalElevationLossM.toLocaleString('fr-CA')} m
+            </span>
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '2px 6px',
+                borderRadius: '9999px',
+                background: 'rgba(56, 189, 248, 0.15)',
+                color: 'var(--accent-cyan)',
+                fontWeight: 700
+              }}
+            >
+              {running.elevationDensityMPerKm} m/km
+            </span>
+          </div>
+
+          <div
+            style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              marginTop: '8px',
+              lineHeight: 1.35,
+              background: 'rgba(255,255,255,0.02)',
+              padding: '4px 6px',
+              borderRadius: '4px'
+            }}
+          >
+            <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>📍 Densité montagne :</span>
+            <br />
+            {running.densityComparisonText}
+          </div>
+        </div>
+
+        {/* Card 4: Heart Rate & Aerobic Economy */}
+        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-red)' }}>
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Fréquence Cardiaque</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)', fontWeight: 700 }}>
+                {scopeInfo.shortTag}
+              </span>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)' }}>
+              <Heart size={16} />
+            </div>
+          </div>
+          <div className="kpi-main-value" style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+            {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate ? `${heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate} bpm` : '-'}
+            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontWeight: 500 }}>moy. pondérée</span>
+          </div>
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Zone 2 Endurance : <strong>{running.intensityDistribution.zone2Pct}%</strong>
+            </span>
+            {heartRate.aerobicEfficiencyIndex && (
+              <span style={{ color: 'var(--accent-cyan)', fontWeight: 700, fontSize: '0.74rem' }}>
+                AEI: {heartRate.aerobicEfficiencyIndex}
+              </span>
+            )}
+          </div>
+
+          <div
+            style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              marginTop: '8px',
+              lineHeight: 1.35,
+              background: 'rgba(255,255,255,0.02)',
+              padding: '4px 6px',
+              borderRadius: '4px'
+            }}
+          >
+            <span style={{ color: 'var(--accent-red)', fontWeight: 700 }}>📍 Tendance & Adaptation :</span>
+            <br />
+            {heartRate.summaryText}
+          </div>
+        </div>
+
+        {/* Card 5: Training Load & ACWR (Banister) */}
+        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-purple)' }}>
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Forme & Charge (Banister)</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)', fontWeight: 700 }}>
+                Aujourd'hui
+              </span>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
+              <Gauge size={16} />
+            </div>
+          </div>
+          <div className="kpi-main-value" style={{ color: 'var(--accent-purple)', fontSize: '1.25rem' }}>
+            CTL {trainingLoad.currentCtl} <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>• ATL {trainingLoad.currentAtl}</span>
+          </div>
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              TSB : <strong>{trainingLoad.currentTsb > 0 ? `+${trainingLoad.currentTsb}` : trainingLoad.currentTsb}</strong>
+            </span>
+            <span
+              style={{
+                fontSize: '0.72rem',
+                padding: '2px 6px',
+                borderRadius: '9999px',
+                background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'rgba(56, 189, 248, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)')),
+                color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')),
+                fontWeight: 700
+              }}
+            >
+              ACWR : {trainingLoad.acwrRatio} ({trainingLoad.acwrStatusLabel})
+            </span>
+          </div>
+
+          <div
+            style={{
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              marginTop: '8px',
+              lineHeight: 1.35,
+              background: 'rgba(255,255,255,0.02)',
+              padding: '4px 6px',
+              borderRadius: '4px'
+            }}
+          >
+            <span style={{ color: 'var(--accent-purple)', fontWeight: 700 }}>📍 {trainingLoad.formLabel}</span>
+            {trainingLoad.acwrActionAdvice && (
+              <div style={{ marginTop: '3px', color: 'var(--text-secondary)', fontSize: '0.7rem' }}>
+                💡 {trainingLoad.acwrActionAdvice}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Card 6: Dynamic QMT-80 Race Time Prediction */}
         <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-orange)' }}>
           <div className="kpi-header">
-            <span className="kpi-title">Chrono Estimé QMT-80 (77 km)</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Chrono Estimé QMT-80 (77 km)</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 5px', borderRadius: '4px', background: 'rgba(255, 112, 67, 0.15)', color: 'var(--accent-orange)', fontWeight: 700 }}>
+                Objectif
+              </span>
+            </div>
             <div className="kpi-icon" style={{ background: 'rgba(255, 112, 67, 0.15)', color: 'var(--accent-orange)' }}>
               <Mountain size={16} />
             </div>
@@ -356,70 +734,6 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             </span>
           </div>
 
-          <div style={{ fontSize: '0.72rem', color: 'var(--accent-green)', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <CheckCircle2 size={12} />
-            Marge de sécurité : <strong>+{formatMinutes(qmtPrediction.cutoffMarginMinutes)}</strong> sur barrière (19h)
-          </div>
-
-          {/* Explicit "Compared to What?" */}
-          <div
-            style={{
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              marginTop: '6px',
-              lineHeight: 1.35,
-              background: 'rgba(255,255,255,0.02)',
-              padding: '4px 6px',
-              borderRadius: '4px'
-            }}
-          >
-            <span style={{ color: 'var(--accent-orange)', fontWeight: 700 }}>📍 Comparé à quoi ?</span>
-            <br />
-            {qmtPrediction.evolutionComparisonText}
-          </div>
-        </div>
-
-        {/* Card 3: Heart Rate Trend & Aerobic Decoupling */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-red)' }}>
-          <div className="kpi-header">
-            <span className="kpi-title">Tendance Fréquence Cardiaque</span>
-            <div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: 'var(--accent-red)' }}>
-              <Heart size={16} />
-            </div>
-          </div>
-          <div className="kpi-main-value" style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-            {heartRate.currentAvgHeartRate ? `${heartRate.currentAvgHeartRate} bpm` : '-'}
-            {heartRate.heartRateDeltaBpm !== null && (
-              <span
-                style={{
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  color: heartRate.heartRateDeltaBpm <= 0 ? 'var(--accent-green)' : 'var(--accent-red)',
-                  display: 'inline-flex',
-                  alignItems: 'center'
-                }}
-              >
-                {heartRate.heartRateDeltaBpm < 0 ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
-                {heartRate.heartRateDeltaBpm > 0 ? `+${heartRate.heartRateDeltaBpm}` : heartRate.heartRateDeltaBpm} bpm
-              </span>
-            )}
-          </div>
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              {heartRate.heartRateTrend === 'DECREASING'
-                ? '📉 En baisse (adaptations positives)'
-                : heartRate.heartRateTrend === 'STABLE'
-                ? 'Économie aérobie stable'
-                : 'Charge / Fatigue à surveiller'}
-            </span>
-            {heartRate.aerobicEfficiencyIndex && (
-              <span style={{ color: 'var(--accent-cyan)', fontWeight: 700, fontSize: '0.74rem' }}>
-                AEI: {heartRate.aerobicEfficiencyIndex}
-              </span>
-            )}
-          </div>
-
-          {/* Explicit "Compared to What?" */}
           <div
             style={{
               fontSize: '0.72rem',
@@ -431,56 +745,9 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               borderRadius: '4px'
             }}
           >
-            <span style={{ color: 'var(--accent-red)', fontWeight: 700 }}>📍 Comparé à quoi ?</span>
+            <span style={{ color: 'var(--accent-orange)', fontWeight: 700 }}>📍 Marge barrière horaire :</span>
             <br />
-            {heartRate.comparisonBaselineText}
-          </div>
-        </div>
-
-        {/* Card 4: Elevation Gain & Mountain Density */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-cyan)' }}>
-          <div className="kpi-header">
-            <span className="kpi-title">Dénivelé Positif D+ Cumulé</span>
-            <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
-              <TrendingUp size={16} />
-            </div>
-          </div>
-          <div className="kpi-main-value" style={{ color: 'var(--accent-cyan)' }}>
-            +{running.totalElevationGainM.toLocaleString('fr-CA')} m
-          </div>
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              Densité : <strong>{running.elevationDensityMPerKm} m D+/km</strong>
-            </span>
-            <span
-              style={{
-                fontSize: '0.72rem',
-                padding: '2px 6px',
-                borderRadius: '9999px',
-                background: 'rgba(56, 189, 248, 0.15)',
-                color: 'var(--accent-cyan)',
-                fontWeight: 700
-              }}
-            >
-              QMT : 44 m/km
-            </span>
-          </div>
-
-          {/* Explicit "Compared to What?" */}
-          <div
-            style={{
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              marginTop: '8px',
-              lineHeight: 1.35,
-              background: 'rgba(255,255,255,0.02)',
-              padding: '4px 6px',
-              borderRadius: '4px'
-            }}
-          >
-            <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>📍 Comparé à quoi ?</span>
-            <br />
-            {running.densityComparisonText}
+            +{formatMinutes(qmtPrediction.cutoffMarginMinutes)} sur barrière finale (19h00).
           </div>
         </div>
       </div>
@@ -535,11 +802,31 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         >
           <Mountain size={14} /> 6. Simulateur Chrono QMT-80
         </button>
+
+        <button
+          className={`chip-btn ${activeTab === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveTab('all')}
+          style={{
+            background: activeTab === 'all' ? 'linear-gradient(135deg, var(--primary), var(--accent-orange))' : 'rgba(255, 87, 34, 0.12)',
+            color: activeTab === 'all' ? '#ffffff' : 'var(--primary)',
+            borderColor: 'rgba(255, 87, 34, 0.4)',
+            fontWeight: 800
+          }}
+          title="Déroule l'intégralité des 6 sections pour tout visualiser sur une seule page déroulante"
+        >
+          <Sparkles size={14} /> ✨ Tout Afficher (Rapport Déroulé)
+        </button>
       </div>
 
       {/* SECTION 1: Overview & Weekly Progression */}
-      {activeTab === 'overview' && (
+      {(activeTab === 'overview' || activeTab === 'all') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {activeTab === 'all' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+              <BarChart3 size={16} color="var(--primary)" />
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>1. Volume Hebdomadaire & Répartition des Disciplines</strong>
+            </div>
+          )}
           {/* Interactive Weekly Volume Bar Chart */}
           <div
             style={{
@@ -597,10 +884,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                   const strengthHeight = (w.strengthMinutes / maxWeeklyMinutes) * 140;
                   const otherHeight = (w.otherMinutes / maxWeeklyMinutes) * 140;
                   const isHovered = hoveredWeekKey === w.weekKey;
+                  const isSelected = selectedWeekKey === w.weekKey;
 
                   return (
                     <div
                       key={w.weekKey}
+                      onClick={() => {
+                        setScope(isSelected ? 'plan' : (`week:${w.weekKey}` as TimeRangeScope));
+                      }}
                       onMouseEnter={() => setHoveredWeekKey(w.weekKey)}
                       onMouseLeave={() => setHoveredWeekKey(null)}
                       style={{
@@ -611,8 +902,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                         alignItems: 'center',
                         gap: '6px',
                         cursor: 'pointer',
-                        position: 'relative'
+                        position: 'relative',
+                        padding: '4px',
+                        borderRadius: '6px',
+                        background: isSelected ? 'rgba(255, 87, 34, 0.12)' : 'transparent',
+                        outline: isSelected ? '1.5px solid var(--primary)' : 'none',
+                        transition: 'all 0.15s ease'
                       }}
+                      title={`Cliquer pour isoler les statistiques de ${w.weekLabel}`}
                     >
                       {/* Floating Tooltip when hovered */}
                       {isHovered && (
@@ -633,7 +930,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                             pointerEvents: 'none'
                           }}
                         >
-                          <strong>{w.weekLabel}</strong>
+                          <strong>{w.weekLabel}</strong> {isSelected ? '✓ (Active)' : '(Cliquer pour filtrer)'}
                           <div>Total : {formatMinutes(w.totalMinutes)}</div>
                           <div style={{ color: 'var(--primary)' }}>🏃 {w.distanceKm} km • +{w.elevationGainM}m D+</div>
                           <div style={{ color: 'var(--accent-purple)' }}>🏋️ {w.strengthMinutes} min de force</div>
@@ -651,7 +948,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                           overflow: 'hidden',
                           background: 'rgba(255,255,255,0.03)',
                           transition: 'transform 0.2s',
-                          transform: isHovered ? 'scale(1.06)' : 'none'
+                          transform: isHovered ? 'scale(1.06)' : 'none',
+                          boxShadow: isSelected ? '0 0 10px rgba(255, 87, 34, 0.4)' : 'none'
                         }}
                       >
                         <div style={{ height: `${runHeight}px`, background: 'var(--primary)' }} />
@@ -663,7 +961,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                       <span
                         style={{
                           fontSize: '0.68rem',
-                          color: isHovered ? 'var(--text-primary)' : 'var(--text-muted)',
+                          color: isSelected ? 'var(--primary)' : (isHovered ? 'var(--text-primary)' : 'var(--text-muted)'),
+                          fontWeight: isSelected ? 800 : 500,
                           textAlign: 'center',
                           lineHeight: 1.1
                         }}
@@ -771,8 +1070,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       )}
 
       {/* SECTION 2: Running & Trail Deep Dive */}
-      {activeTab === 'running' && (
+      {(activeTab === 'running' || activeTab === 'all') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {activeTab === 'all' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginTop: '8px' }}>
+              <Footprints size={16} color="var(--primary)" />
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>2. Course à Pied & Sentiers</strong>
+            </div>
+          )}
           {/* Milestone Records Grid */}
           <div
             style={{
@@ -913,8 +1218,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       )}
 
       {/* SECTION 3: Strength Training & Calisthenics Deep Dive */}
-      {activeTab === 'strength' && (
+      {(activeTab === 'strength' || activeTab === 'all') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {activeTab === 'all' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginTop: '8px' }}>
+              <Dumbbell size={16} color="var(--accent-purple)" />
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>3. Renforcement & Calisthénie</strong>
+            </div>
+          )}
           <div
             style={{
               display: 'grid',
@@ -1042,8 +1353,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       )}
 
       {/* SECTION 4: Heart Rate & Aerobic Efficiency */}
-      {activeTab === 'cardio' && (
+      {(activeTab === 'cardio' || activeTab === 'all') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {activeTab === 'all' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginTop: '8px' }}>
+              <Heart size={16} color="var(--accent-red)" />
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>4. Fréquence Cardiaque & Efficacité Aérobie</strong>
+            </div>
+          )}
           {/* Main Answer Banner to user question: "Is my heart rate going down? Compared to what?" */}
           <div
             style={{
@@ -1160,8 +1477,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       )}
 
       {/* SECTION 5: Training Load, Fitness & Fatigue (CTL / ATL / TSB / ACWR) */}
-      {activeTab === 'load' && (
+      {(activeTab === 'load' || activeTab === 'all') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {activeTab === 'all' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginTop: '8px' }}>
+              <Gauge size={16} color="var(--accent-purple)" />
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>5. Charge, Forme & Fatigue Physiologique (Modèle Banister CTL / ATL / ACWR)</strong>
+            </div>
+          )}
           <div
             style={{
               display: 'grid',
@@ -1208,17 +1531,17 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               </div>
             </div>
 
-            <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--primary)' }}>
+            <div className="stats-kpi-card" style={{ borderLeft: `3px solid ${trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)'))}` }}>
               <div className="kpi-header">
                 <span className="kpi-title">Ratio ACWR (Risque Blessure)</span>
-                <ShieldAlert size={16} color="var(--primary)" />
+                <ShieldAlert size={16} color={trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : 'var(--accent-amber)')} />
               </div>
-              <div className="kpi-main-value" style={{ color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)') }}>
+              <div className="kpi-main-value" style={{ color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')) }}>
                 {trainingLoad.acwrRatio}
               </div>
               <div className="kpi-sub-row">
-                <span style={{ fontSize: '0.74rem', fontWeight: 700 }}>
-                  {trainingLoad.acwrStatus === 'OPTIMAL' ? 'Zone Douce (0.8 - 1.3)' : trainingLoad.acwrStatus}
+                <span style={{ fontSize: '0.74rem', fontWeight: 700, color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')) }}>
+                  {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
                 </span>
               </div>
             </div>
@@ -1249,11 +1572,11 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                   fontWeight: 800,
                   padding: '4px 10px',
                   borderRadius: '9999px',
-                  background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'),
-                  color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')
+                  background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'rgba(56, 189, 248, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)')),
+                  color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)'))
                 }}
               >
-                Ratio Actuel : {trainingLoad.acwrRatio} • {trainingLoad.acwrStatus === 'OPTIMAL' ? 'Sweet Spot Optimal' : trainingLoad.acwrStatus}
+                Ratio Actuel : {trainingLoad.acwrRatio} • {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
               </span>
             </div>
 
@@ -1319,8 +1642,16 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               </div>
             </div>
 
-            <div style={{ background: 'var(--bg-main)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              {trainingLoad.acwrLabel}
+            <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div>
+                <strong style={{ color: 'var(--text-primary)' }}>Diagnostic :</strong> {trainingLoad.acwrLabel}
+              </div>
+              {trainingLoad.acwrActionAdvice && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-green)', fontWeight: 600, fontSize: '0.78rem' }}>
+                  <span>💡</span>
+                  <span>{trainingLoad.acwrActionAdvice}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1601,8 +1932,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       )}
 
       {/* SECTION 6: QMT-80 Dynamic Race Predictor & Strategy */}
-      {activeTab === 'qmt' && (
+      {(activeTab === 'qmt' || activeTab === 'all') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {activeTab === 'all' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginTop: '8px' }}>
+              <Mountain size={16} color="var(--accent-orange)" />
+              <strong style={{ fontSize: '0.92rem', color: 'var(--text-primary)' }}>6. Simulateur Chrono & Stratégie Ravitaillements QMT-80</strong>
+            </div>
+          )}
           {/* Main Predictor Summary Hero */}
           <div
             style={{

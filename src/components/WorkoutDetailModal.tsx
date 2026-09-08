@@ -24,9 +24,11 @@ import { triggerHapticFeedback } from '../services/hapticsService';
 import { pushWorkoutToGarmin, buildWorkoutPayloadFromEvent } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { useAuth } from '../contexts/AuthContext';
+import { ActivityComparison } from '../types/garmin';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
+  comparison?: ActivityComparison | null;
   onClose: () => void;
   onPostpone?: (
     eventId: string,
@@ -41,6 +43,7 @@ interface WorkoutDetailModalProps {
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   event,
+  comparison,
   onClose,
   onPostpone,
   onCancelPostpone,
@@ -193,6 +196,101 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         </div>
 
         <div className="modal-body" style={{ gap: '12px' }}>
+          {/* Télémétrie Réalisée Garmin Connect (Si séance complétée) */}
+          {comparison?.actualActivity && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(6, 182, 212, 0.1))',
+                border: '1px solid rgba(16, 185, 129, 0.4)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <CheckCircle2 size={16} color="#10b981" />
+                  <span style={{ fontWeight: 800, fontSize: '0.92rem', color: '#ffffff' }}>
+                    Télémétrie Réelle Garmin Connect
+                  </span>
+                </div>
+                {comparison?.complianceScore !== undefined && (
+                  <span
+                    style={{
+                      background: comparison.complianceScore >= 80 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                      color: comparison.complianceScore >= 80 ? '#34d399' : '#fbbf24',
+                      border: `1px solid ${comparison.complianceScore >= 80 ? '#10b981' : '#f59e0b'}`,
+                      borderRadius: 9999,
+                      padding: '2px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}
+                  >
+                    {comparison.complianceScore}% de conformité
+                  </span>
+                )}
+              </div>
+
+              {/* 4 Sleek Telemetry Tiles */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⏱️ Durée Réelle</div>
+                  <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#ffffff' }}>
+                    {comparison.actualActivity.durationMinutes} min
+                  </div>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                    Prescrit : {event.durationMinutes}m ({comparison.actualActivity.durationMinutes >= event.durationMinutes ? '+' : ''}{comparison.actualActivity.durationMinutes - event.durationMinutes}m)
+                  </span>
+                </div>
+
+                {comparison.actualActivity.distanceKm && (
+                  <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>📍 Distance</div>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--primary)' }}>
+                      {comparison.actualActivity.distanceKm} km
+                    </div>
+                    {comparison.actualActivity.avgPaceMinKm && (
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                        Allure {comparison.actualActivity.avgPaceMinKm}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⛰️ Dénivelé D+/D-</div>
+                  <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-green)' }}>
+                    +{comparison.actualActivity.elevationGainM || 0} m
+                  </div>
+                  {Boolean(comparison.actualActivity.elevationLossM) && (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                      -{comparison.actualActivity.elevationLossM} m
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>❤️ Cardiaque / EPOC</div>
+                  <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-red)' }}>
+                    {comparison.actualActivity.avgHeartRate ? `${comparison.actualActivity.avgHeartRate} bpm` : '--'}
+                  </div>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                    {comparison.actualActivity.trainingLoad ? `Charge EPOC ${comparison.actualActivity.trainingLoad}` : (comparison.actualActivity.maxHeartRate ? `Max ${comparison.actualActivity.maxHeartRate} bpm` : '')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Feedback notes */}
+              {comparison.feedbackNotes && comparison.feedbackNotes.length > 0 && (
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 4, lineHeight: 1.4 }}>
+                  {comparison.feedbackNotes.join(' • ')}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Barre Horaires & Lieu */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
             <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
@@ -267,7 +365,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           )}
 
           {/* Section Reporter / Déplacer la séance (pour les séances de sport actives) */}
-          {isSport && !event.metadata?.isPostponedPlaceholder && onPostpone && (
+          {isSport && !event.metadata?.isPostponedPlaceholder && onPostpone && !comparison?.actualActivity && (
             <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.25)', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPostponeExpanded ? 10 : 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -548,7 +646,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           )}
 
           {/* SECTION: Synchronisation Montre Garmin (Forerunner 55) */}
-          {isSport && !event.metadata?.isPostponedPlaceholder && (
+          {isSport && !event.metadata?.isPostponedPlaceholder && !comparison?.actualActivity && (
             <div
               style={{
                 background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.85), rgba(15, 23, 42, 0.95))',

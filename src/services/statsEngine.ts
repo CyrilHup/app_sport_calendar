@@ -8,20 +8,23 @@ import { formatDateKey } from './icsParser';
  */
 export const PLAN_START_DATE = '2026-09-01';
 
-export type TimeRangeScope = 'plan' | '4w' | '12w' | 'all';
+export type TimeRangeScope = 'plan' | '4w' | '12w' | 'all' | (string & {});
 
 export interface WeeklyTrendPoint {
   weekKey: string; // YYYY-MM-DD of Monday
   weekLabel: string; // e.g. "Sem. 31 août"
   totalMinutes: number;
+  plannedMinutes?: number;
   runningMinutes: number;
   strengthMinutes: number;
   otherMinutes: number;
   distanceKm: number;
   elevationGainM: number;
+  plannedElevationGainM?: number;
   elevationLossM: number;
   avgHeartRate: number | null;
   sessionCount: number;
+  plannedSessionCount?: number;
   bonusSessionCount: number;
 }
 
@@ -102,7 +105,7 @@ export interface HeartRateStats {
   summaryText: string;
   comparisonBaselineText: string;
   historicalPrePlanAvgHr: number | null;
-  overallPeriodAvgHr: number | null;
+  overallPeriodAvgHr?: number | null;
 }
 
 export interface AidStationSplit {
@@ -154,8 +157,11 @@ export interface TrainingLoadStats {
   formStatus: 'OPTIMAL_BUILD' | 'RACE_PEAK' | 'TRANSITION_FRESH' | 'FATIGUED' | 'HIGH_OVERLOAD';
   formLabel: string;
   acwrRatio: number;
-  acwrStatus: 'UNDERLOAD' | 'OPTIMAL' | 'MODERATE_RISK' | 'DANGER_HIGH_RISK';
+  acwrStatus: 'UNDERLOAD' | 'OPTIMAL' | 'MODERATE_RISK' | 'DANGER_HIGH_RISK' | 'CALIBRATING';
+  acwrStatusLabel?: string;
   acwrLabel: string;
+  acwrActionAdvice?: string;
+  isCalibrating?: boolean;
   acuteLoad7d: number;
   chronicLoad28dWeeklyAvg: number;
   fitnessTrend: FitnessDayPoint[];
@@ -222,6 +228,16 @@ export function filterItemsByScope<T extends { date: string }>(
   scope: TimeRangeScope,
   asOfDate: Date = new Date()
 ): T[] {
+  // 1. Specific week scope: 'week:YYYY-MM-DD' (from Monday to Sunday)
+  if (scope.startsWith('week:')) {
+    const mondayKey = scope.replace('week:', '');
+    const monDate = new Date(mondayKey + 'T12:00:00');
+    const sunDate = new Date(monDate);
+    sunDate.setDate(monDate.getDate() + 6);
+    const sunKey = formatDateKey(sunDate);
+    return items.filter(item => item.date >= mondayKey && item.date <= sunKey);
+  }
+
   const endDateStr = formatDateKey(asOfDate);
 
   if (scope === 'plan') {
@@ -371,6 +387,20 @@ export function computeFullStatsReport(
     weekMap.get(mondayKey)!.push(act);
   }
 
+  // Build a map of planned target minutes & D+ by Monday week key
+  const plannedWeekMap = new Map<string, { minutes: number; elevationM: number; count: number }>();
+  for (const ev of _plannedEvents) {
+    if (ev.category === 'sport' && !ev.metadata?.isPostponedPlaceholder) {
+      const dKey = ev.startDate.slice(0, 10);
+      const mKey = getMondayWeekKey(dKey);
+      const existing = plannedWeekMap.get(mKey) || { minutes: 0, elevationM: 0, count: 0 };
+      existing.minutes += ev.durationMinutes || 0;
+      existing.elevationM += ev.metadata?.targetElevationM || 0;
+      existing.count += 1;
+      plannedWeekMap.set(mKey, existing);
+    }
+  }
+
   // Also track bonus counts per week
   const bonusWeekMap = new Map<string, number>();
   for (const act of scopedList) {
@@ -417,19 +447,23 @@ export function computeFullStatsReport(
 
     const dDate = new Date(wKey + 'T12:00:00');
     const weekLabel = `Sem. ${dDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`;
+    const planTarget = plannedWeekMap.get(wKey);
 
     return {
       weekKey: wKey,
       weekLabel,
       totalMinutes: totalMin,
+      plannedMinutes: planTarget?.minutes || 0,
       runningMinutes: runMin,
       strengthMinutes: strengthMin,
       otherMinutes: otherMin,
       distanceKm: Math.round(distKm * 10) / 10,
       elevationGainM: dPlus,
+      plannedElevationGainM: planTarget?.elevationM || 0,
       elevationLossM: dMinus,
       avgHeartRate: hrCount > 0 ? Math.round(hrSum / hrCount) : null,
       sessionCount: acts.length,
+      plannedSessionCount: planTarget?.count || 0,
       bonusSessionCount: bonusWeekMap.get(wKey) || 0
     };
   });
@@ -447,7 +481,22 @@ export function computeFullStatsReport(
 
   const curMondayKey = getMondayWeekKey(formatDateKey(asOfDate));
 
-  if (weeklyTrend.length >= 2) {
+  if (scope.startsWith('week:')) {
+    const mondayKey = scope.replace('week:', '');
+    const planTarget = plannedWeekMap.get(mondayKey);
+    const plannedMins = planTarget?.minutes || 0;
+    const dDate = new Date(mondayKey + 'T12:00:00');
+    const wLabel = `Semaine du ${dDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`;
+
+    if (plannedMins > 0) {
+      const compliancePct = Math.round((totalDurationMinutes / plannedMins) * 100);
+      weeklyProgressionPct = compliancePct;
+      progressionStatus = compliancePct >= 85 ? 'SAFE_PROGRESSION' : (compliancePct >= 50 ? 'RECOVERY_MAINTENANCE' : 'STARTING');
+      progressionComparisonText = `${wLabel} : ${formatMinutes(totalDurationMinutes)} réalisées sur ${formatMinutes(plannedMins)} prescrites (${compliancePct}% de conformité du volume).`;
+    } else {
+      progressionComparisonText = `${wLabel} : ${formatMinutes(totalDurationMinutes)} réalisées sur ${totalSessionsCount} séance(s).`;
+    }
+  } else if (weeklyTrend.length >= 2) {
     const curW = weeklyTrend[weeklyTrend.length - 1];
     const prevW = weeklyTrend[weeklyTrend.length - 2];
     const isCurWeekInProgress = curW.weekKey === curMondayKey;
@@ -767,6 +816,8 @@ export function computeFullStatsReport(
       comparisonBaselineText = `FC moyenne actuelle : ${currentAvgHeartRate} bpm sur la semaine active.`;
       hrSummaryText = `FC moyenne de reprise : ${currentAvgHeartRate} bpm. Poursuivez l'enregistrement pour mesurer la baisse au fil des semaines.`;
     }
+  }
+
   let scopedHrSum = 0;
   let scopedHrDuration = 0;
   for (const a of activeActivities) {
@@ -791,14 +842,16 @@ export function computeFullStatsReport(
   };
 
   // Training Load & Fatigue (CTL / ATL / TSB / ACWR)
+  // MUST use full activity history (rawList) to compute Banister fitness & fatigue over 90 days,
+  // preventing cold-start zero base when plan starts.
   const trainingLoadDays = scope === '4w' ? 28 : (scope === '12w' ? 84 : 90);
-  const trainingLoad = computeTrainingLoadStats(activeActivities, asOfDate, trainingLoadDays);
+  const trainingLoad = computeTrainingLoadStats(rawList, asOfDate, trainingLoadDays);
 
   // Trail-specific metrics (D-, VAM, GAP)
   const trailSpecific = computeTrailSpecificStats(runActivities);
 
-  // Dynamic QMT-80 Race Time Predictor
-  const qmtPrediction = calculateQmtRacePrediction(running, strength, heartRate, global, trainingLoad);
+  // Dynamic QMT-80 Race Time Predictor (incorporates GAP & trail specific terrain)
+  const qmtPrediction = calculateQmtRacePrediction(running, strength, heartRate, global, trainingLoad, trailSpecific);
 
   return {
     scope,
@@ -890,25 +943,40 @@ export function computeTrainingLoadStats(
   }
 
   let chronicSum = 0;
+  let activeDaysInLast28 = 0;
   for (let i = 0; i < 28; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
-    chronicSum += (dailyLoads[formatDateKey(d)] || 0);
+    const dLoad = dailyLoads[formatDateKey(d)] || 0;
+    chronicSum += dLoad;
+    if (dLoad > 0) activeDaysInLast28++;
   }
   const chronicWeeklyAvg = Math.max(15, Math.round(chronicSum / 4));
   const acwrRatio = Math.round((acuteSum / chronicWeeklyAvg) * 100) / 100;
 
+  // Detect calibration/cold-start: when chronic history has very few recorded workout days
+  const isCalibrating = activeDaysInLast28 < 6 && acuteSum > 0;
+
   let acwrStatus: TrainingLoadStats['acwrStatus'] = 'OPTIMAL';
   let acwrLabel = 'Zone Optimale (0.8 - 1.3) : Progression saine et risque de blessure minimal.';
-  if (acwrRatio < 0.8) {
+  let acwrActionAdvice = 'Charge parfaitement assimilée. Poursuivez sur cette régularité.';
+
+  if (isCalibrating && acwrRatio > 1.4) {
+    acwrStatus = 'CALIBRATING';
+    acwrLabel = 'Reprise / Calibration : Données chroniques (28j) en cours d\'accumulation suite à la reprise.';
+    acwrActionAdvice = 'Privilégiez 80% de votre volume en endurance fondamentale (Zone 2) et veillez à vos jours de repos.';
+  } else if (acwrRatio < 0.8) {
     acwrStatus = 'UNDERLOAD';
-    acwrLabel = 'Sous-charge (< 0.8) : Stimulus insuffisant pour la progression de la condition physique.';
+    acwrLabel = 'Sous-charge (< 0.8) : Stimulus allégé ou période de récupération active.';
+    acwrActionAdvice = 'Profitez de la fraîcheur musculaire pour le renforcement et la mobilité.';
   } else if (acwrRatio > 1.5) {
     acwrStatus = 'DANGER_HIGH_RISK';
-    acwrLabel = 'Zone Critique (> 1.5) : Augmentation trop brutale de la charge. Risque élevé de blessure.';
+    acwrLabel = 'Zone Critique (> 1.5) : Augmentation rapide du volume récent (+50% vs moyenne sur 4 semaines).';
+    acwrActionAdvice = 'Évitez d\'ajouter des séances intenses non prévues. Priorité au sommeil et à l\'hydratation.';
   } else if (acwrRatio > 1.3) {
     acwrStatus = 'MODERATE_RISK';
-    acwrLabel = 'Zone d\'Attention (1.3 - 1.5) : Pic de charge modéré. Surveillez les courbatures.';
+    acwrLabel = 'Zone d\'Attention (1.3 - 1.5) : Montée de charge soutenue. Surveillez la fatigue.';
+    acwrActionAdvice = 'Maintenez les allures d\'endurance sans forcer et surveillez les courbatures.';
   }
 
   let formStatus: TrainingLoadStats['formStatus'] = 'OPTIMAL_BUILD';
@@ -927,6 +995,16 @@ export function computeTrainingLoadStats(
     formLabel = 'Fatigue productive accumulée (Bloc en cours)';
   }
 
+  const acwrStatusLabel = acwrStatus === 'OPTIMAL'
+    ? 'Sweet Spot Optimal'
+    : (acwrStatus === 'CALIBRATING'
+      ? 'Calibration (Reprise)'
+      : (acwrStatus === 'UNDERLOAD'
+        ? 'Sous-charge'
+        : (acwrStatus === 'DANGER_HIGH_RISK'
+          ? 'Pic de Charge Élevé'
+          : 'Charge Soutenue')));
+
   return {
     currentCtl,
     currentAtl,
@@ -935,7 +1013,10 @@ export function computeTrainingLoadStats(
     formLabel,
     acwrRatio,
     acwrStatus,
+    acwrStatusLabel,
     acwrLabel,
+    acwrActionAdvice,
+    isCalibrating,
     acuteLoad7d: acuteSum,
     chronicLoad28dWeeklyAvg: chronicWeeklyAvg,
     fitnessTrend
@@ -1020,7 +1101,8 @@ export function calculateQmtRacePrediction(
   strength: StrengthStats,
   heartRate: HeartRateStats,
   global: GlobalStats,
-  trainingLoad?: TrainingLoadStats
+  trainingLoad?: TrainingLoadStats,
+  trailSpecific?: TrailSpecificStats
 ): QmtRacePrediction {
   const officialDistanceKm = 77;
   const officialElevationGainM = 3370;
@@ -1030,8 +1112,11 @@ export function calculateQmtRacePrediction(
   let basePredictionMin = 690;
   const baselinePredictedMinutes = 702; // 11h42 au lancement du plan le 1er sept. 2026
 
-  // 1. Aerobic Pace Factor
-  const paceSec = parsePaceStringToSeconds(running.avgPaceMinKm) || (5 * 60 + 30);
+  // 1. Aerobic Pace Factor (Adaptive Grade-Adjusted Pace for mountain terrain)
+  const rawPaceSec = parsePaceStringToSeconds(running.avgPaceMinKm) || (5 * 60 + 30);
+  const gapPaceSec = parsePaceStringToSeconds(trailSpecific?.gradeAdjustedPaceMinKm);
+  // When running on mountain trails (density >= 25 m/km), use GAP to avoid penalizing technical climbs
+  const paceSec = (running.elevationDensityMPerKm >= 25 && gapPaceSec) ? gapPaceSec : rawPaceSec;
   let aerobicPaceScore = 70;
 
   if (paceSec < 5 * 60) {
@@ -1040,7 +1125,7 @@ export function calculateQmtRacePrediction(
   } else if (paceSec < 5 * 60 + 45) {
     basePredictionMin -= 20;
     aerobicPaceScore = 80;
-  } else if (paceSec > 6 * 60 + 30) {
+  } else if (paceSec > 6 * 60 + 30 && running.elevationDensityMPerKm < 35) {
     basePredictionMin += 35;
     aerobicPaceScore = 55;
   }

@@ -414,5 +414,57 @@ describe('statsEngine unit tests', () => {
     expect(filteredReport.global.excludedBonusCount).toBe(1);
     expect(filteredReport.global.isFilteringBonuses).toBe(true);
   });
+
+  it('preserves historical July/August training in CTL and ACWR even when scope is plan', () => {
+    const historicalAndCurrent: GarminActivity[] = [
+      {
+        activityId: 'august-run-1',
+        activityName: 'Sortie d\'août',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-08-15T08:00:00',
+        durationMinutes: 60,
+        trainingLoad: 80,
+        distanceKm: 10,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'august-run-2',
+        activityName: 'Sortie d\'août 2',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-08-22T08:00:00',
+        durationMinutes: 70,
+        trainingLoad: 95,
+        distanceKm: 11,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'sept-run-1',
+        activityName: 'Course début septembre',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-02T08:00:00',
+        durationMinutes: 50,
+        trainingLoad: 70,
+        distanceKm: 8,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const report = computeFullStatsReport(
+      historicalAndCurrent,
+      [],
+      [],
+      'plan',
+      new Date('2026-09-07T12:00:00')
+    );
+
+    // Global volume only counts plan activities (September)
+    expect(report.global.totalSessionsCount).toBe(1);
+    expect(report.running.totalDistanceKm).toBe(8);
+
+    // BUT physiological load includes August activities in the 90-day window!
+    expect(report.trainingLoad.currentCtl).toBeGreaterThan(0);
+    expect(report.trainingLoad.chronicLoad28dWeeklyAvg).toBeGreaterThan(15);
+    expect(report.trainingLoad.acwrActionAdvice).toBeDefined();
+  });
 });
 

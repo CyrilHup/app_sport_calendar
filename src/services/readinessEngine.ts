@@ -48,7 +48,7 @@ export function getLatestWellnessData(): GarminWellnessData | null {
   return history[dates[dates.length - 1]];
 }
 
-export type ReadinessStatus = 'OPTIMAL' | 'MODERATE' | 'LOW';
+export type ReadinessStatus = 'OPTIMAL' | 'MODERATE' | 'LOW' | 'COMPLETED';
 
 export interface ReadinessEvaluation {
   score: number; // 0 to 100
@@ -58,6 +58,9 @@ export interface ReadinessEvaluation {
   badgeColorHex: string;
   headline: string;
   summary: string;
+  isCompleted?: boolean;
+  completedActivitiesCount?: number;
+  intradayLoad?: number;
   factors: {
     sleepScore: number; // 0-100
     sleepDurationHours: number;
@@ -71,13 +74,37 @@ export interface ReadinessEvaluation {
 /**
  * Computes an athlete's physiological readiness score (0-100)
  * fusing Sleep (35%), Overnight HRV (40%), Resting HR (15%) and subjective stability (10%).
- * If Garmin native trainingReadinessScore is available, it calibrates with it.
+ * Dynamically adjusts for same-day activities and workout completion.
  */
 export function calculateReadinessScore(
   wellness: GarminWellnessData | null,
-  baselineRhr: number = 48
+  baselineRhr: number = 48,
+  todayActivities: Array<{ durationMinutes?: number; trainingLoad?: number; activityName?: string }> = [],
+  isTodaySessionCompleted: boolean = false
 ): ReadinessEvaluation {
   if (!wellness) {
+    if (isTodaySessionCompleted) {
+      return {
+        score: 85,
+        status: 'COMPLETED',
+        statusLabel: 'Séance Réalisée (Récupération)',
+        badgeEmoji: '🏁',
+        badgeColorHex: '#38bdf8',
+        headline: 'Séance Validée : Assimilation en Cours',
+        summary: 'Entraînement du jour terminé et synchronisé. Fenêtre de récupération active.',
+        isCompleted: true,
+        completedActivitiesCount: Math.max(1, todayActivities.length),
+        factors: {
+          sleepScore: 80,
+          sleepDurationHours: 7.5,
+          hrvScore: 80,
+          hrvStatus: 'BALANCED',
+          rhrDeltaBpm: 0,
+          rhrBpm: baselineRhr
+        }
+      };
+    }
+
     // Default neutral healthy baseline when no sync has occurred today yet
     return {
       score: 78,
@@ -165,6 +192,45 @@ export function calculateReadinessScore(
   // Bound to 1 - 100
   compositeScore = Math.max(5, Math.min(100, compositeScore));
 
+  // 4. Intraday Activity Modulation
+  const todayTotalMins = todayActivities.reduce((acc, a) => acc + (a.durationMinutes || 0), 0);
+  const todayTotalLoad = todayActivities.reduce((acc, a) => acc + (a.trainingLoad || Math.round((a.durationMinutes || 0) * 0.8)), 0);
+
+  // Case A: The prescribed workout is already completed today!
+  if (isTodaySessionCompleted) {
+    return {
+      score: compositeScore,
+      status: 'COMPLETED',
+      statusLabel: 'Séance Réalisée (Récupération)',
+      badgeEmoji: '🏁',
+      badgeColorHex: '#38bdf8',
+      headline: 'Séance Validée : Assimilation en Cours',
+      summary: `Entraînement complété aujourd'hui (${todayTotalMins > 0 ? todayTotalMins + ' min' : 'validé sur Garmin'}). Fenêtre de récupération active : reconstituez les réserves hydriques et glycogéniques.`,
+      isCompleted: true,
+      completedActivitiesCount: Math.max(1, todayActivities.length),
+      intradayLoad: todayTotalLoad,
+      factors: {
+        sleepScore,
+        sleepDurationHours: Math.round(sleepDurationHours * 10) / 10,
+        hrvScore,
+        hrvStatus,
+        rhrDeltaBpm,
+        rhrBpm: currentRhr
+      }
+    };
+  }
+
+  // Case B: Activities performed earlier today without yet completing the main prescribed workout
+  if (todayActivities.length > 0 && todayTotalMins >= 20) {
+    let fatiguePenalty = 10;
+    if (todayTotalMins >= 60 || todayTotalLoad >= 100) {
+      fatiguePenalty = 25;
+    } else if (todayTotalMins >= 40 || todayTotalLoad >= 60) {
+      fatiguePenalty = 18;
+    }
+    compositeScore = Math.max(15, compositeScore - fatiguePenalty);
+  }
+
   let status: ReadinessStatus = 'OPTIMAL';
   let statusLabel = 'Prêt pour l\'intensité';
   let badgeEmoji = '🟢';
@@ -188,6 +254,11 @@ export function calculateReadinessScore(
     summary = `Niveau de fraîcheur intermédiaire (${compositeScore}/100). Vous pouvez vous entraîner, mais évitez de pousser dans les zones maximales (Z5). Privilégiez l'endurance fondamentale ou le renforcement sans échec musculaire.`;
   }
 
+  // If activities were already performed earlier today, mention it clearly in the summary
+  if (todayActivities.length > 0 && todayTotalMins >= 20) {
+    summary += ` ⚠️ Activité préalable enregistrée ce matin (${todayTotalMins} min) : réserves partiellement entamées pour la séance du soir.`;
+  }
+
   return {
     score: compositeScore,
     status,
@@ -196,6 +267,9 @@ export function calculateReadinessScore(
     badgeColorHex,
     headline,
     summary,
+    isCompleted: false,
+    completedActivitiesCount: todayActivities.length,
+    intradayLoad: todayTotalLoad,
     factors: {
       sleepScore,
       sleepDurationHours: Math.round(sleepDurationHours * 10) / 10,
@@ -220,11 +294,22 @@ export interface ProactivePlanRecommendation {
 /**
  * Evaluates whether today's planned session should be proactively adapted
  * when Garmin reveals low readiness or severe nocturnal autonomic stress.
+ * If the session is already completed or readiness status is COMPLETED, no adaptation alert is generated.
  */
 export function getProactivePlanRecommendation(
   readiness: ReadinessEvaluation,
-  todayEvent?: CalendarEvent | null
+  todayEvent?: CalendarEvent | null,
+  isCompleted: boolean = false
 ): ProactivePlanRecommendation {
+  // If the session has already been executed, DO NOT ask the user to postpone or lighten it!
+  if (isCompleted || readiness.status === 'COMPLETED') {
+    return {
+      shouldAdapt: false,
+      actionType: 'NONE',
+      recommendationText: 'Séance du jour déjà exécutée et validée sur Garmin Connect. Phase de récupération en cours.'
+    };
+  }
+
   if (!todayEvent || todayEvent.category !== 'sport' || readiness.status === 'OPTIMAL') {
     return {
       shouldAdapt: false,

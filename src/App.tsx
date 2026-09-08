@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CalendarEvent, DailySchedule, PeriodizationContext, WorkoutPostponeOverride } from './types/calendar';
 import { GarminActivity, GarminSyncState, ActivityComparison } from './types/garmin';
 import { Header } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { CalendarView } from './components/CalendarView';
 import { ComparisonDashboard } from './components/ComparisonDashboard';
 import { AccountModal, AccountModalTab } from './components/AccountModal';
@@ -360,40 +361,11 @@ export const App: React.FC = () => {
   );
 
   return (
-    <div className="app-container">
-      {/* Spectator Mode Banner if accessing via public friend link */}
-      {spectatorData && (
-        <div
-          style={{
-            background: 'linear-gradient(90deg, rgba(255, 87, 34, 0.15), rgba(245, 158, 11, 0.15))',
-            border: '1px solid rgba(255, 87, 34, 0.35)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '10px 16px',
-            marginBottom: '14px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            fontSize: '0.82rem'
-          }}
-        >
-          <div>
-            👁️ <strong>Mode Spectateur :</strong> Vous suivez la préparation QMT-80 de{' '}
-            <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{spectatorData.profile.displayName}</span>
-          </div>
-          <button
-            className="btn-secondary"
-            style={{ fontSize: '0.74rem', padding: '4px 10px' }}
-            onClick={() => {
-              window.location.href = window.location.origin;
-            }}
-          >
-            Quitter la vue spectateur
-          </button>
-        </div>
-      )}
-
-      {/* Top Header with Fused Telemetry HUD */}
-      <Header
+    <div className="app-shell">
+      {/* Desktop Left Sidebar */}
+      <Sidebar
+        currentTab={activeTab}
+        onChangeTab={(tab) => setActiveTab(tab)}
         periodContext={currentPeriodContext}
         garminState={garminState}
         weeklyStats={weeklyStats}
@@ -402,56 +374,60 @@ export const App: React.FC = () => {
         onRefreshAll={autoRechargeAll}
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
-        onSelectPeriodizationTab={() => setActiveTab('periodization')}
         userDisplayName={profile?.displayName}
         userAvatarUrl={profile?.avatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture}
         isLoggedIn={Boolean(user)}
       />
 
-      {/* Navigation Tabs (Desktop) */}
-      <div className="nav-tabs desktop-only" style={{ marginBottom: '14px' }}>
-        <button
-          className={`nav-tab-btn ${activeTab === 'calendar' ? 'active' : ''}`}
-          onClick={() => setActiveTab('calendar')}
-        >
-          <Calendar size={15} /> Planning
-        </button>
-
-        <button
-          className={`nav-tab-btn ${activeTab === 'compare' ? 'active' : ''}`}
-          onClick={() => setActiveTab('compare')}
-        >
-          <Activity size={15} /> Télémétrie Garmin
-          {comparisons.length > 0 && (
-            <span
-              style={{
-                fontSize: '0.68rem',
-                padding: '1px 6px',
-                borderRadius: 9999,
-                background: 'var(--primary-subtle)',
-                color: 'var(--primary)',
-                fontWeight: 700
+      {/* Main Content Area */}
+      <div className="app-main-content">
+        {/* Spectator Mode Banner if accessing via public friend link */}
+        {spectatorData && (
+          <div
+            style={{
+              background: 'linear-gradient(90deg, rgba(255, 87, 34, 0.15), rgba(245, 158, 11, 0.15))',
+              border: '1px solid rgba(255, 87, 34, 0.35)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '10px 16px',
+              marginBottom: '14px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: '0.82rem'
+            }}
+          >
+            <div>
+              👁️ <strong>Mode Spectateur :</strong> Vous suivez la préparation QMT-80 de{' '}
+              <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{spectatorData.profile.displayName}</span>
+            </div>
+            <button
+              className="btn-secondary"
+              style={{ fontSize: '0.74rem', padding: '4px 10px' }}
+              onClick={() => {
+                window.location.href = window.location.origin;
               }}
             >
-              {comparisons.length}
-            </span>
-          )}
-        </button>
+              Quitter la vue spectateur
+            </button>
+          </div>
+        )}
 
-        <button
-          className={`nav-tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
-          onClick={() => setActiveTab('stats')}
-        >
-          <BarChart3 size={15} /> Statistiques
-        </button>
-
-        <button
-          className={`nav-tab-btn ${activeTab === 'periodization' ? 'active' : ''}`}
-          onClick={() => setActiveTab('periodization')}
-        >
-          <TrendingUp size={15} /> Plan QMT-80
-        </button>
-      </div>
+        {/* Top Header */}
+        <Header
+          currentTab={activeTab}
+          periodContext={currentPeriodContext}
+          garminState={garminState}
+          weeklyStats={weeklyStats}
+          comparisons={comparisons}
+          onOpenAccountModal={handleOpenAccountModal}
+          onRefreshAll={autoRechargeAll}
+          isRecharging={isRecharging}
+          lastSyncTime={lastSyncTime}
+          onSelectPeriodizationTab={() => setActiveTab('periodization')}
+          userDisplayName={profile?.displayName}
+          userAvatarUrl={profile?.avatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture}
+          isLoggedIn={Boolean(user)}
+        />
 
       {/* Main Tab Content */}
       {activeTab === 'calendar' && (
@@ -501,19 +477,20 @@ export const App: React.FC = () => {
         onChangeTab={tab => setActiveTab(tab)}
       />
 
-      {/* Unified Athlete Hub Modal */}
-      <AccountModal
-        isOpen={accountModal.isOpen}
-        onClose={() => setAccountModal(prev => ({ ...prev, isOpen: false }))}
-        initialTab={accountModal.tab}
-        garminState={garminState}
-        onUpdateGarminState={handleUpdateGarminState}
-        onActivitiesSynced={handleActivitiesSynced}
-        calendarEvents={allEvents}
-        onRefreshAll={autoRechargeAll}
-        isRecharging={isRecharging}
-        lastSyncTime={lastSyncTime}
-      />
+        {/* Unified Athlete Hub Modal */}
+        <AccountModal
+          isOpen={accountModal.isOpen}
+          onClose={() => setAccountModal(prev => ({ ...prev, isOpen: false }))}
+          initialTab={accountModal.tab}
+          garminState={garminState}
+          onUpdateGarminState={handleUpdateGarminState}
+          onActivitiesSynced={handleActivitiesSynced}
+          calendarEvents={allEvents}
+          onRefreshAll={autoRechargeAll}
+          isRecharging={isRecharging}
+          lastSyncTime={lastSyncTime}
+        />
+      </div>
     </div>
   );
 };

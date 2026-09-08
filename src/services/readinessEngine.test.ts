@@ -72,4 +72,61 @@ describe('readinessEngine', () => {
     expect(res.score).toBeGreaterThanOrEqual(80);
     expect(res.status).toBe('OPTIMAL');
   });
+
+  it('should switch to COMPLETED status and suppress adaptation alerts when session is completed', () => {
+    const poorWellness: GarminWellnessData = {
+      date: '2026-09-07',
+      sleep: { score: 42, totalMinutes: 290 },
+      hrv: { status: 'POOR', lastNightAvg: 28, weeklyAvg: 45 },
+      restingHeartRate: 56,
+      syncedAt: new Date().toISOString()
+    };
+
+    const res = calculateReadinessScore(poorWellness, 48, [{ durationMinutes: 50, trainingLoad: 85 }], true);
+    expect(res.status).toBe('COMPLETED');
+    expect(res.isCompleted).toBe(true);
+    expect(res.badgeEmoji).toBe('🏁');
+
+    const intenseEvent: CalendarEvent = {
+      id: 'plan-tue',
+      title: 'Trail: Hill Repeats D+',
+      startDate: '2026-09-07T18:00:00',
+      endDate: '2026-09-07T19:15:00',
+      durationMinutes: 75,
+      category: 'sport',
+      sportType: 'TRAIL_INTENSE',
+      location: 'Mont-Royal',
+      description: '',
+      colorId: '1',
+      colorHex: '#ff5722',
+      emoji: '⚡'
+    };
+
+    // Even if initial readiness was low, proactive recommendation should NOT adapt if already completed
+    const rec = getProactivePlanRecommendation(res, intenseEvent, true);
+    expect(rec.shouldAdapt).toBe(false);
+    expect(rec.actionType).toBe('NONE');
+    expect(rec.recommendationText).toContain('déjà exécutée');
+  });
+
+  it('should dynamically deduct residual fatigue when intraday activities were logged earlier', () => {
+    const baselineWellness: GarminWellnessData = {
+      date: '2026-09-07',
+      sleep: { score: 85, totalMinutes: 480 },
+      hrv: { status: 'BALANCED', lastNightAvg: 50, weeklyAvg: 48 },
+      restingHeartRate: 48,
+      syncedAt: new Date().toISOString()
+    };
+
+    const morningScore = calculateReadinessScore(baselineWellness, 48, [], false);
+    const afternoonScore = calculateReadinessScore(
+      baselineWellness,
+      48,
+      [{ durationMinutes: 55, trainingLoad: 75, activityName: 'Footing Matinal' }],
+      false
+    );
+
+    expect(afternoonScore.score).toBeLessThan(morningScore.score);
+    expect(afternoonScore.summary).toContain('Activité préalable');
+  });
 });
