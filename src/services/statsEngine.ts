@@ -160,6 +160,18 @@ export interface FitnessDayPoint {
   dailyLoad: number;
 }
 
+export interface RecentSessionLoadItem {
+  id: string;
+  date: string;
+  name: string;
+  durationMinutes: number;
+  sportType: string;
+  trimp: number;
+  isMechanicalImpact: boolean;
+  categoryLabel: string;
+  formulaText: string;
+}
+
 export interface TrainingLoadStats {
   currentCtl: number;
   currentAtl: number;
@@ -174,6 +186,7 @@ export interface TrainingLoadStats {
   isCalibrating?: boolean;
   acuteLoad7d: number;
   chronicLoad28dWeeklyAvg: number;
+  totalTrailChronicLoad28d: number;
   fitnessTrend: FitnessDayPoint[];
   trailAcwrRatio: number;
   trailAcuteLoad7d: number;
@@ -182,6 +195,7 @@ export interface TrainingLoadStats {
   calisthenicsAcuteLoad7d: number;
   calisthenicsSessionsCount7d: number;
   totalSystemicAcuteLoad7d: number;
+  recentSessions7d: RecentSessionLoadItem[];
 }
 
 export interface TrailSpecificStats {
@@ -929,8 +943,12 @@ export function calculateSessionTrimp(
   trimp: number;
   isMechanicalImpact: boolean;
   factor: number;
+  factorLabel: string;
+  baseRate: number;
+  ratePerMin: number;
   categoryLabel: string;
   formulaText: string;
+  details: string;
 } {
   const dur = Math.max(0, durationMinutes || 0);
   const actType = String(typeOrSportType || '').toUpperCase();
@@ -966,37 +984,52 @@ export function calculateSessionTrimp(
       trimp: Math.round(garminLoad),
       isMechanicalImpact: isImpact,
       factor: 1.0,
+      factorLabel: 'Charge réelle Garmin (EPOC)',
+      baseRate: Math.round((garminLoad / Math.max(1, durationMinutes)) * 100) / 100,
+      ratePerMin: Math.round((garminLoad / Math.max(1, durationMinutes)) * 100) / 100,
       categoryLabel: isImpact ? 'Impact Trail & Course' : (isCalisthenics ? 'Calisthénie (Sans impact)' : 'Activité générale'),
-      formulaText: `Charge EPOC Garmin : ${Math.round(garminLoad)} TRIMP`
+      formulaText: `Charge EPOC Garmin : ${Math.round(garminLoad)} TRIMP`,
+      details: 'Mesuré directement via le capteur cardiofréquencemètre et la consommation excessive d’oxygène post-exercice (EPOC) de la montre Garmin.'
     };
   }
 
   let factor = 1.0;
+  let factorLabel = 'Endurance générale (×1.0)';
   let categoryLabel = 'Endurance générale';
 
   if (actType === 'TRAIL_RUNNING' || actType === 'TRAIL_INTENSE' || actType === 'TRAIL_LONG' || actName.includes('trail') || actName.includes('côtes')) {
     factor = 1.35;
+    factorLabel = 'Trail D+ & Côtes (×1.35)';
     categoryLabel = 'Trail & Côtes (Impact excentrique élevé)';
   } else if (actType === 'RUNNING' || actType === 'RUN_EASY' || actType === 'RUN_TEMPO' || actName.includes('footing') || actName.includes('course')) {
     factor = 1.15;
+    factorLabel = 'Course sur plat (×1.15)';
     categoryLabel = 'Course sur plat (Impact modéré)';
   } else if (isCalisthenics) {
     factor = 0.85;
+    factorLabel = 'Calisthénie & Force (×0.85)';
     categoryLabel = 'Calisthénie & Force (Zéro onde de choc articulaire)';
   } else {
     factor = 0.75;
+    factorLabel = 'Récupération & Mobilité (×0.75)';
     categoryLabel = 'Récupération active & Mobilité';
   }
 
-  const trimp = Math.round(dur * factor * 0.8);
+  const baseRate = 0.8; // 0.80 TRIMP/min = référence aérobie Banister (Zone 2 douce = ~48 TRIMP/h)
+  const ratePerMin = Math.round(baseRate * factor * 100) / 100; // ex: 0.8 * 1.15 = 0.92 TRIMP/min
+  const trimp = Math.round(dur * ratePerMin);
   const isMechanicalImpact = isTrailOrRunning && !isCalisthenics;
 
   return {
     trimp,
     isMechanicalImpact,
     factor,
+    factorLabel,
+    baseRate,
+    ratePerMin,
     categoryLabel,
-    formulaText: `${dur} min × facteur ${factor} × 0.8 = ${trimp} TRIMP`
+    formulaText: `${dur} min × ${ratePerMin} TRIMP/min = ${trimp} TRIMP`,
+    details: `Base aérobie Banister Z2 (${baseRate} TRIMP/min) × Coeff. d'impact ${factorLabel}`
   };
 }
 
@@ -1164,6 +1197,35 @@ export function computeTrainingLoadStats(
           ? 'Pic de Charge Trail Élevé'
           : 'Charge Trail Soutenue')));
 
+  // Collect 7-day window individual sessions with their calculated TRIMP and impact category
+  const recentSessions7d: RecentSessionLoadItem[] = [];
+  const min7d = new Date(asOfDate);
+  min7d.setDate(asOfDate.getDate() - 6);
+  const min7dKey = formatDateKey(min7d);
+  const asOfDateKey = formatDateKey(asOfDate);
+
+  for (const act of activities) {
+    const dKey = act.date || (act.startTimeLocal ? getGarminLocalDateKey(act) : formatDateKey(new Date()));
+    if (dKey >= min7dKey && dKey <= asOfDateKey) {
+      const dur = act.durationMinutes || 0;
+      const actType = String(act.activityType || act.type || '');
+      const actName = String(act.name || act.activityName || 'Séance');
+      const sessionInfo = calculateSessionTrimp(dur, actType, actName, act.trainingLoad);
+      recentSessions7d.push({
+        id: act.id || `${dKey}-${actName}-${recentSessions7d.length}`,
+        date: dKey,
+        name: actName,
+        durationMinutes: dur,
+        sportType: actType,
+        trimp: sessionInfo.trimp,
+        isMechanicalImpact: sessionInfo.isMechanicalImpact,
+        categoryLabel: sessionInfo.categoryLabel,
+        formulaText: sessionInfo.formulaText
+      });
+    }
+  }
+  recentSessions7d.sort((a, b) => b.date.localeCompare(a.date));
+
   return {
     currentCtl,
     currentAtl,
@@ -1178,6 +1240,7 @@ export function computeTrainingLoadStats(
     isCalibrating,
     acuteLoad7d: trailAcuteSum,
     chronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,
+    totalTrailChronicLoad28d: trailChronicSum,
     fitnessTrend,
     trailAcwrRatio,
     trailAcuteLoad7d: trailAcuteSum,
@@ -1185,7 +1248,8 @@ export function computeTrainingLoadStats(
     trailAcwrStatus: acwrStatus,
     calisthenicsAcuteLoad7d: calisthenicsAcuteSum,
     calisthenicsSessionsCount7d,
-    totalSystemicAcuteLoad7d: totalSystemicAcuteSum
+    totalSystemicAcuteLoad7d: totalSystemicAcuteSum,
+    recentSessions7d
   };
 }
 

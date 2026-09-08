@@ -25,7 +25,7 @@ import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { formatDateKey } from '../services/icsParser';
-import { computeTrainingLoadStats } from '../services/statsEngine';
+import { computeTrainingLoadStats, calculateSessionTrimp } from '../services/statsEngine';
 import { evaluateAdaptivePlanStatus } from '../services/adaptivePlanEngine';
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
@@ -120,6 +120,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     displayedSportSessions,
     adaptiveOverrides
   );
+
+  const totalTrimpSavedByAdaptation = adaptiveStatus.recommendedActions.reduce((sum, act) => {
+    const orig = calculateSessionTrimp(act.originalDurationMinutes, act.originalTitle, act.originalTitle).trimp;
+    const adapt = calculateSessionTrimp(act.adaptedDurationMinutes, act.adaptedSportType || act.adaptedTitle, act.adaptedTitle).trimp;
+    return sum + Math.max(0, orig - adapt);
+  }, 0);
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
@@ -351,29 +357,49 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <ShieldAlert size={17} color="#ef4444" />
               <span>{adaptiveStatus.headline}</span>
             </div>
-            {onApplyAdaptivePlan && (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => onApplyAdaptivePlan(adaptiveStatus.recommendedActions)}
-                style={{
-                  fontSize: '0.74rem',
-                  padding: '5px 12px',
-                  background: 'var(--primary)',
-                  color: 'white',
-                  borderRadius: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6
-                }}
-              >
-                <Sparkles size={13} /> Appliquer l'adaptation anti-blessure
-              </button>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {totalTrimpSavedByAdaptation > 0 && (
+                <span
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.2)',
+                    border: '1px solid #10b981',
+                    color: '#34d399',
+                    borderRadius: 9999,
+                    padding: '2px 8px',
+                    fontSize: '0.72rem',
+                    fontWeight: 800
+                  }}
+                >
+                  -{totalTrimpSavedByAdaptation} TRIMP économisés
+                </span>
+              )}
+              {onApplyAdaptivePlan && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => onApplyAdaptivePlan(adaptiveStatus.recommendedActions)}
+                  style={{
+                    fontSize: '0.74rem',
+                    padding: '5px 12px',
+                    background: 'var(--primary)',
+                    color: 'white',
+                    borderRadius: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}
+                >
+                  <Sparkles size={13} /> Appliquer l'adaptation anti-blessure
+                </button>
+              )}
+            </div>
           </div>
           <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
             {adaptiveStatus.explanation}
           </p>
+          <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '6px 10px', borderRadius: 4, fontSize: '0.73rem', color: '#93c5fd', lineHeight: 1.4 }}>
+            💡 <strong>Pourquoi cliquer ici réduit la charge ?</strong> La charge aiguë (7j) additionne directement les TRIMPs des séances de course. En allégeant la durée et le D+, vous retirez {totalTrimpSavedByAdaptation > 0 ? `${totalTrimpSavedByAdaptation} TRIMP` : 'de la charge'} directement du numérateur ACWR sans impacter significativement votre socle chronique (28j), ce qui fait replonger le ratio dans le Sweet Spot (&lt; 1.3).
+          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '2px' }}>
             {adaptiveStatus.recommendedActions.map((act, idx) => (
               <span
@@ -423,6 +449,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <AlertTriangle size={15} color="#f59e0b" />
             <span>
               <strong>{adaptiveStatus.headline} :</strong> ACWR Trail à {adaptiveStatus.trailAcwrRatio}. Calisthénie isolée ({adaptiveStatus.calisthenicsSessionsCount7d} séance(s)).
+              {totalTrimpSavedByAdaptation > 0 && ` (-${totalTrimpSavedByAdaptation} TRIMP si adapté)`}
             </span>
           </div>
           {onApplyAdaptivePlan && (
@@ -437,7 +464,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 borderColor: 'rgba(245, 158, 11, 0.4)'
               }}
             >
-              <Sparkles size={12} /> Moduler les côtes
+              <Sparkles size={12} /> Moduler les côtes (-{totalTrimpSavedByAdaptation} TRIMP)
             </button>
           )}
         </div>

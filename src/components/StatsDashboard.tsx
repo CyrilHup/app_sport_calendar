@@ -1279,7 +1279,11 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       </div>
 
       {/* Modale d'aide pédagogique sur les calculs (ACWR, Banister, AEI) */}
-      <StatsMetricModal topic={infoTopic} onClose={() => setInfoTopic(null)} />
+      <StatsMetricModal
+        topic={infoTopic}
+        trainingLoad={trainingLoad}
+        onClose={() => setInfoTopic(null)}
+      />
     </div>
   );
 };

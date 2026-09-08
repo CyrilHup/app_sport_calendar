@@ -163,7 +163,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const originalTrimpInfo = isSport && isAdapted ? calculateSessionTrimp(
     event.metadata?.originalDurationMinutes || event.durationMinutes,
-    event.metadata?.originalSportType || event.sportType,
+    (event.metadata as any)?.originalSportType || event.sportType,
     event.metadata?.originalTitle || event.title
   ) : null;
 
@@ -369,8 +369,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
                 <MapPin size={11} /> Lieu
               </span>
-              <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={event.location}>
-                {event.location}
+              <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={effectiveLocation}>
+                {effectiveLocation}
               </div>
               {event.metadata?.room ? (
                 <span style={{ fontSize: '0.72rem', color: 'var(--primary)' }}>
@@ -378,7 +378,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 </span>
               ) : isAdapted ? (
                 <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
-                  Adapté anti-blessure
+                  {isRecoveryFooting ? 'Plat sans chocs' : 'Adapté anti-blessure'}
                 </span>
               ) : null}
             </div>
@@ -389,11 +389,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
                   <Compass size={11} /> Dénivelé D+
                 </span>
-                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: (event.metadata?.targetElevationM || 0) > 0 ? 'var(--accent-green)' : 'var(--text-muted)', marginTop: 3 }}>
-                  {(event.metadata?.targetElevationM || 0) > 0 ? `+${event.metadata?.targetElevationM} m` : '0 m (Plat)'}
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: effectiveElevationM > 0 ? 'var(--accent-green)' : 'var(--text-muted)', marginTop: 3 }}>
+                  {effectiveElevationM > 0 ? `+${effectiveElevationM} m` : '0 m (Plat)'}
                 </div>
                 <span style={{ fontSize: '0.68rem', color: isAdapted ? '#38bdf8' : 'var(--text-secondary)' }}>
-                  {isAdapted ? 'D+ allégé' : ((event.metadata?.targetElevationM || 0) > 0 ? 'Ultra-Trail' : 'Récupération souple')}
+                  {isRecoveryFooting ? 'Terrain plat (sans D+)' : (isAdapted ? 'D+ allégé' : (effectiveElevationM > 0 ? 'Ultra-Trail' : 'Récupération souple'))}
                 </span>
               </div>
             )}
@@ -412,7 +412,72 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 </span>
               </div>
             )}
+
+            {/* Charge Séance (TRIMP) */}
+            {isSport && sessionTrimpInfo && (
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                  <Zap size={11} color={sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : '#a78bfa'} /> Charge Séance
+                </span>
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : '#c4b5fd', marginTop: 3 }}>
+                  {sessionTrimpInfo.trimp} TRIMP
+                </div>
+                <span style={{ fontSize: '0.68rem', color: sessionTrimpInfo.isMechanicalImpact ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
+                  {sessionTrimpInfo.isMechanicalImpact ? 'Impact Course (ACWR)' : 'Force / Zéro choc'}
+                </span>
+              </div>
+            )}
           </div>
+
+          {/* Fiche Pédagogique de la Charge Physiologique */}
+          {isSport && sessionTrimpInfo && (
+            <div
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: 'var(--radius-xs)',
+                padding: '12px 14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff' }}>
+                  <Zap size={14} color="var(--accent-orange)" />
+                  <span>COMMENT CETTE CHARGE EST CALCULÉE ET UTILISÉE ?</span>
+                </div>
+              </div>
+              {/* Décomposition Pédagogique des Coefficients */}
+              <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 6, fontSize: '0.74rem', display: 'flex', flexDirection: 'column', gap: 5, borderLeft: '3px solid var(--accent-cyan)' }}>
+                <div style={{ fontWeight: 800, color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📊 Décomposition du calcul :</span>
+                  <span style={{ fontFamily: 'monospace' }}>{event.durationMinutes} min × {sessionTrimpInfo.ratePerMin} TRIMP/min = {sessionTrimpInfo.trimp} TRIMP</span>
+                </div>
+                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  • <strong style={{ color: '#e2e8f0' }}>0.80 TRIMP/min (Modèle Banister) :</strong> Taux standard de dépense aérobie en endurance douce (~48 TRIMP pour 1 heure en Zone 2).
+                </div>
+                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  • <strong style={{ color: '#e2e8f0' }}>Facteur {sessionTrimpInfo.factor} ({sessionTrimpInfo.factorLabel}) :</strong> Majoration des contraintes mécaniques liées aux impacts répétés de la foulée au sol (+15% par rapport à une activité sans choc).
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+                  ➔ Taux net appliqué : 0.80 × {sessionTrimpInfo.factor} = {sessionTrimpInfo.ratePerMin} TRIMP / minute d'effort.
+                </div>
+              </div>
+
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {sessionTrimpInfo.isMechanicalImpact ? (
+                  <>
+                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance de <strong>{event.durationMinutes} min</strong> applique des forces de freinage excentriques répétées. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> sont directement ajoutés à votre <strong>charge aiguë (7 jours)</strong> pour surveiller le risque de blessure tendineuse (ratio ACWR de Tim Gabbett) et alimentent votre fatigue ATL dans le modèle Banister.
+                  </>
+                ) : (
+                  <>
+                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance de <strong>{event.durationMinutes} min</strong> ne génère <strong>aucune onde de choc au sol</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre fitness CTL général, mais sont <strong>totalement isolés du ratio ACWR de blessure tendineuse</strong> pour vous éviter de fausses alertes.
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* DÉROULÉ CONCRET DE LA SÉANCE : Ce que je dois faire */}
           {isSport && workoutPreview && workoutPreview.steps && workoutPreview.steps.length > 0 ? (
@@ -489,8 +554,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               {/* Règle d'or / Consignes clés directes */}
               <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <span style={{ fontWeight: 700, color: '#f59e0b' }}>⚠️ Règles clés :</span>
-                <span>• <strong>Marche active (power-hike)</strong> dès que la pente dépasse 8% pour économiser les tendons et mollets.</span>
-                <span>• Respect strict de la <strong>Zone 2</strong> pour favoriser la filière lipidique sans stress lactique.</span>
+                {isRecoveryFooting ? (
+                  <>
+                    <span>• <strong>Course 100% sur terrain plat ou herbeux souple</strong> : aucun dénivelé, aucune côte pour reposer tendons et genoux.</span>
+                    <span>• <strong>Allure de récupération douce</strong> : rester strictement sous 142 bpm (Zone 1/2) en aisance respiratoire totale.</span>
+                  </>
+                ) : (
+                  <>
+                    <span>• <strong>Marche active (power-hike)</strong> dès que la pente dépasse 8% pour économiser les tendons et mollets.</span>
+                    <span>• Respect strict de la <strong>Zone 2</strong> pour favoriser la filière lipidique sans stress lactique.</span>
+                  </>
+                )}
               </div>
             </div>
           ) : (
@@ -666,8 +740,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {/* Bouton Envoi Montre Garmin */}
-            {isSport && !event.metadata?.isPostponedPlaceholder && !comparison?.actualActivity && (
+            {/* Bouton Envoi Montre Garmin (Toujours accessible pour programmer ou renvoyer vers la montre) */}
+            {isSport && !event.metadata?.isPostponedPlaceholder && (
               <button
                 type="button"
                 onClick={handlePushToGarmin}
@@ -696,7 +770,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 ) : (
                   <>
                     <Watch size={14} />
-                    <span>Envoyer vers Forerunner 55</span>
+                    <span>{comparison?.actualActivity ? 'Renvoyer vers Forerunner 55' : 'Envoyer vers Forerunner 55'}</span>
                   </>
                 )}
               </button>

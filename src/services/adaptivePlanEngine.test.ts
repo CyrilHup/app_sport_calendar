@@ -90,7 +90,9 @@ describe('Adaptive Plan Engine', () => {
       trailAcwrStatus: 'OPTIMAL',
       calisthenicsAcuteLoad7d: 150,
       calisthenicsSessionsCount7d: 3,
-      totalSystemicAcuteLoad7d: 330
+      totalSystemicAcuteLoad7d: 330,
+      totalTrailChronicLoad28d: 660,
+      recentSessions7d: []
     };
 
     const status = evaluateAdaptivePlanStatus(safeTrainingLoad, mockBaseReadiness, mockWeeklySportEvents);
@@ -119,7 +121,9 @@ describe('Adaptive Plan Engine', () => {
       trailAcwrStatus: 'DANGER_HIGH_RISK',
       calisthenicsAcuteLoad7d: 150,
       calisthenicsSessionsCount7d: 3,
-      totalSystemicAcuteLoad7d: 470
+      totalSystemicAcuteLoad7d: 470,
+      totalTrailChronicLoad28d: 760,
+      recentSessions7d: []
     };
 
     const status = evaluateAdaptivePlanStatus(dangerTrainingLoad, mockBaseReadiness, mockWeeklySportEvents);

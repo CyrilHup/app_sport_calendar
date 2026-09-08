@@ -18,14 +18,17 @@ import {
   Zap
 } from 'lucide-react';
 
+import { TrainingLoadStats } from '../services/statsEngine';
+
 export type StatsMetricTopic = 'acwr' | 'banister' | 'aei' | null;
 
 interface StatsMetricModalProps {
   topic: StatsMetricTopic;
   onClose: () => void;
+  trainingLoad?: TrainingLoadStats;
 }
 
-export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClose }) => {
+export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClose, trainingLoad }) => {
   if (!topic) return null;
 
   return (
@@ -162,7 +165,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                 </p>
               </div>
 
-              {/* La formule mathématique */}
+              {/* Formule mathématique */}
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '8px' }}>
                   📐 Formule mathématique exacte :
@@ -179,22 +182,164 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                     border: '1px solid rgba(56, 189, 248, 0.2)'
                   }}
                 >
-                  ACWR = Charge Aiguë (7j d'impacts Trail) / Charge Chronique Hebdo (28j)
+                  ACWR = Charge Aiguë (7j d'impacts Course/Trail) / Charge Chronique Hebdo (28j)
                 </div>
               </div>
 
-              {/* Pourquoi modifier vos séances futures change ce ratio ? */}
-              <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
-                <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <HelpCircle size={16} color="var(--primary)" />
-                  Pourquoi modifier vos prochaines séances impacte le calcul ?
+              {/* 🔍 VOTRE CALCUL EN DIRECT (VOS VALEURS RÉELLES) */}
+              {trainingLoad && (
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.95), rgba(14, 20, 36, 0.98))',
+                    border: '1px solid rgba(56, 189, 248, 0.35)',
+                    borderRadius: '12px',
+                    padding: '16px 18px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, color: '#38bdf8', fontSize: '0.92rem' }}>
+                      <Activity size={16} />
+                      <span>VOTRE CALCUL EN DIRECT (VOS VALEURS ACTUELLES)</span>
+                    </div>
+                    <span
+                      style={{
+                        background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.2)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)'),
+                        color: trainingLoad.acwrStatus === 'OPTIMAL' ? '#34d399' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? '#f87171' : '#fbbf24'),
+                        border: `1px solid ${trainingLoad.acwrStatus === 'OPTIMAL' ? '#10b981' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? '#ef4444' : '#f59e0b')}`,
+                        padding: '2px 8px',
+                        borderRadius: 9999,
+                        fontSize: '0.74rem',
+                        fontWeight: 800
+                      }}
+                    >
+                      Ratio : {trainingLoad.trailAcwrRatio} ({trainingLoad.acwrStatusLabel || 'En suivi'})
+                    </span>
+                  </div>
+
+                  {/* Décomposition des 7 derniers jours */}
+                  <div>
+                    <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginBottom: 6, fontWeight: 700 }}>
+                      1. Décomposition de vos séances sur la fenêtre glissante de 7 jours :
+                    </div>
+                    {trainingLoad.recentSessions7d && trainingLoad.recentSessions7d.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {trainingLoad.recentSessions7d.map((sess, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              background: 'rgba(0, 0, 0, 0.35)',
+                              padding: '7px 10px',
+                              borderRadius: 6,
+                              borderLeft: sess.isMechanicalImpact ? '3px solid #38bdf8' : '3px solid #a78bfa',
+                              fontSize: '0.75rem',
+                              gap: 8,
+                              flexWrap: 'wrap'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                                {sess.date.slice(5)}
+                              </span>
+                              <strong style={{ color: '#ffffff' }}>{sess.name}</strong>
+                              <span style={{ color: 'var(--text-secondary)' }}>({sess.durationMinutes}m)</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span
+                                style={{
+                                  fontSize: '0.68rem',
+                                  padding: '1px 6px',
+                                  borderRadius: 4,
+                                  background: sess.isMechanicalImpact ? 'rgba(56, 189, 248, 0.15)' : 'rgba(167, 139, 250, 0.15)',
+                                  color: sess.isMechanicalImpact ? '#38bdf8' : '#c4b5fd',
+                                  fontWeight: 700
+                                }}
+                              >
+                                {sess.isMechanicalImpact ? 'Impact Sol (Inclus ACWR)' : 'Force / Zéro choc (Exclu)'}
+                              </span>
+                              <strong style={{ color: sess.isMechanicalImpact ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
+                                +{sess.trimp} TRIMP
+                              </strong>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        Aucune séance enregistrée sur les 7 derniers jours.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Calcul mathématique chiffré */}
+                  <div
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.45)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 8,
+                      padding: '10px 14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      fontSize: '0.78rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>• Charge Aiguë 7j (Somme des impacts course) :</span>
+                      <strong style={{ color: '#38bdf8' }}>{trainingLoad.trailAcuteLoad7d} TRIMP</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                      <span style={{ color: 'var(--text-muted)' }}>• Charge Chronique Hebdo 28j (Total 28j ÷ 4) :</span>
+                      <strong style={{ color: '#34d399' }}>{trainingLoad.trailChronicLoad28dWeeklyAvg} TRIMP / sem</strong>
+                    </div>
+                    <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '3px 0' }} />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                      <span style={{ fontWeight: 700, color: '#ffffff' }}>• Résultat du Ratio ACWR :</span>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.9rem', color: 'var(--accent-orange)' }}>
+                        {trainingLoad.trailAcuteLoad7d} ÷ {trainingLoad.trailChronicLoad28dWeeklyAvg} = {trainingLoad.trailAcwrRatio}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <p style={{ margin: '0 0 8px 0' }}>
-                  L'ACWR fonctionne en <strong>fenêtre temporelle glissante</strong>. Dès que vous planifiez ou déplacez une séance sur le calendrier, l'application projette mathématiquement la charge des 7 jours à venir.
+              )}
+
+              {/* ⚡ Pourquoi cliquer sur « Simplifier » réduit la charge ? */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.08))',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  borderRadius: '10px',
+                  padding: '14px 16px'
+                }}
+              >
+                <div style={{ fontWeight: 800, color: '#34d399', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Zap size={16} /> Pourquoi cliquer sur « Simplifier mes séances » ou « Adapter » réduit la charge ?
+                </div>
+                <p style={{ margin: '0 0 8px 0', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                  Le bouton <strong>« Simplifier » / « Appliquer l'adaptation »</strong> allège intelligemment votre programme dès qu'une surcharge ou un pic de fatigue est détecté. Voici précisément pourquoi et comment votre charge diminue mathématiquement :
                 </p>
-                <p style={{ margin: 0 }}>
-                  Cela vous permet d'<strong>anticiper un pic de charge dangereux avant même d'enfiler vos chaussures</strong>, et d'ajuster une sortie longue trop volumineuse si le ratio dépasse 1.5 !
-                </p>
+                <ol style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--text-secondary)' }}>
+                  <li>
+                    <strong style={{ color: '#ffffff' }}>1. Baisse immédiate du Numérateur (Charge Aiguë 7j) :</strong>
+                    <br />
+                    La charge aiguë additionne directement les TRIMPs des séances de course sur les 7 jours. En remplaçant par exemple une séance intense de côtes (80 min avec facteur 1.35 = <strong>86 TRIMP</strong>) par un footing doux à plat (35 min en Zone 1 avec facteur 1.15 = <strong>32 TRIMP</strong>), vous retirez immédiatement <strong>54 TRIMP</strong> du numérateur !
+                  </li>
+                  <li>
+                    <strong style={{ color: '#ffffff' }}>2. Stabilité du Dénominateur (Charge Chronique 28j) :</strong>
+                    <br />
+                    La charge chronique est la moyenne des 4 dernières semaines (28 jours). Une économie de 54 TRIMP sur une séance ne fait baisser le dénominateur que de 54 ÷ 4 = <strong>13.5 TRIMP</strong>.
+                  </li>
+                  <li>
+                    <strong style={{ color: '#ffffff' }}>3. Effet de levier immédiat sur le ratio :</strong>
+                    <br />
+                    Comme le numérateur chute 4 fois plus fort que le dénominateur, le ratio ACWR plonge instantanément (ex: de <strong>1.48</strong> en zone d'alerte vers <strong>1.18</strong> en plein <strong>Sweet Spot</strong>) ! Vos tendons récupèrent sans que votre condition physique générale ne diminue.
+                  </li>
+                </ol>
               </div>
 
               {/* Pourquoi dissocier Course vs Calisthénie / Force */}
@@ -271,6 +416,63 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                   Chaque entraînement produit simultanément deux effets physiologiques opposés : il <strong>développe votre condition physique</strong> (Fitness) mais <strong>génère de la fatigue</strong> (Fatigue). Votre forme réelle est la différence entre les deux.
                 </p>
               </div>
+
+              {/* Vos valeurs actuelles Banister */}
+              {trainingLoad && (
+                <div
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.95), rgba(14, 20, 36, 0.98))',
+                    border: '1px solid rgba(168, 85, 247, 0.3)',
+                    borderRadius: '12px',
+                    padding: '16px 18px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, color: '#c084fc', fontSize: '0.92rem' }}>
+                      <Gauge size={16} />
+                      <span>VOS VALEURS BANISTER ACTUELLES</span>
+                    </div>
+                    <span
+                      style={{
+                        background: 'rgba(168, 85, 247, 0.2)',
+                        color: '#c084fc',
+                        border: '1px solid #a855f7',
+                        padding: '2px 8px',
+                        borderRadius: 9999,
+                        fontSize: '0.74rem',
+                        fontWeight: 800
+                      }}
+                    >
+                      {trainingLoad.formLabel}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 6, borderLeft: '3px solid var(--accent-blue)' }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>🔵 CTL (Fitness 42j)</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--accent-blue)' }}>{trainingLoad.currentCtl}</div>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Fondations cardiovasculaires</span>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 6, borderLeft: '3px solid var(--accent-amber)' }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>🟠 ATL (Fatigue 7j)</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--accent-amber)' }}>{trainingLoad.currentAtl}</div>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Fatigue nerveuse & musculaire</span>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: 6, borderLeft: `3px solid ${trainingLoad.currentTsb >= 0 ? 'var(--accent-green)' : 'var(--accent-orange)'}` }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>🟢 TSB (Forme = CTL - ATL)</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.05rem', color: trainingLoad.currentTsb >= 0 ? 'var(--accent-green)' : 'var(--accent-orange)' }}>
+                        {trainingLoad.currentTsb > 0 ? `+${trainingLoad.currentTsb}` : trainingLoad.currentTsb}
+                      </div>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                        {trainingLoad.currentTsb >= 0 ? 'Fraîcheur & Prêt à performer' : 'Surcharge productive'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Les 3 piliers CTL / ATL / TSB */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
