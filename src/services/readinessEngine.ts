@@ -59,6 +59,7 @@ export interface ReadinessEvaluation {
   headline: string;
   summary: string;
   isCompleted?: boolean;
+  isDefaultBaseline?: boolean;
   completedActivitiesCount?: number;
   intradayLoad?: number;
   factors: {
@@ -73,7 +74,7 @@ export interface ReadinessEvaluation {
 
 /**
  * Computes an athlete's physiological readiness score (0-100)
- * fusing Sleep (35%), Overnight HRV (40%), Resting HR (15%) and subjective stability (10%).
+ * fusing Sleep (35%), Overnight HRV (40%) and Resting HR (25%).
  * Dynamically adjusts for same-day activities and workout completion.
  */
 export function calculateReadinessScore(
@@ -114,6 +115,7 @@ export function calculateReadinessScore(
       badgeColorHex: '#10b981',
       headline: 'Prêt pour l\'entraînement',
       summary: 'Synchronisez Garmin Connect pour afficher votre score précis basé sur le sommeil et la VFC nocturne.',
+      isDefaultBaseline: true,
       factors: {
         sleepScore: 80,
         sleepDurationHours: 7.5,

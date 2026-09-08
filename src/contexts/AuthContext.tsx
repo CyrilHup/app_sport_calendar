@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile } from '../services/supabaseClient';
-import { saveGarminCredentials } from '../services/garminService';
+import { saveGarminCredentials, loadGarminCredentials } from '../services/garminService';
 
 interface AuthContextType {
   user: User | null;
@@ -30,12 +30,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isConfigured = isSupabaseConfigured();
 
   const loadProfileForUser = async (u: User) => {
-    // 1. Auto-link Garmin credentials if stored in cloud Google account
-    if (u.user_metadata?.garmin_email && u.user_metadata?.garmin_password) {
-      saveGarminCredentials({
-        email: u.user_metadata.garmin_email,
-        password: u.user_metadata.garmin_password
-      });
+    // 1. Auto-link Garmin email if stored in cloud Google account
+    if (u.user_metadata?.garmin_email) {
+      const existing = loadGarminCredentials();
+      if (!existing?.email || existing.email !== u.user_metadata.garmin_email) {
+        saveGarminCredentials({
+          email: u.user_metadata.garmin_email,
+          password: existing?.password
+        });
+      }
     }
 
     const p = await fetchUserProfile(u.id);
@@ -161,13 +164,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return ok;
   };
 
-  const saveCloudGarminCredentials = async (email: string, pass: string): Promise<boolean> => {
+  const saveCloudGarminCredentials = async (email: string, _pass?: string): Promise<boolean> => {
     if (!isConfigured || !user) return false;
     try {
+      // Security: Only persist the account email to cloud metadata, never the plaintext password!
       const { data, error } = await supabase.auth.updateUser({
         data: {
           garmin_email: email,
-          garmin_password: pass
+          garmin_password: null
         }
       });
       if (!error && data.user) {
@@ -175,7 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return true;
       }
     } catch (e) {
-      console.warn('Failed to save Garmin credentials to cloud:', e);
+      console.warn('Failed to save Garmin email to cloud:', e);
     }
     return false;
   };

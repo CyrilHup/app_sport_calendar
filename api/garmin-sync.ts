@@ -18,7 +18,9 @@ import os from 'os';
 
 import { classifyGarminActivityType } from '../src/services/activityClassifier';
 
-const SESSION_FILE = path.join(os.tmpdir(), '.garmin_session.json');
+const SESSION_FILE = process.env.VERCEL
+  ? path.join(os.tmpdir(), '.garmin_session.json')
+  : path.resolve(process.cwd(), '.garmin_session.json');
 
 function loadCachedSession(): { username?: string; tokens?: any } | null {
   try {
@@ -41,6 +43,22 @@ function saveCachedSession(username: string, tokens: any) {
 }
 
 export default async function handler(req: any, res: any) {
+  // Polyfill response helpers for Node/Vite connect middleware
+  if (!res.status) {
+    res.status = (code: number) => { res.statusCode = code; return res; };
+  }
+  if (!res.json) {
+    res.json = (data: any) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(data));
+    };
+  }
+  if (!res.send) {
+    res.send = (data: any) => {
+      res.end(data);
+    };
+  }
+
   // CORS
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -53,6 +71,13 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
+  }
+
+  // Parse stream body for Node connect middleware if not already parsed
+  if (!req.body && req.method === 'POST') {
+    let raw = '';
+    for await (const chunk of req) raw += chunk;
+    try { req.body = JSON.parse(raw); } catch { req.body = {}; }
   }
 
   let body = req.body || {};

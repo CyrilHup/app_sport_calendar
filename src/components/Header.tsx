@@ -330,7 +330,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="telemetry-item">
               <div className="telemetry-label">
                 <span><Zap size={11} style={{ display: 'inline', marginRight: 3 }} /> Intensité Cardiaque</span>
-                <span style={{ color: 'var(--text-muted)' }}>FCmax {athleteFcMax}</span>
+                <span style={{ color: 'var(--text-muted)' }}>FCmax {GLOBAL_APP_CONFIG.ATHLETE_FC_MAX}</span>
               </div>
               <div className="telemetry-value-row">
                 <span className="telemetry-val">{weeklyStats.avgHeartRate > 0 ? weeklyStats.avgHeartRate : '--'}</span>

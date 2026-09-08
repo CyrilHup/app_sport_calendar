@@ -3,6 +3,22 @@ import { parseICSString, buildCompleteCalendar, RawIcsEvent } from '../src/servi
 import { generateICSContent } from '../src/services/googleCalendarService';
 
 export default async function handler(req: any, res: any) {
+  // Polyfill response helpers for Node/Vite connect middleware
+  if (!res.status) {
+    res.status = (code: number) => { res.statusCode = code; return res; };
+  }
+  if (!res.json) {
+    res.json = (data: any) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(data));
+    };
+  }
+  if (!res.send) {
+    res.send = (data: any) => {
+      res.end(data);
+    };
+  }
+
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
@@ -13,11 +29,16 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const requestedUrl =
-      (req.query?.url as string) ||
-      process.env.ICAL_FEED_URL ||
-      process.env.VITE_ICAL_FEED_URL ||
-      '';
+    let requestedUrl = (req.query?.url as string);
+    if (!requestedUrl && req.url && req.url.includes('?')) {
+      try {
+        const parsedUrl = new URL(req.url, 'http://localhost');
+        requestedUrl = parsedUrl.searchParams.get('url') || '';
+      } catch {}
+    }
+    if (!requestedUrl) {
+      requestedUrl = process.env.ICAL_FEED_URL || process.env.VITE_ICAL_FEED_URL || '';
+    }
 
     let rawCourses: RawIcsEvent[] = [];
     if (requestedUrl) {

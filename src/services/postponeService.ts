@@ -248,7 +248,9 @@ export function applyPostponements(
       return true;
     });
 
-    currentAllEvents.push(ghostPlaceholder, movedSportEvent, ...newTravelEvents);
+    // Note: ghostPlaceholder is intentionally kept only in schedules (for UI rendering)
+    // and excluded from allEvents (which serves as the clean calendar export feed).
+    currentAllEvents.push(movedSportEvent, ...newTravelEvents);
   }
 
   currentAllEvents.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());

@@ -15,6 +15,7 @@ import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities,
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
+import { DEFAULT_WEEKLY_TARGETS } from './services/statsEngine';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
@@ -417,8 +418,8 @@ export const App: React.FC = () => {
     comparisons,
     { start: weekStartStr, end: weekEndStr },
     {
-      plannedDurationMin: plannedDurationMin || 285,
-      plannedElevationM: plannedElevationM || 780
+      plannedDurationMin: plannedDurationMin || DEFAULT_WEEKLY_TARGETS.plannedDurationMin,
+      plannedElevationM: plannedElevationM || DEFAULT_WEEKLY_TARGETS.plannedElevationM
     }
   );
 

@@ -6,6 +6,7 @@ import {
   formatMinutes,
   TimeRangeScope,
   PLAN_START_DATE,
+  DEFAULT_WEEKLY_TARGETS,
   FitnessDayPoint
 } from '../services/statsEngine';
 import { getMondayWeekKey } from '../services/comparisonEngine';
@@ -100,8 +101,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
     const d = e.startDate.slice(0, 10);
     return d >= activeMondayKey && d <= activeSundayKey && e.category === 'sport';
   });
-  const activeWeekPlannedMin = activeWeekPlannedEvents.reduce((acc, e) => acc + e.durationMinutes, 0) || 435;
-  const activeWeekPlannedElevation = activeWeekPlannedEvents.reduce((acc, e) => acc + (e.metadata?.targetElevationM || 0), 0) || 903;
+  const activeWeekPlannedMin = activeWeekPlannedEvents.reduce((acc, e) => acc + e.durationMinutes, 0) || DEFAULT_WEEKLY_TARGETS.plannedDurationMin;
+  const activeWeekPlannedElevation = activeWeekPlannedEvents.reduce((acc, e) => acc + (e.metadata?.targetElevationM || 0), 0) || DEFAULT_WEEKLY_TARGETS.plannedElevationM;
 
   // Realized data for active week from weeklyTrend
   const activeWeekTrend = global.weeklyTrend.find(w => w.weekKey === activeMondayKey);

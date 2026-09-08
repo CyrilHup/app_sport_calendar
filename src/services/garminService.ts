@@ -26,7 +26,7 @@ export interface GarminCredentials {
 }
 
 /**
- * Saves Garmin credentials in local storage, preferences, and cookie for seamless background sync.
+ * Saves Garmin credentials in local storage and native preferences.
  */
 export function saveGarminCredentials(creds: GarminCredentials): void {
   const jsonStr = JSON.stringify(creds);
@@ -39,42 +39,27 @@ export function saveGarminCredentials(creds: GarminCredentials): void {
   try {
     Preferences.set({ key: GARMIN_CREDS_KEY, value: jsonStr }).catch(() => {});
   } catch {}
-  // Cookie fallback (365 days)
+  // Purge any legacy plaintext cookie
   try {
     if (typeof document !== 'undefined') {
-      const d = new Date();
-      d.setTime(d.getTime() + 365 * 24 * 60 * 60 * 1000);
-      document.cookie = `${encodeURIComponent(GARMIN_CREDS_KEY)}=${encodeURIComponent(jsonStr)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
+      document.cookie = `${encodeURIComponent(GARMIN_CREDS_KEY)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
     }
   } catch {}
 }
 
 /**
- * Loads saved Garmin credentials from local storage or cookie.
+ * Loads saved Garmin credentials from local storage.
  */
 export function loadGarminCredentials(): GarminCredentials | null {
   try {
     const raw = localStorage.getItem(GARMIN_CREDS_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
-  // Cookie fallback
-  try {
-    if (typeof document !== 'undefined' && document.cookie) {
-      const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(GARMIN_CREDS_KEY).replace(/[-.+*]/g, '\\$&') + '=([^;]*)'));
-      if (match && match[1]) {
-        const parsed = JSON.parse(decodeURIComponent(match[1]));
-        if (parsed?.email) {
-          try { localStorage.setItem(GARMIN_CREDS_KEY, JSON.stringify(parsed)); } catch {}
-          return parsed;
-        }
-      }
-    }
-  } catch {}
   return null;
 }
 
 /**
- * Asynchronously loads Garmin credentials, also checking native Preferences.
+ * Asynchronously loads Garmin credentials, checking native Preferences as fallback.
  */
 export async function loadGarminCredentialsAsync(): Promise<GarminCredentials | null> {
   const existing = loadGarminCredentials();
@@ -93,7 +78,7 @@ export async function loadGarminCredentialsAsync(): Promise<GarminCredentials | 
 }
 
 /**
- * Clears saved Garmin credentials across all storage layers.
+ * Clears saved Garmin credentials across storage layers.
  */
 export function clearGarminCredentials(): void {
   try {
