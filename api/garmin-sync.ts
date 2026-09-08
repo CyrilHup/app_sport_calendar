@@ -241,7 +241,7 @@ export default async function handler(req: any, res: any) {
 
       let hrvSummary: any = null;
       try {
-        const hrvRes: any = await (gc.client as any).get(`https://connectapi.garmin.com/hrv-service/hrv/daily/${todayStr}`);
+        const hrvRes: any = await (gc.client as any).get(`https://connectapi.garmin.com/hrv-service/hrv/${todayStr}`);
         if (hrvRes?.hrvSummary) {
           const hs = hrvRes.hrvSummary;
           hrvSummary = {
