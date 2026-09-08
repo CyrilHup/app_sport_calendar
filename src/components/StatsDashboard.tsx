@@ -5,12 +5,14 @@ import {
   computeFullStatsReport,
   formatMinutes,
   FitnessDayPoint,
-  WeeklyTrendPoint
+  WeeklyTrendPoint,
+  TimeRangeScope
 } from '../services/statsEngine';
 import {
   Activity,
   Award,
   BarChart3,
+  Calendar,
   Clock,
   Dumbbell,
   Flame,
@@ -41,20 +43,22 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   garminActivities,
   comparisons,
   allEvents,
-  referenceDate = new Date(),
-  onOpenGarminSync
+  referenceDate = new Date()
 }) => {
-  // Permanently use full history scope ('all') with all activities (including bonuses)
+  // Timeline scope selector: 'plan' (default 1er sept.), '4w' (28j glissants), 'all' (historique complet)
+  const [scope, setScope] = useState<TimeRangeScope>('plan');
   const [hoveredWeekKey, setHoveredWeekKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredFitnessDay, setHoveredFitnessDay] = useState<FitnessDayPoint | null>(null);
   const weeklyChartCardRef = useRef<HTMLDivElement>(null);
 
+  // Computes report for selected timeline scope.
+  // NOTE: Physiological Banister CTL/ATL/TSB & ACWR always evaluate on full 90-day history.
   const report = computeFullStatsReport(
     garminActivities,
     comparisons,
     allEvents,
-    'all',
+    scope,
     referenceDate,
     true
   );
@@ -66,23 +70,23 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
   return (
     <div className="stats-dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {/* 1. Header Épuré & Synthétique (Vue Unique Complète) */}
+      {/* 1. Header Épuré avec Sélecteur de Timeline (Plan QMT / 4 semaines / Tout) */}
       <div
         style={{
           background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.95), rgba(14, 20, 36, 0.98))',
           border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-md)',
-          padding: '18px 22px',
+          padding: '16px 22px',
           display: 'flex',
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
-          gap: '12px'
+          gap: '14px'
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
             <span
               style={{
                 background: 'var(--primary-subtle)',
@@ -100,45 +104,93 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             </span>
             <span
               style={{
-                background: 'rgba(56, 189, 248, 0.12)',
-                color: 'var(--accent-cyan)',
-                padding: '2px 8px',
+                background: scope === 'plan' ? 'rgba(16, 185, 129, 0.14)' : (scope === '4w' ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.08)'),
+                color: scope === 'plan' ? 'var(--accent-green)' : (scope === '4w' ? 'var(--accent-cyan)' : 'var(--text-secondary)'),
+                padding: '2px 9px',
                 borderRadius: '9999px',
                 fontSize: '0.72rem',
                 fontWeight: 700
               }}
             >
-              Historique Complet & Toutes Activités
+              {scope === 'plan' ? '🎯 Plan QMT actif (Depuis le 1er sept.)' : (scope === '4w' ? '📅 4 dernières semaines glissantes' : '🌐 Tout l\'historique')}
             </span>
           </div>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
             Tableau de Bord & Santé Athlétique
           </h2>
-          <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            Synthèse globale consolidée : {global.totalSessionsCount} séances réalisées ({formatMinutes(global.totalDurationMinutes)})
+          <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+            {scope === 'plan'
+              ? `Sur le plan QMT : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
+              : (scope === '4w'
+                ? `Sur les 28 derniers jours : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
+                : `Cumul historique complet : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`)}
           </p>
         </div>
 
-        {onOpenGarminSync && (
+        {/* Sélecteur de Timeline épuré (Plan / 4 semaines / Tout) */}
+        <div
+          style={{
+            display: 'inline-flex',
+            background: 'rgba(255, 255, 255, 0.04)',
+            borderRadius: 'var(--radius-sm, 6px)',
+            padding: '3px',
+            border: '1px solid var(--border-color)',
+            gap: '3px',
+            flexWrap: 'wrap'
+          }}
+        >
           <button
-            onClick={onOpenGarminSync}
+            onClick={() => setScope('plan')}
             style={{
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid var(--border-color)',
-              color: 'var(--text-secondary)',
               padding: '6px 12px',
-              borderRadius: 'var(--radius-sm)',
               fontSize: '0.76rem',
-              fontWeight: 600,
+              fontWeight: 700,
+              borderRadius: '4px',
+              border: 'none',
               cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px'
+              background: scope === 'plan' ? 'var(--primary)' : 'transparent',
+              color: scope === 'plan' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.15s ease'
             }}
+            title="Focalisé sur la préparation officielle démarrée le 1er septembre 2026"
           >
-            <Zap size={13} color="var(--primary)" /> Synchronisation Garmin
+            🎯 Plan QMT (1er sept.)
           </button>
-        )}
+          <button
+            onClick={() => setScope('4w')}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              borderRadius: '4px',
+              border: 'none',
+              cursor: 'pointer',
+              background: scope === '4w' ? 'var(--primary)' : 'transparent',
+              color: scope === '4w' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Cycle d'entraînement récent sur les 28 derniers jours"
+          >
+            📅 4 dernières sem.
+          </button>
+          <button
+            onClick={() => setScope('all')}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              borderRadius: '4px',
+              border: 'none',
+              cursor: 'pointer',
+              background: scope === 'all' ? 'var(--primary)' : 'transparent',
+              color: scope === 'all' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Historique complet des données Garmin Connect"
+          >
+            🌐 Tout l'historique
+          </button>
+        </div>
       </div>
 
       {/* 2. Le Quatuor d'Indicateurs Maîtres (Cartes Fusionnées Haute Visibilité) */}
@@ -152,7 +204,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         {/* CARTE 1: Volume Global & Répartition des Disciplines */}
         <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--primary)' }}>
           <div className="kpi-header">
-            <span className="kpi-title">Volume Total d'Entraînement</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Volume d'Entraînement</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
+                {scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique')}
+              </span>
+            </div>
             <div className="kpi-icon" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)' }}>
               <Clock size={16} />
             </div>
@@ -218,7 +275,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         {/* CARTE 2: Course à Pied & Spécificité Montagne */}
         <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-cyan)' }}>
           <div className="kpi-header">
-            <span className="kpi-title">Course à Pied & Sentiers</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Course à Pied & Sentiers</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                {scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique')}
+              </span>
+            </div>
             <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
               <Footprints size={16} />
             </div>
@@ -274,7 +336,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         {/* CARTE 3: Forme Physiologique, Charge & Santé (Banister + Cardio) */}
         <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-purple)' }}>
           <div className="kpi-header">
-            <span className="kpi-title">Forme & Charge (Banister)</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Forme & Charge (Banister)</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)', fontWeight: 700 }} title="Calculé sur l'historique complet (90 jours) pour préserver la décroissance CTL et la tolérance chronique ACWR">
+                90j continu
+              </span>
+            </div>
             <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
               <Gauge size={16} />
             </div>

@@ -496,7 +496,6 @@ export const App: React.FC = () => {
       {activeTab === 'calendar' && (
         <CalendarView
           schedules={schedules}
-          onOpenGoogleCalendar={() => handleOpenAccountModal('google')}
           referenceDateStr={formatDateKey(referenceDate)}
           onPostponeWorkout={handlePostponeWorkout}
           onCancelPostponeWorkout={handleCancelPostpone}

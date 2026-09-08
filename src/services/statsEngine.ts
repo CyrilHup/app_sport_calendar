@@ -463,7 +463,11 @@ export function computeFullStatsReport(
     }
 
     const dDate = new Date(wKey + 'T12:00:00');
-    const weekLabel = `Sem. ${dDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })}`;
+    const isDifferentYear = dDate.getFullYear() !== asOfDate.getFullYear();
+    const dateFormatted = isDifferentYear
+      ? `${dDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' })} '${String(dDate.getFullYear()).slice(-2)}`
+      : dDate.toLocaleDateString('fr-CA', { day: 'numeric', month: 'short' });
+    const weekLabel = `Sem. ${dateFormatted}`;
     const planTarget = plannedWeekMap.get(wKey);
 
     return {
@@ -889,10 +893,9 @@ export function computeFullStatsReport(
   };
 
   // Training Load & Fatigue (CTL / ATL / TSB / ACWR)
-  // MUST use full activity history (rawList) to compute Banister fitness & fatigue over 90 days,
-  // preventing cold-start zero base when plan starts.
-  const trainingLoadDays = scope === '4w' ? 28 : (scope === '12w' ? 84 : 90);
-  const trainingLoad = computeTrainingLoadStats(rawList, asOfDate, trainingLoadDays);
+  // Physiological load & ACWR must ALWAYS be evaluated on the complete 90-day history (rawList)
+  // regardless of the display timeline scope, preserving the 42-day CTL decay and 28-day chronic baseline.
+  const trainingLoad = computeTrainingLoadStats(rawList, asOfDate, 90);
 
   // Trail-specific metrics (D-, VAM, GAP)
   const trailSpecific = computeTrailSpecificStats(runActivities);

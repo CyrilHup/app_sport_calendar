@@ -9,16 +9,13 @@ import {
   MapPin,
   ListFilter,
   LayoutGrid,
-  Layers,
   Bus,
   CheckCircle2,
   ArrowRight,
   CalendarClock,
   RotateCcw,
   Calendar,
-  Watch,
   AlertTriangle,
-  Loader2,
   Sparkles,
   ShieldCheck,
   ShieldAlert
@@ -26,7 +23,6 @@ import {
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
-import { pushWeekWorkoutsToGarmin } from '../services/garminService';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { formatDateKey } from '../services/icsParser';
 import { computeTrainingLoadStats } from '../services/statsEngine';
@@ -36,7 +32,6 @@ import { GarminActivity } from '../types/garmin';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
-  onOpenGoogleCalendar?: () => void;
   referenceDateStr?: string;
   onPostponeWorkout?: (
     eventId: string,
@@ -53,12 +48,11 @@ interface CalendarViewProps {
   onRevertAdaptivePlan?: () => void;
 }
 
-type FilterCategory = 'all' | 'sport' | 'course' | 'trajet' | 'mobility';
+type FilterCategory = 'all' | 'sport' | 'course' | 'mobility';
 type ViewMode = 'day' | 'grid' | 'list';
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
   schedules,
-  onOpenGoogleCalendar,
   referenceDateStr,
   onPostponeWorkout,
   onCancelPostponeWorkout,
@@ -71,7 +65,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
-  const [isFusedMode, setIsFusedMode] = useState<boolean>(true);
   const todayKey = referenceDateStr || formatDateKey(new Date());
   const currentTodayIndex = schedules.findIndex(s => s.date === todayKey);
   const currentWeekOffset = currentTodayIndex >= 0 ? Math.floor(currentTodayIndex / 7) : 0;
@@ -82,8 +75,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [hasInitializedOffset, setHasInitializedOffset] = useState<boolean>(false);
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
-  const [isPushingWeek, setIsPushingWeek] = useState<boolean>(false);
-  const [weekPushStatus, setWeekPushStatus] = useState<{ text: string; isError: boolean } | null>(null);
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
     return currentTodayIndex >= 0 ? currentTodayIndex % 7 : 0;
   });
@@ -110,33 +101,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const readiness = calculateReadinessScore(todayWellness, undefined, todayActs, isTodaySessionCompleted);
   const todaySchedule = schedules.find(s => s.date === todayKey);
   const proactiveRec = getProactivePlanRecommendation(readiness, todaySchedule?.sportSession, isTodaySessionCompleted);
-
-  const handlePushWeekToGarmin = async () => {
-    setIsPushingWeek(true);
-    setWeekPushStatus(null);
-    triggerHapticFeedback('light');
-
-    const weekSportEvents = displayedDays
-      .map(d => d.sportSession)
-      .filter((e): e is CalendarEvent => Boolean(e));
-
-    const result = await pushWeekWorkoutsToGarmin(weekSportEvents, 'FORERUNNER_55');
-    setIsPushingWeek(false);
-
-    if (result.success) {
-      triggerHapticFeedback('success');
-      setWeekPushStatus({
-        text: `✓ ${result.pushedCount} séances de la semaine programmées avec succès sur Garmin Connect (Forerunner 55) !`,
-        isError: false
-      });
-    } else {
-      triggerHapticFeedback('warning');
-      setWeekPushStatus({
-        text: result.error || 'Erreur lors de l\'envoi de la semaine vers Garmin Connect.',
-        isError: true
-      });
-    }
-  };
 
   // Découpage en blocs de 7 jours
   const currentWeekStartIdx = weekOffset * 7;
@@ -199,11 +163,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // Compteurs pour la semaine affichée
   const currentWeekEvents = displayedDays.flatMap(d => d.events);
-  const countAll = currentWeekEvents.length;
   const countSport = currentWeekEvents.filter(e => e.category === 'sport').length;
   const countCourse = currentWeekEvents.filter(e => e.category === 'course').length;
-  const countTrajet = currentWeekEvents.filter(e => e.category === 'trajet').length;
   const countMobility = currentWeekEvents.filter(e => e.category === 'mobility').length;
+  const countAll = countSport + countCourse + countMobility;
 
   return (
     <div className="calendar-layout">
@@ -287,47 +250,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 <span className="desktop-only">Liste</span>
               </button>
             </div>
-
-            {/* Fused Cards Toggle */}
-            <button
-              type="button"
-              onClick={() => setIsFusedMode(!isFusedMode)}
-              className={`action-icon-pill ${isFusedMode ? 'active' : ''}`}
-              title={isFusedMode ? 'Mode cartes fusionnées actif (cours + trajets intégrés)' : 'Mode cartes séparées'}
-              aria-label="Mode cartes fusionnées"
-            >
-              <Layers size={13} />
-              <span className="desktop-only">{isFusedMode ? 'Fusion : OUI' : 'Séparé'}</span>
-            </button>
-
-            {/* Google Calendar Action */}
-            {/* Garmin Week Sync Button */}
-            <button
-              type="button"
-              className="action-icon-pill"
-              onClick={handlePushWeekToGarmin}
-              disabled={isPushingWeek}
-              style={{ color: '#60a5fa', borderColor: 'rgba(59, 130, 246, 0.4)' }}
-              title="Envoyer toutes les séances de cette semaine vers Garmin Connect (Forerunner 55)"
-              aria-label="Envoyer semaine vers Garmin"
-            >
-              {isPushingWeek ? <Loader2 size={13} className="spin-animation" /> : <Watch size={13} />}
-              <span className="desktop-only">Sync Garmin</span>
-            </button>
-
-            {onOpenGoogleCalendar && (
-              <button
-                type="button"
-                className="action-icon-pill"
-                onClick={onOpenGoogleCalendar}
-                style={{ color: 'var(--accent-blue)' }}
-                title="Synchroniser avec Google Agenda"
-                aria-label="Google Agenda"
-              >
-                <Calendar size={13} />
-                <span className="desktop-only">Agenda</span>
-              </button>
-            )}
           </div>
         </div>
 
@@ -371,32 +293,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           </button>
         </div>
       </div>
-
-      {/* Week Push Feedback Banner */}
-      {weekPushStatus && (
-        <div
-          style={{
-            background: weekPushStatus.isError ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-            border: `1px solid ${weekPushStatus.isError ? '#ef4444' : '#10b981'}`,
-            padding: '8px 14px',
-            borderRadius: 'var(--radius-xs)',
-            fontSize: '0.78rem',
-            color: weekPushStatus.isError ? '#f87171' : '#34d399',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '10px'
-          }}
-        >
-          <span>{weekPushStatus.text}</span>
-          <button
-            onClick={() => setWeekPushStatus(null)}
-            style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer' }}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* 🛡️ Coach Adaptatif QMT : Anti-blessure & Progression */}
       {adaptiveStatus.hasActiveAdaptations ? (
@@ -847,7 +743,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           </div>
                         )}
 
-                        {isFusedMode && (hasAller || hasRetour) && (
+                        {(hasAller || hasRetour) && (
                           <div className="journey-strip" style={{ fontSize: isSingleDayView ? '0.72rem' : '0.68rem', padding: '5px 8px' }}>
                             <Bus size={12} color="var(--text-muted)" style={{ flexShrink: 0 }} />
                             <span>
@@ -968,7 +864,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </>
               )}
 
-              {isFusedMode && mobilityEvent && filter === 'all' && (
+              {mobilityEvent && filter === 'all' && (
                 <div
                   className="mobility-daily-chip"
                   onClick={() => {
