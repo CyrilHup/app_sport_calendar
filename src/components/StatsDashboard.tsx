@@ -8,6 +8,7 @@ import {
   WeeklyTrendPoint,
   TimeRangeScope
 } from '../services/statsEngine';
+import { StatsMetricModal, StatsMetricTopic } from './StatsMetricModal';
 import {
   Activity,
   Award,
@@ -19,6 +20,7 @@ import {
   Footprints,
   Gauge,
   Heart,
+  HelpCircle,
   Layers,
   Mountain,
   Scale,
@@ -50,6 +52,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   const [hoveredWeekKey, setHoveredWeekKey] = useState<string | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredFitnessDay, setHoveredFitnessDay] = useState<FitnessDayPoint | null>(null);
+  const [infoTopic, setInfoTopic] = useState<StatsMetricTopic>(null);
   const weeklyChartCardRef = useRef<HTMLDivElement>(null);
 
   // Computes report for selected timeline scope.
@@ -266,9 +269,9 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               flexWrap: 'wrap'
             }}
           >
-            <span style={{ color: 'var(--primary)' }}>🏃 {formatMinutes(global.sportBreakdown.running.minutes)} ({global.sportBreakdown.running.pct}%)</span>
-            <span style={{ color: 'var(--accent-purple)' }}>🏋️ {formatMinutes(global.sportBreakdown.strength.minutes)} ({global.sportBreakdown.strength.pct}%)</span>
-            <span style={{ color: 'var(--accent-cyan)' }}>🚴 {formatMinutes(global.sportBreakdown.crossTraining.minutes + global.sportBreakdown.other.minutes)} ({global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%)</span>
+            <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Course : {formatMinutes(global.sportBreakdown.running.minutes)} ({global.sportBreakdown.running.pct}%)</span>
+            <span style={{ color: 'var(--accent-purple)', fontWeight: 600 }}>Force : {formatMinutes(global.sportBreakdown.strength.minutes)} ({global.sportBreakdown.strength.pct}%)</span>
+            <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>Cross : {formatMinutes(global.sportBreakdown.crossTraining.minutes + global.sportBreakdown.other.minutes)} ({global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%)</span>
           </div>
         </div>
 
@@ -327,7 +330,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             </div>
             {running.longestRun && (
               <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                📍 Max : <strong>{running.longestRun.distanceKm} km</strong> ({running.longestRun.name})
+                Max : <strong>{running.longestRun.distanceKm} km</strong> ({running.longestRun.name})
               </div>
             )}
           </div>
@@ -338,6 +341,21 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           <div className="kpi-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Forme & Charge (Banister)</span>
+              <button
+                onClick={() => setInfoTopic('banister')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '1px',
+                  display: 'inline-flex',
+                  alignItems: 'center'
+                }}
+                title="Comprendre le modèle Banister (CTL / ATL / TSB)"
+              >
+                <HelpCircle size={14} />
+              </button>
               <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)', fontWeight: 700 }} title="Calculé sur l'historique complet (90 jours) pour préserver la décroissance CTL et la tolérance chronique ACWR">
                 90j continu
               </span>
@@ -356,14 +374,17 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               TSB : <strong>{trainingLoad.currentTsb > 0 ? `+${trainingLoad.currentTsb}` : trainingLoad.currentTsb}</strong> ({trainingLoad.formLabel})
             </span>
             <span
+              onClick={() => setInfoTopic('acwr')}
               style={{
                 fontSize: '0.72rem',
                 padding: '2px 7px',
                 borderRadius: '9999px',
                 background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'rgba(56, 189, 248, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)')),
                 color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')),
-                fontWeight: 700
+                fontWeight: 700,
+                cursor: 'pointer'
               }}
+              title="Cliquer pour voir l'explication du ratio ACWR"
             >
               ACWR {trainingLoad.acwrRatio} ({trainingLoad.acwrStatusLabel})
             </span>
@@ -384,7 +405,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ color: 'var(--accent-red)' }}>
-                ❤️ FC moy. {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm
+                FC moy. {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm
               </span>
               <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
                 {running.intensityDistribution.zone2Pct}% en Zone 2
@@ -392,44 +413,61 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             </div>
             {trainingLoad.acwrActionAdvice && (
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>
-                💡 {trainingLoad.acwrActionAdvice}
+                {trainingLoad.acwrActionAdvice}
               </div>
             )}
           </div>
         </div>
 
-        {/* CARTE 4: Objectif QMT-80 (Chrono Prévisionnel) */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-orange)' }}>
+        {/* CARTE 4: Profil Cardiaque & Efficacité Aérobie (AEI) */}
+        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-green)' }}>
           <div className="kpi-header">
-            <span className="kpi-title">Chrono Estimé QMT-80 (77 km)</span>
-            <div className="kpi-icon" style={{ background: 'rgba(255, 112, 67, 0.15)', color: 'var(--accent-orange)' }}>
-              <Mountain size={16} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Efficacité Aérobie (AEI)</span>
+              <button
+                onClick={() => setInfoTopic('aei')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '1px',
+                  display: 'inline-flex',
+                  alignItems: 'center'
+                }}
+                title="Comprendre l'Indice d'Efficacité Aérobie (AEI)"
+              >
+                <HelpCircle size={14} />
+              </button>
+            </div>
+            <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)' }}>
+              <Heart size={16} />
             </div>
           </div>
 
-          <div className="kpi-main-value" style={{ color: 'var(--accent-orange)' }}>
-            {formatMinutes(qmtPrediction.predictedMinutes)}
+          <div className="kpi-main-value" style={{ color: 'var(--accent-green)' }}>
+            {heartRate.aerobicEfficiencyIndex ? `${heartRate.aerobicEfficiencyIndex} m/bpm` : 'En calibration'}
           </div>
 
           <div className="kpi-sub-row">
             <span style={{ color: 'var(--text-secondary)' }}>
-              Fourchette : {formatMinutes(qmtPrediction.ambitiousMinutes)} - {formatMinutes(qmtPrediction.conservativeMinutes)}
+              FC moy : {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm
             </span>
             <span
               style={{
                 background: 'rgba(16, 185, 129, 0.15)',
                 color: 'var(--accent-green)',
-                padding: '2px 6px',
+                padding: '2px 7px',
                 borderRadius: '9999px',
                 fontSize: '0.72rem',
                 fontWeight: 700
               }}
             >
-              {qmtPrediction.evolutionDeltaMinutes < 0 ? `${qmtPrediction.evolutionDeltaMinutes} min` : 'Stable'}
+              {running.intensityDistribution.zone2Pct}% en Zone 2
             </span>
           </div>
 
-          {/* Marge Barrière & Spécificité */}
+          {/* Analyse Économie Cardiaque */}
           <div
             style={{
               marginTop: '8px',
@@ -442,11 +480,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               alignItems: 'center'
             }}
           >
-            <span style={{ color: 'var(--accent-green)', fontWeight: 700 }}>
-              🛡️ +{formatMinutes(qmtPrediction.cutoffMarginMinutes)} de marge
+            <span style={{ color: heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0 ? 'var(--accent-green)' : 'var(--text-secondary)', fontWeight: 600 }}>
+              {heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0
+                ? `Économie : -${Math.abs(heartRate.heartRateDeltaBpm)} bpm`
+                : 'Rythme cardiaque régulier'}
             </span>
             <span style={{ color: 'var(--text-muted)' }}>
-              Barrière finale : 19h00
+              Cible Z2 &lt; 155 bpm
             </span>
           </div>
         </div>
@@ -669,24 +709,47 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldAlert size={17} color="var(--primary)" />
-              Risque de Blessure & Sweet Spot ACWR (Modèle de Tim Gabbett)
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldAlert size={17} color="var(--primary)" />
+                Risque de Blessure & Sweet Spot ACWR (Modèle de Tim Gabbett)
+              </h3>
+              <button
+                onClick={() => setInfoTopic('acwr')}
+                style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  color: '#f59e0b',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <HelpCircle size={13} /> Comprendre le calcul
+              </button>
+            </div>
             <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
               Ratio entre la charge aiguë d'impact Trail des 7 derniers jours ({trainingLoad.acuteLoad7d} TRIMP) et la tolérance chronique sur 28 jours ({trainingLoad.chronicLoad28dWeeklyAvg} TRIMP/sem).
             </p>
           </div>
 
           <span
+            onClick={() => setInfoTopic('acwr')}
             style={{
               fontSize: '0.8rem',
               fontWeight: 800,
               padding: '4px 12px',
               borderRadius: '9999px',
               background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'rgba(56, 189, 248, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)')),
-              color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)'))
+              color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')),
+              cursor: 'pointer'
             }}
+            title="Cliquer pour voir l'explication"
           >
             Ratio ACWR : {trainingLoad.acwrRatio} • {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
           </span>
@@ -694,15 +757,15 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
         {/* Distinction Charge Course vs Calisthénie sans impact */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', background: 'rgba(255,255,255,0.025)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.76rem' }}>
-          <span style={{ color: 'var(--primary)' }}>
-            🏃 <strong>Charge d'impact Trail (7j) :</strong> {trainingLoad.acuteLoad7d} TRIMP
+          <span style={{ color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+            <Activity size={14} /> <strong>Charge d'impact Trail (7j) :</strong> {trainingLoad.acuteLoad7d} TRIMP
           </span>
           <span style={{ color: 'var(--border-color)' }}>|</span>
-          <span style={{ color: '#a78bfa' }}>
-            🤸 <strong>Calisthénie / Renfo (7j) :</strong> {trainingLoad.calisthenicsAcuteLoad7d} TRIMP ({trainingLoad.calisthenicsSessionsCount7d} séance(s))
+          <span style={{ color: '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+            <Dumbbell size={14} /> <strong>Calisthénie / Renfo (7j) :</strong> {trainingLoad.calisthenicsAcuteLoad7d} TRIMP ({trainingLoad.calisthenicsSessionsCount7d} séance{trainingLoad.calisthenicsSessionsCount7d > 1 ? 's' : ''})
           </span>
-          <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
-            (Zéro onde de choc articulaire, exclue du risque de tendinopathie)
+          <span style={{ color: 'var(--accent-green)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <ShieldCheck size={14} /> Zéro onde de choc articulaire, exclue du risque de tendinopathie
           </span>
         </div>
 
@@ -784,10 +847,30 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '4px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
             <div>
-              <h4 style={{ fontSize: '0.94rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <TrendingUp size={16} color="var(--accent-blue)" />
-                Dynamique de Charge Physiologique (Modèle Banister CTL / ATL / TSB)
-              </h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h4 style={{ fontSize: '0.94rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <TrendingUp size={16} color="var(--accent-blue)" />
+                  Dynamique de Charge Physiologique (Modèle Banister CTL / ATL / TSB)
+                </h4>
+                <button
+                  onClick={() => setInfoTopic('banister')}
+                  style={{
+                    background: 'rgba(168, 85, 247, 0.12)',
+                    border: '1px solid rgba(168, 85, 247, 0.3)',
+                    color: '#a855f7',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <HelpCircle size={13} /> Comprendre le modèle
+                </button>
+              </div>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
                 Historique modélisé sur 90 jours : Fitness chronique (CTL 42j), Fatigue aiguë (ATL 7j) et Forme (TSB).
               </p>
@@ -818,25 +901,26 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           {hoveredFitnessDay && (
             <div
               style={{
-                background: 'rgba(30, 41, 59, 0.95)',
-                border: '1px solid var(--border-color)',
+                background: 'rgba(20, 28, 48, 0.96)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
                 borderRadius: 'var(--radius-sm)',
-                padding: '8px 12px',
+                padding: '8px 14px',
                 marginBottom: '10px',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '14px',
-                fontSize: '0.74rem',
-                flexWrap: 'wrap'
+                gap: '16px',
+                fontSize: '0.76rem',
+                flexWrap: 'wrap',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)'
               }}
             >
-              <strong style={{ color: 'var(--text-primary)' }}>📅 {hoveredFitnessDay.dateLabel} ({hoveredFitnessDay.date})</strong>
-              <span style={{ color: 'var(--accent-blue)' }}>🔵 CTL : <strong>{hoveredFitnessDay.ctl}</strong></span>
-              <span style={{ color: 'var(--accent-amber)' }}>🟠 ATL : <strong>{hoveredFitnessDay.atl}</strong></span>
-              <span style={{ color: hoveredFitnessDay.tsb >= 0 ? 'var(--accent-green)' : 'var(--accent-orange)' }}>
-                🟢 TSB : <strong>{hoveredFitnessDay.tsb > 0 ? `+${hoveredFitnessDay.tsb}` : hoveredFitnessDay.tsb}</strong>
+              <strong style={{ color: 'var(--text-primary)' }}>{hoveredFitnessDay.dateLabel} ({hoveredFitnessDay.date})</strong>
+              <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>CTL (Fitness) : <strong>{hoveredFitnessDay.ctl}</strong></span>
+              <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>ATL (Fatigue) : <strong>{hoveredFitnessDay.atl}</strong></span>
+              <span style={{ color: hoveredFitnessDay.tsb >= 0 ? 'var(--accent-green)' : 'var(--accent-orange)', fontWeight: 700 }}>
+                TSB (Forme) : <strong>{hoveredFitnessDay.tsb > 0 ? `+${hoveredFitnessDay.tsb}` : hoveredFitnessDay.tsb}</strong>
               </span>
-              <span style={{ color: 'var(--text-secondary)' }}>📊 Charge du jour : <strong>{hoveredFitnessDay.dailyLoad} TRIMP</strong></span>
+              <span style={{ color: 'var(--text-secondary)' }}>Charge jour : <strong>{hoveredFitnessDay.dailyLoad} TRIMP</strong></span>
             </div>
           )}
 
@@ -932,25 +1016,32 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                     );
                   })}
 
-                  {trend.map((d, i) => (
-                    <circle
-                      key={`hit-${d.date}`}
-                      cx={xFor(i)}
-                      cy={yFor(d.ctl)}
-                      r={8}
-                      fill="transparent"
-                      style={{ cursor: 'pointer' }}
-                      onMouseEnter={() => setHoveredFitnessDay(d)}
-                      onClick={() => setHoveredFitnessDay(d)}
-                    />
-                  ))}
+                  {/* High performance continuous mouse-tracking overlay across the full curve area */}
+                  <rect
+                    x={padL}
+                    y={padT}
+                    width={innerWidth}
+                    height={innerHeight}
+                    fill="transparent"
+                    style={{ cursor: 'crosshair' }}
+                    onMouseMove={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const mouseX = e.clientX - rect.left;
+                      const ratio = Math.max(0, Math.min(1, mouseX / rect.width));
+                      const nearestIdx = Math.round(ratio * (trend.length - 1));
+                      if (trend[nearestIdx]) {
+                        setHoveredFitnessDay(trend[nearestIdx]);
+                      }
+                    }}
+                    onMouseLeave={() => setHoveredFitnessDay(null)}
+                  />
 
                   {hoveredFitnessDay && (() => {
                     const idx = trend.findIndex(d => d.date === hoveredFitnessDay.date);
                     if (idx === -1) return null;
                     const x = xFor(idx);
                     return (
-                      <g>
+                      <g style={{ pointerEvents: 'none' }}>
                         <line x1={x} y1={padT} x2={x} y2={padT + innerHeight} stroke="rgba(255,255,255,0.4)" strokeDasharray="3 3" />
                         <circle cx={x} cy={yFor(hoveredFitnessDay.ctl)} r={4.5} fill="var(--accent-blue)" stroke="#fff" strokeWidth="1.5" />
                         <circle cx={x} cy={yFor(hoveredFitnessDay.atl)} r={4.5} fill="var(--accent-amber)" stroke="#fff" strokeWidth="1.5" />
@@ -1108,8 +1199,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           <div>
             <h4 style={{ fontSize: '0.95rem', fontWeight: 800, margin: '0 0 2px 0' }}>
               {heartRate.heartRateTrend === 'DECREASING'
-                ? '📉 Économie d\'énergie : Votre FC moyenne est en baisse à allure égale !'
-                : '📊 Fréquence cardiaque aérobie stable et bien calibrée.'}
+                ? 'Économie d\'énergie : Votre FC moyenne est en baisse à allure égale !'
+                : 'Fréquence cardiaque aérobie stable et bien calibrée.'}
             </h4>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0 }}>
               {heartRate.comparisonBaselineText}
@@ -1156,139 +1247,39 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             </div>
           </div>
 
-          <div style={{ background: 'var(--bg-main)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-cyan)', fontWeight: 700, fontSize: '0.82rem' }}>
-              <Sparkles size={15} /> Indice d'Efficacité Aérobie (AEI) : {heartRate.aerobicEfficiencyIndex || 'En calibration'}
+          <div style={{ background: 'var(--bg-main)', padding: '14px 16px', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-cyan)', fontWeight: 700, fontSize: '0.84rem' }}>
+                <Sparkles size={15} /> Indice d'Efficacité Aérobie (AEI) : {heartRate.aerobicEfficiencyIndex || 'En calibration'}
+              </div>
+              <button
+                onClick={() => setInfoTopic('aei')}
+                style={{
+                  background: 'rgba(56, 189, 248, 0.12)',
+                  border: '1px solid rgba(56, 189, 248, 0.3)',
+                  color: '#38bdf8',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                <HelpCircle size={13} /> Comprendre l'AEI
+              </button>
             </div>
-            <p style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
+            <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
               L'AEI mesure la distance parcourue par battement cardiaque. Un AEI croissant démontre un cœur plus puissant et une meilleure capillarisation musculaire.
             </p>
           </div>
         </div>
       </div>
 
-      {/* 7. Section Simulateur Chrono & Stratégie Ravitaillements QMT-80 */}
-      <div
-        style={{
-          background: 'linear-gradient(135deg, rgba(255, 87, 34, 0.10), rgba(14, 20, 36, 0.95))',
-          border: '1px solid var(--primary-border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <span
-              style={{
-                background: 'var(--primary-subtle)',
-                color: 'var(--primary)',
-                padding: '3px 8px',
-                borderRadius: 'var(--radius-xs)',
-                fontSize: '0.72rem',
-                fontWeight: 800
-              }}
-            >
-              SIMULATEUR DE COURSE OFFICIEL
-            </span>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '6px 0 2px 0' }}>
-              Québec Méga Trail QMT-80 (77 km • +3 370m D+)
-            </h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
-              Allures cibles et prévision fondées sur votre profil d'endurance actuel.
-            </p>
-          </div>
-
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Chrono Prévisionnel Cible</div>
-            <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--primary)' }}>
-              {formatMinutes(qmtPrediction.predictedMinutes)}
-            </div>
-          </div>
-        </div>
-
-        {/* Barre d'amplitude chronométrique */}
-        <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-            <span style={{ color: 'var(--accent-green)' }}>
-              🟢 Ambitieux : <strong>{formatMinutes(qmtPrediction.ambitiousMinutes)}</strong>
-            </span>
-            <span style={{ color: 'var(--primary)', fontWeight: 800 }}>
-              🎯 Cible : <strong>{formatMinutes(qmtPrediction.predictedMinutes)}</strong>
-            </span>
-            <span style={{ color: 'var(--accent-amber)' }}>
-              🟠 Prudent : <strong>{formatMinutes(qmtPrediction.conservativeMinutes)}</strong>
-            </span>
-            <span style={{ color: 'var(--accent-red)' }}>
-              🛑 Barrière : <strong>19h00</strong>
-            </span>
-          </div>
-          <div style={{ height: '7px', background: 'rgba(255,255,255,0.08)', borderRadius: '9999px', position: 'relative', overflow: 'hidden' }}>
-            <div
-              style={{
-                position: 'absolute',
-                left: `${Math.round((qmtPrediction.ambitiousMinutes / 1140) * 100)}%`,
-                width: `${Math.round(((qmtPrediction.conservativeMinutes - qmtPrediction.ambitiousMinutes) / 1140) * 100)}%`,
-                height: '100%',
-                background: 'linear-gradient(90deg, var(--accent-green), var(--primary), var(--accent-amber))'
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Tableau compact des 6 ravitaillements officiels */}
-        <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem', fontWeight: 700 }}>
-            Temps de Passage Estimés aux 6 Ravitaillements
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                  <th style={{ padding: '8px 12px' }}>Poste</th>
-                  <th style={{ padding: '8px 12px' }}>KM</th>
-                  <th style={{ padding: '8px 12px' }}>D+</th>
-                  <th style={{ padding: '8px 12px' }}>Chrono</th>
-                  <th style={{ padding: '8px 12px' }}>Allure Section</th>
-                  <th style={{ padding: '8px 12px' }}>Stratégie</th>
-                </tr>
-              </thead>
-              <tbody>
-                {qmtPrediction.aidStationSplits.map((split, i) => (
-                  <tr
-                    key={split.name}
-                    style={{
-                      borderBottom: '1px solid rgba(255,255,255,0.04)',
-                      background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)'
-                    }}
-                  >
-                    <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {split.name}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
-                      KM {split.km}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: 'var(--accent-cyan)' }}>
-                      +{split.elevationGainM}m
-                    </td>
-                    <td style={{ padding: '8px 12px', fontWeight: 800, color: 'var(--primary)' }}>
-                      {split.elapsedFormatted}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
-                      {split.paceMinKm}
-                    </td>
-                    <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                      {split.notes}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
+      {/* Modale d'aide pédagogique sur les calculs (ACWR, Banister, AEI) */}
+      <StatsMetricModal topic={infoTopic} onClose={() => setInfoTopic(null)} />
     </div>
   );
 };

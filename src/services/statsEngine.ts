@@ -916,6 +916,91 @@ export function computeFullStatsReport(
 }
 
 /**
+ * Calcule la charge physiologique individuelle d'une séance (en TRIMP)
+ * et détermine si elle engendre des impacts articulaires mécaniques (Course/Trail)
+ * ou s'il s'agit de renforcement/calisthénie sans choc au sol.
+ */
+export function calculateSessionTrimp(
+  durationMinutes: number,
+  typeOrSportType?: string,
+  name?: string,
+  garminLoad?: number | null
+): {
+  trimp: number;
+  isMechanicalImpact: boolean;
+  factor: number;
+  categoryLabel: string;
+  formulaText: string;
+} {
+  const dur = Math.max(0, durationMinutes || 0);
+  const actType = String(typeOrSportType || '').toUpperCase();
+  const actName = String(name || '').toLowerCase();
+
+  const isCalisthenics =
+    actType === 'STRENGTH_TRAINING' ||
+    actType === 'FITNESS_EQUIPMENT' ||
+    actType === 'CALISTHENICS' ||
+    actType === 'GYM_FORCE' ||
+    actName.includes('calisth') ||
+    actName.includes('muscu') ||
+    actName.includes('force') ||
+    actName.includes('dips') ||
+    actName.includes('traction') ||
+    actName.includes('gainage');
+
+  const isTrailOrRunning =
+    actType === 'TRAIL_RUNNING' ||
+    actType === 'TRAIL_INTENSE' ||
+    actType === 'TRAIL_LONG' ||
+    actType === 'RUNNING' ||
+    actType === 'RUN_EASY' ||
+    actType === 'RUN_TEMPO' ||
+    actName.includes('trail') ||
+    actName.includes('côtes') ||
+    actName.includes('footing') ||
+    (actName.includes('course') && !actName.includes('cours') && !actName.includes('calisth'));
+
+  if (typeof garminLoad === 'number' && garminLoad > 0) {
+    const isImpact = isTrailOrRunning && !isCalisthenics;
+    return {
+      trimp: Math.round(garminLoad),
+      isMechanicalImpact: isImpact,
+      factor: 1.0,
+      categoryLabel: isImpact ? 'Impact Trail & Course' : (isCalisthenics ? 'Calisthénie (Sans impact)' : 'Activité générale'),
+      formulaText: `Charge EPOC Garmin : ${Math.round(garminLoad)} TRIMP`
+    };
+  }
+
+  let factor = 1.0;
+  let categoryLabel = 'Endurance générale';
+
+  if (actType === 'TRAIL_RUNNING' || actType === 'TRAIL_INTENSE' || actType === 'TRAIL_LONG' || actName.includes('trail') || actName.includes('côtes')) {
+    factor = 1.35;
+    categoryLabel = 'Trail & Côtes (Impact excentrique élevé)';
+  } else if (actType === 'RUNNING' || actType === 'RUN_EASY' || actType === 'RUN_TEMPO' || actName.includes('footing') || actName.includes('course')) {
+    factor = 1.15;
+    categoryLabel = 'Course sur plat (Impact modéré)';
+  } else if (isCalisthenics) {
+    factor = 0.85;
+    categoryLabel = 'Calisthénie & Force (Zéro onde de choc articulaire)';
+  } else {
+    factor = 0.75;
+    categoryLabel = 'Récupération active & Mobilité';
+  }
+
+  const trimp = Math.round(dur * factor * 0.8);
+  const isMechanicalImpact = isTrailOrRunning && !isCalisthenics;
+
+  return {
+    trimp,
+    isMechanicalImpact,
+    factor,
+    categoryLabel,
+    formulaText: `${dur} min × facteur ${factor} × 0.8 = ${trimp} TRIMP`
+  };
+}
+
+/**
  * Computes Chronic Training Load (CTL), Acute Training Load (ATL),
  * Training Stress Balance (TSB), and Acute:Chronic Workload Ratio (ACWR).
  * Note: ACWR for injury risk is computed strictly on Trail & Running activities,
@@ -933,46 +1018,20 @@ export function computeTrainingLoadStats(
 
   for (const act of activities) {
     const dKey = act.date || (act.startTimeLocal ? getGarminLocalDateKey(act) : formatDateKey(new Date()));
-    let load = act.trainingLoad;
     const dur = act.durationMinutes || 0;
-    const actType = String(act.activityType || act.type || '').toUpperCase();
-    const actName = String(act.name || act.activityName || '').toLowerCase();
+    const actType = String(act.activityType || act.type || '');
+    const actName = String(act.name || act.activityName || '');
 
-    // Determine activity category
-    const isTrailOrRunning =
-      actType === 'TRAIL_RUNNING' ||
-      actType === 'RUNNING' ||
-      actName.includes('trail') ||
-      actName.includes('côtes') ||
-      actName.includes('footing') ||
-      (actName.includes('course') && !actName.includes('cours') && !actName.includes('calisth'));
-
-    const isCalisthenics =
-      actType === 'STRENGTH_TRAINING' ||
-      actType === 'FITNESS_EQUIPMENT' ||
-      actName.includes('calisth') ||
-      actName.includes('muscu') ||
-      actName.includes('force') ||
-      actName.includes('dips') ||
-      actName.includes('traction') ||
-      actName.includes('gainage');
-
-    if (typeof load !== 'number' || load <= 0) {
-      let factor = 1.0;
-      if (actType === 'TRAIL_RUNNING') factor = 1.35;
-      else if (actType === 'RUNNING') factor = 1.15;
-      else if (actType === 'STRENGTH_TRAINING' || actType === 'CLIMBING') factor = 0.85;
-      else factor = 0.75;
-      load = Math.round(dur * factor * 0.8);
-    }
+    const sessionInfo = calculateSessionTrimp(dur, actType, actName, act.trainingLoad);
+    const load = sessionInfo.trimp;
 
     // Systemic whole-body load (CTL, ATL, TSB)
     dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
 
     // Musculoskeletal mechanical impact load (Trail & Running exclusively)
-    if (isTrailOrRunning && !isCalisthenics) {
+    if (sessionInfo.isMechanicalImpact) {
       dailyTrailLoads[dKey] = (dailyTrailLoads[dKey] || 0) + load;
-    } else if (isCalisthenics) {
+    } else {
       dailyCalisthenicsLoads[dKey] = (dailyCalisthenicsLoads[dKey] || 0) + load;
       calisthenicsSessionsByDay[dKey] = (calisthenicsSessionsByDay[dKey] || 0) + 1;
     }
@@ -1215,9 +1274,9 @@ export function calculateQmtRacePrediction(
   const officialElevationGainM = 3370;
   const officialCutoffMinutes = 19 * 60; // 1,140 min
 
-  // Baseline standard finisher expectation for a well-prepared amateur: 11h30 (690 min)
-  let basePredictionMin = 690;
-  const baselinePredictedMinutes = 702; // 11h42 au lancement du plan le 1er sept. 2026
+  // Baseline standard finisher expectation for a regular amateur on the rugged QMT-80: 13h30 (810 min)
+  let basePredictionMin = 810;
+  const baselinePredictedMinutes = 820; // ~13h40 au lancement du plan le 1er sept. 2026
 
   // 1. Aerobic Pace Factor (Adaptive Grade-Adjusted Pace for mountain terrain)
   const rawPaceSec = parsePaceStringToSeconds(running.avgPaceMinKm) || (5 * 60 + 30);
@@ -1227,7 +1286,7 @@ export function calculateQmtRacePrediction(
   let aerobicPaceScore = 70;
 
   if (paceSec < 5 * 60) {
-    basePredictionMin -= 45;
+    basePredictionMin -= 40;
     aerobicPaceScore = 90;
   } else if (paceSec < 5 * 60 + 45) {
     basePredictionMin -= 20;
@@ -1286,9 +1345,9 @@ export function calculateQmtRacePrediction(
     }
   }
 
-  // Bound predictions within realistic ultra-trail boundaries
-  const predictedMinutes = Math.max(570, Math.min(1080, Math.round(basePredictionMin)));
-  const ambitiousMinutes = Math.max(540, Math.round(predictedMinutes * 0.92));
+  // Bound predictions within realistic ultra-trail boundaries (700 min = 11h40 min, 1080 min = 18h00)
+  const predictedMinutes = Math.max(700, Math.min(1080, Math.round(basePredictionMin)));
+  const ambitiousMinutes = Math.max(660, Math.round(predictedMinutes * 0.92));
   const conservativeMinutes = Math.min(officialCutoffMinutes - 30, Math.round(predictedMinutes * 1.12));
 
   // Evolution Delta compared to initial plan launch (1er sept. 2026)

@@ -355,105 +355,173 @@ export function buildWorkoutPayloadFromEvent(
   let steps: WorkoutStepDefinition[] = [];
   const titlePrefix = '[QMT-80] ';
 
-  if (event.sportType === 'TRAIL_INTENSE') {
-    // Hill Repeats
+  const titleLower = event.title.toLowerCase();
+  const isAdaptedToEasy = event.metadata?.isAdapted && (
+    event.sportType === 'RUN_EASY' ||
+    titleLower.includes('footing') ||
+    titleLower.includes('récupération') ||
+    titleLower.includes('aérobie doux')
+  );
+
+  if (isAdaptedToEasy || event.sportType === 'RUN_EASY') {
     sportType = 'RUNNING';
+    const warmupDurSec = durMin <= 35 ? 7 * 60 : 10 * 60;
+    const cooldownDurSec = 5 * 60;
+    const mainDurSec = Math.max(10 * 60, durMin * 60 - warmupDurSec - cooldownDurSec);
     steps = [
       {
         stepType: 'WARMUP',
-        durationSeconds: 15 * 60,
+        durationSeconds: warmupDurSec,
         targetType: 'HR_RANGE',
-        targetHrLow: 135,
-        targetHrHigh: 150,
-        stepNotes: 'Échauffement progressif Zone 2'
+        targetHrLow: 125,
+        targetHrHigh: 140,
+        stepNotes: 'Échauffement progressif très doux (Zone 1/2)'
       },
       {
         stepType: 'INTERVAL',
-        durationSeconds: 60,
-        targetType: 'HR_RANGE',
-        targetHrLow: 172,
-        targetHrHigh: 190,
-        stepNotes: 'Répétition côte raide (Zone 4/5)'
-      },
-      {
-        stepType: 'RECOVERY',
-        durationSeconds: 90,
-        targetType: 'NONE',
-        stepNotes: 'Descente trot très souple ou marche'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 60,
-        targetType: 'HR_RANGE',
-        targetHrLow: 172,
-        targetHrHigh: 190,
-        stepNotes: 'Répétition côte raide (Zone 4/5)'
-      },
-      {
-        stepType: 'RECOVERY',
-        durationSeconds: 90,
-        targetType: 'NONE',
-        stepNotes: 'Descente trot très souple'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 60,
-        targetType: 'HR_RANGE',
-        targetHrLow: 172,
-        targetHrHigh: 190,
-        stepNotes: 'Répétition côte raide (Zone 4/5)'
-      },
-      {
-        stepType: 'RECOVERY',
-        durationSeconds: 90,
-        targetType: 'NONE',
-        stepNotes: 'Descente trot souple'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 60,
-        targetType: 'HR_RANGE',
-        targetHrLow: 172,
-        targetHrHigh: 190,
-        stepNotes: 'Dernière montée tonique !'
-      },
-      {
-        stepType: 'COOLDOWN',
-        durationSeconds: 10 * 60,
-        targetType: 'NONE',
-        stepNotes: 'Retour au calme & décrassage'
-      }
-    ];
-  } else if (event.sportType === 'RUN_EASY') {
-    sportType = 'RUNNING';
-    const mainDurSec = Math.max(10 * 60, (durMin - 15) * 60);
-    steps = [
-      {
-        stepType: 'WARMUP',
-        durationSeconds: 10 * 60,
+        durationSeconds: mainDurSec,
         targetType: 'HR_RANGE',
         targetHrLow: 130,
-        targetHrHigh: 145,
-        stepNotes: 'Échauffement allure douce'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: mainDurSec,
-        targetType: 'HR_RANGE',
-        targetHrLow: 135,
-        targetHrHigh: 148,
-        stepNotes: 'Endurance fondamentale stricte (100% aisance respiratoire)'
+        targetHrHigh: 142,
+        stepNotes: 'Footing souple et régulier sur terrain plat (Zone 1/2 stricte < 142 bpm)'
       },
       {
         stepType: 'COOLDOWN',
-        durationSeconds: 5 * 60,
+        durationSeconds: cooldownDurSec,
         targetType: 'NONE',
-        stepNotes: 'Retour au calme'
+        stepNotes: 'Retour au calme & marche lente'
       }
     ];
+  } else if (event.sportType === 'TRAIL_INTENSE') {
+    // Hill Repeats
+    sportType = 'RUNNING';
+    const isModerate = event.title.includes('1 série') || durMin <= 50;
+
+    if (isModerate) {
+      steps = [
+        {
+          stepType: 'WARMUP',
+          durationSeconds: 12 * 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 135,
+          targetHrHigh: 150,
+          stepNotes: 'Échauffement progressif Zone 2'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 165,
+          targetHrHigh: 175,
+          stepNotes: 'Côte modérée contrôlée (FC < 175 bpm)'
+        },
+        {
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente marchée très souple'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 165,
+          targetHrHigh: 175,
+          stepNotes: 'Côte modérée (FC < 175 bpm)'
+        },
+        {
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente marchée souple'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 165,
+          targetHrHigh: 175,
+          stepNotes: 'Dernière répétition souple'
+        },
+        {
+          stepType: 'COOLDOWN',
+          durationSeconds: 8 * 60,
+          targetType: 'NONE',
+          stepNotes: 'Retour au calme & trot très lent'
+        }
+      ];
+    } else {
+      steps = [
+        {
+          stepType: 'WARMUP',
+          durationSeconds: 15 * 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 135,
+          targetHrHigh: 150,
+          stepNotes: 'Échauffement progressif Zone 2'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 172,
+          targetHrHigh: 190,
+          stepNotes: 'Répétition côte raide (Zone 4/5)'
+        },
+        {
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente trot très souple ou marche'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 172,
+          targetHrHigh: 190,
+          stepNotes: 'Répétition côte raide (Zone 4/5)'
+        },
+        {
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente trot très souple'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 172,
+          targetHrHigh: 190,
+          stepNotes: 'Répétition côte raide (Zone 4/5)'
+        },
+        {
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente trot souple'
+        },
+        {
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: 'HR_RANGE',
+          targetHrLow: 172,
+          targetHrHigh: 190,
+          stepNotes: 'Dernière montée tonique !'
+        },
+        {
+          stepType: 'COOLDOWN',
+          durationSeconds: 10 * 60,
+          targetType: 'NONE',
+          stepNotes: 'Retour au calme & décrassage'
+        }
+      ];
+    }
   } else if (event.sportType === 'TRAIL_LONG') {
     sportType = 'RUNNING';
-    const mainDurSec = Math.max(30 * 60, (durMin - 20) * 60);
+    const mainDurSec = Math.max(20 * 60, (durMin - 20) * 60);
+    const isAdapted = Boolean(event.metadata?.isAdapted);
     steps = [
       {
         stepType: 'WARMUP',
@@ -461,21 +529,23 @@ export function buildWorkoutPayloadFromEvent(
         targetType: 'HR_RANGE',
         targetHrLow: 135,
         targetHrHigh: 150,
-        stepNotes: 'Échauffement progressif sur sentier'
+        stepNotes: 'Échauffement progressif sur sentier (Zone 1/2)'
       },
       {
         stepType: 'INTERVAL',
         durationSeconds: mainDurSec,
         targetType: 'HR_RANGE',
-        targetHrLow: 138,
-        targetHrHigh: 155,
-        stepNotes: 'Allure Ultra-Trail Z2. Ravitaillement glucides toutes les 30 min !'
+        targetHrLow: 135,
+        targetHrHigh: 150,
+        stepNotes: isAdapted
+          ? 'Endurance Z2 modérée (< 150 bpm). Marche active dès 8% de pente.'
+          : 'Allure Ultra-Trail Z2 régulière. Gestion d\'effort constante.'
       },
       {
         stepType: 'COOLDOWN',
         durationSeconds: 5 * 60,
         targetType: 'NONE',
-        stepNotes: 'Marche active et étirements doux'
+        stepNotes: 'Marche active et retour au calme'
       }
     ];
   } else if (event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.sportType === 'MOBILITY') {

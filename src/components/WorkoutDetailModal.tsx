@@ -4,20 +4,21 @@ import {
   Bell,
   CalendarClock,
   CheckCircle2,
-  CheckSquare,
   Clock,
   Compass,
   Heart,
+  HelpCircle,
   Loader2,
   MapPin,
   RotateCcw,
-  Send,
+  ShieldAlert,
   ShieldCheck,
-  Square,
+  TrendingDown,
   Watch,
   X,
-  Zap,
-  ArrowRight
+  Activity,
+  AlertCircle,
+  Zap
 } from 'lucide-react';
 import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
@@ -25,6 +26,7 @@ import { pushWorkoutToGarmin, buildWorkoutPayloadFromEvent } from '../services/g
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { useAuth } from '../contexts/AuthContext';
 import { ActivityComparison } from '../types/garmin';
+import { calculateSessionTrimp } from '../services/statsEngine';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -54,7 +56,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const { profile } = useAuth();
   const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
 
-  const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
   const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
 
   const originalDateKey = event.metadata?.originalDate || event.startDate.slice(0, 10);
@@ -78,7 +79,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   // Garmin Workout Push state
   const [isPushingGarmin, setIsPushingGarmin] = useState<boolean>(false);
   const [garminPushResult, setGarminPushResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
-  const [selectedWatch, setSelectedWatch] = useState<'FORERUNNER_55' | 'STANDARD'>('FORERUNNER_55');
+  const selectedWatch = 'FORERUNNER_55';
 
   const workoutPreview = event.category === 'sport' ? buildWorkoutPayloadFromEvent(event, event.startDate.slice(0, 10), selectedWatch) : null;
 
@@ -95,10 +96,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     } else {
       triggerHapticFeedback('warning');
     }
-  };
-
-  const toggleGear = (item: string) => {
-    setCheckedGear(prev => ({ ...prev, [item]: !prev[item] }));
   };
 
   const handleQuickPostpone = (daysOffset: number) => {
@@ -141,48 +138,56 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const formatDate = (d: Date) =>
     d.toLocaleDateString('fr-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
-  // Calculateur Nutrition & Hydratation Ultra-Trail
   const isSport = event.category === 'sport';
-  const durationHours = event.durationMinutes / 60;
-  const isLongTrail = event.sportType === 'TRAIL_LONG';
-  const isIntenseTrail = event.sportType === 'TRAIL_INTENSE';
+  const isAdapted = Boolean(event.metadata?.isAdapted);
 
-  const carbsPerHour = (isLongTrail || isIntenseTrail) ? 60 : 35;
-  const totalCarbsG = Math.round(durationHours * carbsPerHour);
-  const totalWaterMl = Math.round(durationHours * 550);
-  const totalSodiumMg = Math.round(durationHours * 450);
-  const gelsEquivalent = Math.max(1, Math.round(totalCarbsG / 25));
+  const titleLower = event.title.toLowerCase();
+  const isRecoveryFooting = isSport && (
+    event.sportType === 'RUN_EASY' ||
+    titleLower.includes('footing') ||
+    titleLower.includes('récupération') ||
+    titleLower.includes('aérobie doux')
+  );
 
-  const mandatoryGearList: string[] = [];
-  if (isSport && event.durationMinutes >= 45) {
-    mandatoryGearList.push(`${Math.ceil(totalWaterMl / 500)}x 500 mL Flasques souples avec électrolytes`);
-    mandatoryGearList.push(`Nutrition énergétique : ~${totalCarbsG}g de glucides (${gelsEquivalent} gels / barres)`);
-    mandatoryGearList.push('Téléphone cellulaire chargé avec trace GPX téléchargée');
-  }
-  if (isLongTrail || event.durationMinutes >= 90) {
-    mandatoryGearList.push('Couverture de survie (1,4m x 2m) + sifflet de sécurité (obligatoire QMT-80)');
-    mandatoryGearList.push('Veste imperméable respirante à coutures étanches (10 000 Schmerber min)');
-    mandatoryGearList.push('Gobelet réutilisable / Ecocup (aucun gobelet jetable aux ravitaillements)');
-    mandatoryGearList.push('Bâtons pliables carbone (rangement sur le sac obligatoire pour le Mestachibo)');
-  }
+  const effectiveElevationM = isRecoveryFooting ? 0 : (event.metadata?.targetElevationM ?? 0);
+  const effectiveLocation = (isRecoveryFooting && event.location.toLowerCase().includes('mont royal'))
+    ? 'Terrain plat / Parc (évite le D+)'
+    : event.location;
+
+  const sessionTrimpInfo = isSport ? calculateSessionTrimp(
+    event.durationMinutes,
+    isRecoveryFooting ? 'RUN_EASY' : event.sportType,
+    event.title,
+    comparison?.actualActivity?.trainingLoad
+  ) : null;
+
+  const originalTrimpInfo = isSport && isAdapted ? calculateSessionTrimp(
+    event.metadata?.originalDurationMinutes || event.durationMinutes,
+    event.metadata?.originalSportType || event.sportType,
+    event.metadata?.originalTitle || event.title
+  ) : null;
+
+  const trimpSaved = (originalTrimpInfo && sessionTrimpInfo) ? Math.max(0, originalTrimpInfo.trimp - sessionTrimpInfo.trimp) : 0;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 620 }}>
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '24px' }}>{event.emoji}</span>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 620, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Header */}
+        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '26px' }}>{event.emoji}</span>
             <div>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.2rem', fontWeight: 800 }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
                 {event.title}
               </h2>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '3px 0 0 0' }}>
                 {formatDate(startDate)}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="Fermer"
             style={{
               background: 'transparent',
               border: 'none',
@@ -195,32 +200,57 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body" style={{ gap: '12px' }}>
+        {/* Modal Body */}
+        <div className="modal-body" style={{ padding: '16px 20px', gap: '14px', overflowY: 'auto', flex: 1 }}>
           {/* 🛡️ Alerte Séance Adaptée Anti-blessure */}
-          {event.metadata?.isAdapted && (
+          {isAdapted && (
             <div
               style={{
-                background: 'rgba(56, 189, 248, 0.12)',
+                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(14, 20, 36, 0.95))',
                 border: '1px solid #38bdf8',
                 borderRadius: 'var(--radius-sm)',
-                padding: '10px 14px',
+                padding: '12px 16px',
                 fontSize: '0.8rem',
-                color: '#7dd3fc',
+                color: '#e0f2fe',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '4px'
+                gap: '8px'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#38bdf8' }}>
-                <ShieldCheck size={16} />
-                <span>Séance adaptée par le Coach Anti-blessure (Protection Tendons & ACWR)</span>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, color: '#38bdf8', fontSize: '0.88rem' }}>
+                  <ShieldCheck size={17} />
+                  <span>Séance Allégée Anti-blessure (Protection Tendons & ACWR)</span>
+                </div>
+                {trimpSaved > 0 && (
+                  <span style={{ background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#34d399', padding: '2px 8px', borderRadius: 9999, fontWeight: 800, fontSize: '0.74rem' }}>
+                    -{trimpSaved} TRIMP d'impact économisés
+                  </span>
+                )}
               </div>
-              <div>{event.metadata.adaptationReason}</div>
-              {event.metadata.originalDurationMinutes && (
-                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                  Durée initiale : {event.metadata.originalDurationMinutes} min • Modulée à {event.durationMinutes} min
+
+              <div>{event.metadata?.adaptationReason}</div>
+
+              {/* Comparaison détaillée de la charge */}
+              {originalTrimpInfo && sessionTrimpInfo && (
+                <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '8px 12px', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: '0.74rem' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Charge initiale prévue : </span>
+                    <strong style={{ color: 'var(--accent-orange)' }}>{originalTrimpInfo.trimp} TRIMP</strong>
+                    <span style={{ color: 'var(--text-muted)' }}> ({event.metadata?.originalDurationMinutes} min)</span>
+                  </div>
+                  <span style={{ color: 'var(--text-muted)' }}>➔</span>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)' }}>Charge modulée : </span>
+                    <strong style={{ color: 'var(--accent-green)' }}>{sessionTrimpInfo.trimp} TRIMP</strong>
+                    <span style={{ color: 'var(--text-muted)' }}> ({event.durationMinutes} min)</span>
+                  </div>
                 </div>
               )}
+
+              <p style={{ margin: 0, fontSize: '0.73rem', color: '#93c5fd', lineHeight: 1.45 }}>
+                💡 <strong>Pourquoi cette réduction de charge ?</strong> La charge aiguë (7 jours) additionne directement les TRIMPs de vos séances de course. En remplaçant les chocs excentriques intenses (côtes D+) par un footing régénérant à plat, vous retirez {trimpSaved > 0 ? `${trimpSaved} TRIMP` : 'de la fatigue'} du numérateur ACWR pour ramener le ratio dans le Sweet Spot (&lt; 1.3) et donner à vos tendons le temps de surcompenser.
+              </p>
             </div>
           )}
 
@@ -319,106 +349,193 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             </div>
           )}
 
-          {/* Barre Horaires & Lieu */}
+          {/* Grille Métriques Clés : Horaires, Lieu, D+, Cardio */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* Horaires */}
+            <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
                 <Clock size={11} /> Horaires
               </span>
               <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: 3 }}>
                 {formatTime(startDate)} – {formatTime(endDate)}
               </div>
-              <span style={{ fontSize: '0.72rem', color: 'var(--accent-blue)' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--accent-blue)', fontWeight: 600 }}>
                 {event.durationMinutes} minutes
               </span>
             </div>
 
-            <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
+            {/* Lieu */}
+            <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
                 <MapPin size={11} /> Lieu
               </span>
-              <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: 3 }}>
+              <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={event.location}>
                 {event.location}
               </div>
-              {event.metadata?.room && (
+              {event.metadata?.room ? (
                 <span style={{ fontSize: '0.72rem', color: 'var(--primary)' }}>
                   Local : {event.metadata.room}
                 </span>
-              )}
+              ) : isAdapted ? (
+                <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
+                  Adapté anti-blessure
+                </span>
+              ) : null}
             </div>
 
-            {event.metadata?.targetElevationM && (
-              <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Compass size={11} /> Objectif D+
+            {/* Objectif D+ (si sport) */}
+            {isSport && (
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                  <Compass size={11} /> Dénivelé D+
                 </span>
-                <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--primary)', marginTop: 3 }}>
-                  +{event.metadata.targetElevationM} m
+                <div style={{ fontWeight: 700, fontSize: '0.95rem', color: (event.metadata?.targetElevationM || 0) > 0 ? 'var(--accent-green)' : 'var(--text-muted)', marginTop: 3 }}>
+                  {(event.metadata?.targetElevationM || 0) > 0 ? `+${event.metadata?.targetElevationM} m` : '0 m (Plat)'}
                 </div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                  Dénivelé Ultra-Trail
+                <span style={{ fontSize: '0.68rem', color: isAdapted ? '#38bdf8' : 'var(--text-secondary)' }}>
+                  {isAdapted ? 'D+ allégé' : ((event.metadata?.targetElevationM || 0) > 0 ? 'Ultra-Trail' : 'Récupération souple')}
+                </span>
+              </div>
+            )}
+
+            {/* Cible Cardiaque */}
+            {event.metadata?.targetHeartRate && (
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                  <Heart size={11} color="var(--accent-red)" /> Cible Cardio
+                </span>
+                <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--accent-red)', marginTop: 3 }}>
+                  {event.metadata.targetHeartRate}
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                  FCmax = {athleteFcMax} bpm
                 </span>
               </div>
             )}
           </div>
 
-          {/* Alerte / Confirmation de report */}
-          {postponeSuccessMsg && (
-            <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid #10b981', padding: '10px 14px', borderRadius: 'var(--radius-xs)', fontSize: '0.82rem', color: '#34d399', fontWeight: 600 }}>
-              ✓ {postponeSuccessMsg}
-            </div>
-          )}
-
-          {/* Séance Fantôme : Déjà reportée vers un autre jour */}
-          {event.metadata?.isPostponedPlaceholder && (
-            <div style={{ background: 'rgba(100, 116, 139, 0.12)', border: '1px solid rgba(148, 163, 184, 0.3)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-blue)', fontWeight: 700, fontSize: '0.86rem' }}>
-                <CalendarClock size={16} />
-                <span>Séance Reportée</span>
+          {/* DÉROULÉ CONCRET DE LA SÉANCE : Ce que je dois faire */}
+          {isSport && workoutPreview && workoutPreview.steps && workoutPreview.steps.length > 0 ? (
+            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff' }}>
+                  <Activity size={14} color="var(--primary)" />
+                  <span>DÉROULÉ CONCRET DE LA SÉANCE</span>
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {event.durationMinutes} min au total
+                </span>
               </div>
-              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                Cette séance a été déplacée vers le <strong>{event.metadata.postponedToDate}</strong>.
-                {event.metadata.postponedReason && ` (Motif : ${event.metadata.postponedReason})`}
-              </p>
-              {onCancelPostpone && (
-                <button
-                  className="btn-secondary"
-                  onClick={handleRevertPostpone}
-                  style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.76rem', color: 'var(--primary)', borderColor: 'var(--primary-border)' }}
-                >
-                  <RotateCcw size={13} /> Rétablir la séance sur cette date
-                </button>
-              )}
+
+              {/* Timeline des étapes */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {workoutPreview.steps.map((st, idx) => {
+                  const mins = st.durationSeconds ? Math.round(st.durationSeconds / 60) : 0;
+                  const isWarmup = st.stepType === 'WARMUP';
+                  const isCooldown = st.stepType === 'COOLDOWN';
+                  const isInterval = st.stepType === 'INTERVAL';
+
+                  const badgeColor = isWarmup
+                    ? '#38bdf8'
+                    : isCooldown
+                    ? '#a78bfa'
+                    : isInterval
+                    ? '#f97316'
+                    : '#34d399';
+
+                  const badgeLabel = isWarmup
+                    ? 'Échauffement'
+                    : isCooldown
+                    ? 'Retour au calme'
+                    : isInterval
+                    ? 'Corps de séance'
+                    : 'Récupération';
+
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '8px 10px',
+                        background: 'rgba(0, 0, 0, 0.25)',
+                        borderLeft: `3px solid ${badgeColor}`,
+                        borderRadius: 4
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 85 }}>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: badgeColor }}>
+                          {badgeLabel}
+                        </span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#ffffff' }}>
+                          {mins > 0 ? `${mins} min` : (st.durationSeconds ? `${st.durationSeconds}s` : 'Libre')}
+                        </span>
+                      </div>
+
+                      <div style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+                        <div>{st.stepNotes}</div>
+                        {st.targetHrLow && st.targetHrHigh && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                            Cible : {st.targetHrLow} – {st.targetHrHigh} bpm
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Règle d'or / Consignes clés directes */}
+              <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                <span style={{ fontWeight: 700, color: '#f59e0b' }}>⚠️ Règles clés :</span>
+                <span>• <strong>Marche active (power-hike)</strong> dès que la pente dépasse 8% pour économiser les tendons et mollets.</span>
+                <span>• Respect strict de la <strong>Zone 2</strong> pour favoriser la filière lipidique sans stress lactique.</span>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                Description & Consignes
+              </h4>
+              <div
+                style={{
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border-color)',
+                  padding: '12px',
+                  borderRadius: 'var(--radius-xs)',
+                  whiteSpace: 'pre-wrap',
+                  fontSize: '0.82rem',
+                  lineHeight: 1.55
+                }}
+              >
+                {event.description}
+              </div>
             </div>
           )}
 
-          {/* Section Reporter / Déplacer la séance (pour les séances de sport actives) */}
+          {/* Section Reporter / Déplacer la séance (repliable discrète) */}
           {isSport && !event.metadata?.isPostponedPlaceholder && onPostpone && !comparison?.actualActivity && (
-            <div style={{ background: 'rgba(255, 87, 34, 0.04)', border: '1px solid rgba(255, 87, 34, 0.25)', borderRadius: 'var(--radius-xs)', padding: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isPostponeExpanded ? 10 : 0 }}>
+            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '8px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CalendarClock size={16} color="var(--primary)" />
-                  <span style={{ fontWeight: 700, fontSize: '0.86rem', color: '#ffffff' }}>
-                    {event.metadata?.isPostponed ? 'Séance Déplacée / Reportée' : 'Reporter ou Déplacer cette séance'}
+                  <CalendarClock size={14} color="var(--text-muted)" />
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    {event.metadata?.isPostponed ? `Séance reportée depuis le ${event.metadata.originalDate}` : 'Déplacer ou reporter cette séance'}
                   </span>
-                  {event.metadata?.isPostponed && (
-                    <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(255, 87, 34, 0.18)', color: 'var(--primary)', fontWeight: 700 }}>
-                      Reportée depuis le {event.metadata.originalDate}
-                    </span>
-                  )}
                 </div>
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => setIsPostponeExpanded(!isPostponeExpanded)}
-                  style={{ padding: '3px 8px', fontSize: '0.72rem' }}
+                  style={{ padding: '2px 8px', fontSize: '0.7rem' }}
                 >
-                  {isPostponeExpanded ? 'Réduire' : 'Modifier la date'}
+                  {isPostponeExpanded ? 'Fermer' : 'Modifier la date'}
                 </button>
               </div>
 
               {isPostponeExpanded && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)' }}>
                   {/* Raccourcis rapides */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Raccourcis :</span>
@@ -426,7 +543,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       type="button"
                       className="btn-secondary"
                       onClick={() => handleQuickPostpone(1)}
-                      style={{ padding: '6px 12px', minHeight: '34px', fontSize: '0.76rem', background: 'rgba(255, 255, 255, 0.05)' }}
+                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
                     >
                       Demain (+1 j)
                     </button>
@@ -434,86 +551,35 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       type="button"
                       className="btn-secondary"
                       onClick={() => handleQuickPostpone(2)}
-                      style={{ padding: '6px 12px', minHeight: '34px', fontSize: '0.76rem', background: 'rgba(255, 255, 255, 0.05)' }}
+                      style={{ padding: '4px 10px', fontSize: '0.74rem' }}
                     >
                       Après-demain (+2 j)
                     </button>
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={() => handleQuickPostpone(3)}
-                      style={{ padding: '6px 12px', minHeight: '34px', fontSize: '0.76rem', background: 'rgba(255, 255, 255, 0.05)' }}
-                    >
-                      +3 jours
-                    </button>
                   </div>
 
-                  {/* Formulaire Date & Heure & Motif */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                  {/* Date & Heure */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
-                        Nouvelle date
-                      </label>
+                      <label style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 2 }}>Nouvelle date</label>
                       <input
                         type="date"
                         value={targetDateInput}
                         onChange={e => setTargetDateInput(e.target.value)}
-                        style={{
-                          width: '100%',
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: 4,
-                          padding: '6px 8px',
-                          color: '#ffffff',
-                          fontSize: '0.82rem'
-                        }}
+                        style={{ width: '100%', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)', borderRadius: 4, padding: '4px 6px', color: '#fff', fontSize: '0.78rem' }}
                       />
                     </div>
-
                     <div>
-                      <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
-                        Heure de départ
-                      </label>
+                      <label style={{ display: 'block', fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 2 }}>Heure</label>
                       <input
                         type="time"
                         value={targetTimeInput}
                         onChange={e => setTargetTimeInput(e.target.value)}
-                        style={{
-                          width: '100%',
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: 4,
-                          padding: '6px 8px',
-                          color: '#ffffff',
-                          fontSize: '0.82rem'
-                        }}
+                        style={{ width: '100%', background: 'rgba(0, 0, 0, 0.3)', border: '1px solid var(--border-color)', borderRadius: 4, padding: '4px 6px', color: '#fff', fontSize: '0.78rem' }}
                       />
                     </div>
                   </div>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase' }}>
-                      Motif du report (optionnel)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Ex : Récupération, météo, imprévu..."
-                      value={reasonInput}
-                      onChange={e => setReasonInput(e.target.value)}
-                      style={{
-                        width: '100%',
-                        background: 'rgba(0, 0, 0, 0.3)',
-                        border: '1px solid var(--border-color)',
-                        borderRadius: 4,
-                        padding: '6px 8px',
-                        color: '#ffffff',
-                        fontSize: '0.82rem'
-                      }}
-                    />
-                  </div>
-
-                  {/* Actions de validation */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                     <button
                       type="button"
                       onClick={handleConfirmPostpone}
@@ -522,17 +588,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                         color: '#ffffff',
                         border: 'none',
                         borderRadius: 4,
-                        padding: '7px 14px',
+                        padding: '6px 12px',
                         fontWeight: 700,
-                        fontSize: '0.8rem',
+                        fontSize: '0.78rem',
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 6
                       }}
                     >
-                      <CalendarClock size={14} />
-                      <span>Confirmer le report au {targetDateInput}</span>
+                      <CalendarClock size={13} />
+                      <span>Valider pour le {targetDateInput}</span>
                     </button>
 
                     {event.metadata?.isPostponed && onCancelPostpone && (
@@ -540,10 +606,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                         type="button"
                         className="btn-secondary"
                         onClick={handleRevertPostpone}
-                        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.74rem', color: 'var(--text-secondary)' }}
-                        title="Annuler le report et remettre la séance à sa date d'origine"
+                        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.72rem' }}
                       >
-                        <RotateCcw size={12} /> Rétablir au {event.metadata.originalDate}
+                        <RotateCcw size={12} /> Rétablir
                       </button>
                     )}
                   </div>
@@ -552,309 +617,119 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             </div>
           )}
 
-          {/* Bandeau de Conflit d'Horaire Résolu */}
-          {event.metadata?.conflictRescheduled && event.metadata.conflictReason && (
-            <div style={{ background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', fontSize: '0.78rem', color: '#7dd3fc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '1.1rem' }}>🔄</span>
-              <div>
-                <strong>Décalage Intelligent :</strong> {event.metadata.conflictReason}
-              </div>
-            </div>
-          )}
-
-          {/* Cibles Cardiaques & Physiologiques */}
-          {event.metadata?.targetHeartRate && (
-            <div style={{ background: 'var(--primary-subtle)', border: '1px solid var(--primary-border)', padding: '12px', borderRadius: 'var(--radius-xs)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 700, marginBottom: '4px', fontSize: '0.82rem' }}>
-                <Heart size={14} />
-                <span>Zone Cardiaque Cible (FCmax = {athleteFcMax} bpm)</span>
-              </div>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
-                {event.metadata.targetHeartRate}
-              </p>
-              {event.metadata.targetCadence && (
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  ⚡ Cadence recommandée : <strong>{event.metadata.targetCadence}</strong>
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Description & Protocole */}
-          <div>
-            <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
-              Protocole & Consignes de Séance
-            </h4>
+          {/* Feedback de push Garmin */}
+          {garminPushResult && (
             <div
               style={{
-                background: 'rgba(255, 255, 255, 0.02)',
-                border: '1px solid var(--border-color)',
-                padding: '12px',
-                borderRadius: 'var(--radius-xs)',
-                whiteSpace: 'pre-wrap',
-                fontSize: '0.82rem',
-                lineHeight: 1.55
-              }}
-            >
-              {event.description}
-            </div>
-          </div>
-
-          {/* Calculateur de Ravitaillement & Hydratation QMT-80 */}
-          {isSport && event.durationMinutes >= 35 && (
-            <div
-              style={{
-                background: 'rgba(255, 87, 34, 0.05)',
-                border: '1px solid rgba(255, 87, 34, 0.25)',
-                borderRadius: 'var(--radius-xs)',
-                padding: '12px'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.82rem' }}>
-                  <Zap size={14} />
-                  <span>Calculateur Nutrition & Hydratation Ultra-Trail (QMT-80)</span>
-                </div>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  Cible : {carbsPerHour}g de glucides/heure
-                </span>
-              </div>
-
-              {/* Métriques nutritionnelles */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center', marginBottom: 10 }}>
-                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '8px 4px', borderRadius: 4 }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--primary)' }}>{totalCarbsG}g</div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Glucides ({gelsEquivalent} gels)</div>
-                </div>
-                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '8px 4px', borderRadius: 4 }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#38bdf8' }}>{totalWaterMl} mL</div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Volume d'Eau</div>
-                </div>
-                <div style={{ background: 'rgba(255, 255, 255, 0.03)', padding: '8px 4px', borderRadius: 4 }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, color: '#f59e0b' }}>{totalSodiumMg} mg</div>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Sodium (Électrolytes)</div>
-                </div>
-              </div>
-
-              {/* Checklist Matériel */}
-              {mandatoryGearList.length > 0 && (
-                <div>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <ShieldCheck size={12} color="#10b981" /> Checklist Matériel Recommandé :
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {mandatoryGearList.map((item, idx) => {
-                      const isChecked = Boolean(checkedGear[item]);
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => toggleGear(item)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            padding: '4px 8px',
-                            background: isChecked ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
-                            borderRadius: 4,
-                            cursor: 'pointer',
-                            fontSize: '0.74rem',
-                            color: isChecked ? '#34d399' : 'var(--text-secondary)',
-                            textDecoration: isChecked ? 'line-through' : 'none'
-                          }}
-                        >
-                          {isChecked ? <CheckSquare size={13} color="#10b981" /> : <Square size={13} color="var(--text-muted)" />}
-                          <span>{item}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* SECTION: Synchronisation Montre Garmin (Forerunner 55) */}
-          {isSport && !event.metadata?.isPostponedPlaceholder && !comparison?.actualActivity && (
-            <div
-              style={{
-                background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.85), rgba(15, 23, 42, 0.95))',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                borderRadius: 'var(--radius-xs)',
-                padding: '14px',
+                background: garminPushResult.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                border: `1px solid ${garminPushResult.success ? '#10b981' : '#ef4444'}`,
+                padding: '8px 12px',
+                borderRadius: 4,
+                fontSize: '0.78rem',
+                color: garminPushResult.success ? '#34d399' : '#f87171',
                 display: 'flex',
-                flexDirection: 'column',
-                gap: '10px'
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Watch size={18} color="#60a5fa" />
-                  <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#ffffff' }}>
-                    Synchronisation Montre Garmin
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '0.68rem',
-                      padding: '2px 8px',
-                      borderRadius: 9999,
-                      background: 'rgba(59, 130, 246, 0.18)',
-                      color: '#93c5fd',
-                      fontWeight: 700
-                    }}
-                  >
-                    Forerunner 55 Compatible
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <label style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Montre :</label>
-                  <select
-                    value={selectedWatch}
-                    onChange={e => setSelectedWatch(e.target.value as any)}
-                    style={{
-                      background: 'rgba(0, 0, 0, 0.4)',
-                      color: '#ffffff',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: 4,
-                      padding: '3px 6px',
-                      fontSize: '0.72rem'
-                    }}
-                  >
-                    <option value="FORERUNNER_55">Garmin Forerunner 55 (Cardio/Run)</option>
-                    <option value="STANDARD">Garmin Standard (Fenix/Forerunner 265+)</option>
-                  </select>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {garminPushResult.success ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
+                <span>{garminPushResult.message || garminPushResult.error}</span>
               </div>
-
-              {/* Résumé des étapes Garmin */}
-              {workoutPreview && (
-                <div
-                  style={{
-                    background: 'rgba(0, 0, 0, 0.25)',
-                    padding: '8px 10px',
-                    borderRadius: 4,
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                    fontSize: '0.74rem',
-                    color: 'var(--text-secondary)'
-                  }}
-                >
-                  <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 4 }}>
-                    Structure envoyée à la montre : {workoutPreview.title}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    {workoutPreview.steps.slice(0, 4).map((st, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ color: 'var(--accent-blue)', fontWeight: 700 }}>•</span>
-                        <span>{st.stepNotes || `${st.stepType} (${st.durationSeconds ? st.durationSeconds + 's' : ''})`}</span>
-                      </div>
-                    ))}
-                    {workoutPreview.steps.length > 4 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                        + {workoutPreview.steps.length - 4} autres intervalles et temps de repos programmés
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Message de succès ou d'erreur */}
-              {garminPushResult && (
-                <div
-                  style={{
-                    background: garminPushResult.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                    border: `1px solid ${garminPushResult.success ? '#10b981' : '#ef4444'}`,
-                    padding: '8px 12px',
-                    borderRadius: 4,
-                    fontSize: '0.78rem',
-                    color: garminPushResult.success ? '#34d399' : '#f87171',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {garminPushResult.success ? <CheckCircle2 size={15} /> : <X size={15} />}
-                    <span>{garminPushResult.message || garminPushResult.error}</span>
-                  </div>
-                  {!garminPushResult.success && onOpenGarminSync && (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      onClick={onOpenGarminSync}
-                      style={{ fontSize: '0.7rem', padding: '2px 8px' }}
-                    >
-                      Connecter Garmin
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Bouton d'action */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 2 }}>
+              {!garminPushResult.success && onOpenGarminSync && (
                 <button
                   type="button"
-                  onClick={handlePushToGarmin}
-                  disabled={isPushingGarmin}
-                  style={{
-                    background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                    color: '#ffffff',
-                    border: 'none',
-                    borderRadius: 6,
-                    padding: '8px 14px',
-                    fontWeight: 700,
-                    fontSize: '0.8rem',
-                    cursor: isPushingGarmin ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.3)'
-                  }}
+                  className="btn-secondary"
+                  onClick={onOpenGarminSync}
+                  style={{ fontSize: '0.7rem', padding: '2px 8px' }}
                 >
-                  {isPushingGarmin ? (
-                    <>
-                      <Loader2 size={14} className="spin-animation" />
-                      <span>Envoi vers Garmin Connect...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send size={14} />
-                      <span>Envoyer vers ma Garmin</span>
-                    </>
-                  )}
+                  Connecter Garmin
                 </button>
-              </div>
+              )}
             </div>
           )}
         </div>
 
+        {/* Footer avec Actions Principales directes : Garmin, Alarme, Fermer */}
+        <div
+          className="modal-footer"
+          style={{
+            padding: '12px 20px',
+            borderTop: '1px solid var(--border-color)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexWrap: 'wrap',
+            background: 'var(--bg-surface)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Bouton Envoi Montre Garmin */}
+            {isSport && !event.metadata?.isPostponedPlaceholder && !comparison?.actualActivity && (
+              <button
+                type="button"
+                onClick={handlePushToGarmin}
+                disabled={isPushingGarmin}
+                style={{
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '8px 12px',
+                  fontWeight: 700,
+                  fontSize: '0.78rem',
+                  cursor: isPushingGarmin ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)'
+                }}
+                title="Programmer directement la séance sur Garmin Connect (Forerunner 55)"
+              >
+                {isPushingGarmin ? (
+                  <>
+                    <Loader2 size={13} className="spin-animation" />
+                    <span>Envoi vers montre...</span>
+                  </>
+                ) : (
+                  <>
+                    <Watch size={14} />
+                    <span>Envoyer vers Forerunner 55</span>
+                  </>
+                )}
+              </button>
+            )}
 
-        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {/* Bouton Alarme & Rappel */}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                triggerHapticFeedback('light');
+                setIsAlarmModalOpen(true);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 12px',
+                fontSize: '0.78rem',
+                fontWeight: 600
+              }}
+            >
+              <Bell size={13} />
+              <span>Alarme & Rappel</span>
+            </button>
+          </div>
+
           <button
             type="button"
-            className="btn-primary"
-            onClick={() => {
-              triggerHapticFeedback('light');
-              setIsAlarmModalOpen(true);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              border: 'none',
-              borderRadius: 8,
-              padding: '8px 14px',
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              color: '#ffffff',
-              cursor: 'pointer'
-            }}
+            className="btn-secondary"
+            onClick={onClose}
+            style={{ padding: '8px 14px', fontSize: '0.78rem' }}
           >
-            <Bell size={15} />
-            <span>Alarme & Rappel</span>
-          </button>
-          <button className="btn-secondary" onClick={onClose}>
             Fermer
           </button>
         </div>

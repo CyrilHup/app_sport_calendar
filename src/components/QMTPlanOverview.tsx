@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PeriodizationContext } from '../types/calendar';
+import { formatMinutes, QmtRacePrediction } from '../services/statsEngine';
 import {
   AlertTriangle,
   Calendar,
@@ -21,6 +22,7 @@ import {
 
 interface QMTPlanOverviewProps {
   currentContext: PeriodizationContext;
+  qmtPrediction?: QmtRacePrediction;
 }
 
 interface TrainingPhaseDetail {
@@ -39,7 +41,7 @@ interface TrainingPhaseDetail {
   badge: string;
 }
 
-export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext }) => {
+export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext, qmtPrediction }) => {
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(0);
   const [activeSubTab, setActiveSubTab] = useState<'roadmap' | 'weekly' | 'raceStrategy' | 'gearSetup'>('roadmap');
   const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
@@ -632,6 +634,139 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Ravitaillement de Saint-Tite-des-Caps</div>
             </div>
           </div>
+
+          {/* SIMULATEUR DE COURSE OFFICIEL QMT-80 */}
+          {qmtPrediction && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(255, 87, 34, 0.10), rgba(14, 20, 36, 0.95))',
+                border: '1px solid var(--primary-border)',
+                borderRadius: 'var(--radius-md)',
+                padding: '20px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                <div>
+                  <span
+                    style={{
+                      background: 'var(--primary-subtle)',
+                      color: 'var(--primary)',
+                      padding: '3px 8px',
+                      borderRadius: 'var(--radius-xs)',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}
+                  >
+                    SIMULATEUR DE COURSE OFFICIEL
+                  </span>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '6px 0 2px 0', color: '#fff' }}>
+                    Québec Méga Trail QMT-80 (77 km • +3 370m D+)
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
+                    Prévision chronométrique et allures personnalisées selon votre volume et endurance aérobie actuels.
+                  </p>
+                </div>
+
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Chrono Prévisionnel Cible</div>
+                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--primary)' }}>
+                    {formatMinutes(qmtPrediction.predictedMinutes)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Barre d'amplitude chronométrique */}
+              <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
+                  <span style={{ color: 'var(--accent-green)' }}>
+                    Ambitieux : <strong>{formatMinutes(qmtPrediction.ambitiousMinutes)}</strong>
+                  </span>
+                  <span style={{ color: 'var(--primary)', fontWeight: 800 }}>
+                    Cible : <strong>{formatMinutes(qmtPrediction.predictedMinutes)}</strong>
+                  </span>
+                  <span style={{ color: 'var(--accent-amber)' }}>
+                    Prudent : <strong>{formatMinutes(qmtPrediction.conservativeMinutes)}</strong>
+                  </span>
+                  <span style={{ color: 'var(--accent-red)' }}>
+                    Barrière finale : <strong>19h00</strong>
+                  </span>
+                </div>
+                <div style={{ height: '7px', background: 'rgba(255,255,255,0.08)', borderRadius: '9999px', position: 'relative', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${Math.round((qmtPrediction.ambitiousMinutes / 1140) * 100)}%`,
+                      width: `${Math.round(((qmtPrediction.conservativeMinutes - qmtPrediction.ambitiousMinutes) / 1140) * 100)}%`,
+                      height: '100%',
+                      background: 'linear-gradient(90deg, var(--accent-green), var(--primary), var(--accent-amber))'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Analyse & Marge */}
+              <div style={{ background: 'rgba(255,255,255,0.025)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div>{qmtPrediction.predictionAnalysis}</div>
+                <span style={{ color: 'var(--accent-green)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  +{formatMinutes(qmtPrediction.cutoffMarginMinutes)} de marge de sécurité
+                </span>
+              </div>
+
+              {/* Tableau des splits calculés par poste */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>
+                  Temps de Passage & Allures Cibles aux 6 Ravitaillements Officiels
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+                        <th style={{ padding: '8px 12px' }}>Poste</th>
+                        <th style={{ padding: '8px 12px' }}>KM</th>
+                        <th style={{ padding: '8px 12px' }}>D+</th>
+                        <th style={{ padding: '8px 12px' }}>Chrono Passage</th>
+                        <th style={{ padding: '8px 12px' }}>Allure Section</th>
+                        <th style={{ padding: '8px 12px' }}>Stratégie</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {qmtPrediction.aidStationSplits.map((split, i) => (
+                        <tr
+                          key={split.name}
+                          style={{
+                            borderBottom: '1px solid rgba(255,255,255,0.04)',
+                            background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)'
+                          }}
+                        >
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {split.name}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
+                            KM {split.km}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: 'var(--accent-cyan)' }}>
+                            +{split.elevationGainM}m
+                          </td>
+                          <td style={{ padding: '8px 12px', fontWeight: 800, color: 'var(--primary)' }}>
+                            {split.elapsedFormatted}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
+                            {split.paceMinKm}
+                          </td>
+                          <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                            {split.notes}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Aid Stations Breakdown Table */}
           <div className="glass-panel" style={{ padding: '16px' }}>

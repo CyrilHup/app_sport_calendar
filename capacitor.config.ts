@@ -7,7 +7,16 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     cleartext: true,
-    url: 'https://appsportcalendar.vercel.app'
+    url: 'https://appsportcalendar.vercel.app',
+    allowNavigation: [
+      'appsportcalendar.vercel.app',
+      'iolvxwvjasawlnsxlmpi.supabase.co',
+      '*.supabase.co',
+      'accounts.google.com',
+      '*.google.com',
+      '*.googleusercontent.com',
+      'appleid.apple.com'
+    ]
   },
   plugins: {
     LocalNotifications: {

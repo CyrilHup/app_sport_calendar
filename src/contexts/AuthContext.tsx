@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile } from '../services/supabaseClient';
+import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile, clearPermanentAuthBackup } from '../services/supabaseClient';
 import { saveGarminCredentials, loadGarminCredentials } from '../services/garminService';
+import { App as CapacitorApp } from '@capacitor/app';
 
 interface AuthContextType {
   user: User | null;
@@ -95,8 +96,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
+    // 3. Capacitor Native Deep Link Handler for OAuth return
+    let urlListener: any = null;
+    try {
+      CapacitorApp.addListener('appUrlOpen', async ({ url }) => {
+        if (!url) return;
+        if (url.includes('code=')) {
+          try {
+            const urlObj = new URL(url.replace('com.cyrilhup.sportcalendar://', 'https://appsportcalendar.vercel.app/'));
+            const code = urlObj.searchParams.get('code');
+            if (code) {
+              await supabase.auth.exchangeCodeForSession(code);
+            }
+          } catch (e) {
+            console.warn('Error handling deep link code:', e);
+          }
+        }
+      }).then(l => { urlListener = l; }).catch(() => {});
+    } catch {}
+
     return () => {
       subscription.unsubscribe();
+      if (urlListener && typeof urlListener.remove === 'function') {
+        urlListener.remove();
+      }
     };
   }, [isConfigured]);
 
@@ -146,6 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = async () => {
     if (isConfigured) {
       await supabase.auth.signOut();
+      await clearPermanentAuthBackup();
     }
     setUser(null);
     setSession(null);

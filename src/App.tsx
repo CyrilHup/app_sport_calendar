@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { CalendarEvent, DailySchedule, PeriodizationContext, WorkoutPostponeOverride, AdaptiveWorkoutOverride, AdaptiveWorkoutAction } from './types/calendar';
 import { GarminActivity, GarminSyncState, ActivityComparison } from './types/garmin';
 import { Header } from './components/Header';
@@ -15,7 +15,7 @@ import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities,
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
-import { DEFAULT_WEEKLY_TARGETS } from './services/statsEngine';
+import { DEFAULT_WEEKLY_TARGETS, computeFullStatsReport } from './services/statsEngine';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
@@ -423,6 +423,17 @@ export const App: React.FC = () => {
     }
   );
 
+  const statsReport = useMemo(() => {
+    return computeFullStatsReport(
+      garminActivities,
+      comparisons,
+      allEvents,
+      'plan',
+      referenceDate,
+      true
+    );
+  }, [garminActivities, comparisons, allEvents, referenceDate]);
+
   return (
     <div className="app-shell">
       {/* Desktop Left Sidebar */}
@@ -534,7 +545,10 @@ export const App: React.FC = () => {
       )}
 
       {activeTab === 'periodization' && (
-        <QMTPlanOverview currentContext={currentPeriodContext} />
+        <QMTPlanOverview
+          currentContext={currentPeriodContext}
+          qmtPrediction={statsReport.qmtPrediction}
+        />
       )}
 
       {/* Mobile Bottom Navigation Bar */}

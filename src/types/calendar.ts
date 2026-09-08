@@ -81,6 +81,9 @@ export interface AdaptiveWorkoutOverride {
   coachingCue: string;
   adaptedDescription?: string;
   targetHeartRate?: string;
+  adaptedLocation?: string;
+  adaptedElevationM?: number;
+  adaptedSportType?: SportType;
   createdAt: string;
 }
 
@@ -96,6 +99,9 @@ export interface AdaptiveWorkoutAction {
   coachingCue: string;
   adaptedDescription?: string;
   targetHeartRate?: string;
+  adaptedLocation?: string;
+  adaptedElevationM?: number;
+  adaptedSportType?: SportType;
 }
 
 export interface AdaptivePlanStatus {

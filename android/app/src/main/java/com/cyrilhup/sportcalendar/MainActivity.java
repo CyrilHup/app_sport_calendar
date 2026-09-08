@@ -38,6 +38,14 @@ public class MainActivity extends BridgeActivity {
                     settings.setDomStorageEnabled(true);
                     settings.setDatabaseEnabled(true);
                     settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+
+                    // Sanitize User-Agent to prevent Google 403 disallowed_useragent
+                    String ua = settings.getUserAgentString();
+                    if (ua != null) {
+                        String cleanUa = ua.replace("; wv", "").replaceAll("Version/[0-9.]+\\s*", "");
+                        settings.setUserAgentString(cleanUa);
+                    }
+
                     CookieManager cookieManager = CookieManager.getInstance();
                     cookieManager.setAcceptCookie(true);
                     cookieManager.setAcceptThirdPartyCookies(webView, true);

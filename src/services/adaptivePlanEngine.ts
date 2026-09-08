@@ -97,15 +97,21 @@ export function evaluateAdaptivePlanStatus(
           adaptedDurationMinutes: 35,
           actionType: 'LIGHTEN',
           reason: 'Désamorcer le stress excentrique des descentes et préserver les tendons.',
-          coachingCue: '35 min de trot souple strictly en Zone 1/2 (FC < 142 bpm), 100% sur terrain plat ou herbeux. Zéro répétition de côte.',
-          adaptedDescription: `• Adaptation Anti-blessure automatique (ACWR Trail > 1.5) :\n• 35 min de footing régénérant sur terrain plat ou herbeux.\n• Pulsations strictement contrôlées : FC < 142 bpm (Zone 1/2 légère).\n• Zéro intensité en côte, zéro impact de descente rapide pour reposer les quadriceps et le tendon rotulien.`,
-          targetHeartRate: '< 142 bpm (Zone 1/2 Récupération)'
+          coachingCue: '35 min de trot souple en Zone 1/2 (FC < 142 bpm), 100% sur terrain plat ou herbeux. Zéro répétition de côte.',
+          adaptedDescription: `• Adaptation Anti-blessure (ACWR Trail > 1.5) :\n• 35 min de footing régénérant sur terrain plat ou herbeux (zéro dénivelé).\n• Pulsations strictement contrôlées : FC < 142 bpm (Zone 1/2 légère).\n• Zéro intensité en côte, zéro impact de descente rapide pour reposer les quadriceps et le tendon d'Achille.`,
+          targetHeartRate: '< 142 bpm (Zone 1/2 Récupération)',
+          adaptedLocation: 'Terrain plat / Parc (évite le D+)',
+          adaptedElevationM: 0,
+          adaptedSportType: 'RUN_EASY'
         });
       }
 
       // Traiter la Sortie Longue (TRAIL_LONG)
       if (ev.sportType === 'TRAIL_LONG') {
         const adaptedMins = Math.max(60, Math.round(ev.durationMinutes * 0.72));
+        const origElevation = ev.metadata?.targetElevationM || 523;
+        const adaptedElevationM = Math.round(origElevation * (adaptedMins / ev.durationMinutes));
+
         recommendedActions.push({
           eventId: ev.id,
           date: dateStr,
@@ -114,10 +120,13 @@ export function evaluateAdaptivePlanStatus(
           originalDurationMinutes: ev.durationMinutes,
           adaptedDurationMinutes: adaptedMins,
           actionType: 'LIGHTEN',
-          reason: `Réduction de ${ev.durationMinutes - adaptedMins} min pour ramener immédiatement la charge aiguë sous le seuil critique (ACWR < 1.3).`,
-          coachingCue: `Volume plafonné à ${adaptedMins} min. Marche rapide obligatoire dès 8% de pente pour protéger le système cardiovasculaire et les genoux.`,
-          adaptedDescription: `• Adaptation Anti-blessure automatique (ACWR Trail > 1.5) :\n• Durée ramenée à ${adaptedMins} min (au lieu de ${ev.durationMinutes} min) pour protéger les tendons d'Achille et les genoux.\n• Cardio : Zone 2 stricte (FC < 150 bpm).\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse 8%.\n• Nutrition : 50g glucides/h + hydratation régulière.`,
-          targetHeartRate: '< 150 bpm (Zone 2 Endurance douce)'
+          reason: `Réduction de ${ev.durationMinutes - adaptedMins} min et D+ plafonné à +${adaptedElevationM}m pour ramener la charge aiguë sous le seuil critique (ACWR < 1.3).`,
+          coachingCue: `Volume plafonné à ${adaptedMins} min et +${adaptedElevationM}m D+. Marche rapide obligatoire dès 8% de pente pour protéger les tendons d'Achille et les genoux.`,
+          adaptedDescription: `• Adaptation Anti-blessure (ACWR Trail > 1.5) :\n• Durée ramenée à ${adaptedMins} min et D+ modulé à +${adaptedElevationM} m (au lieu de +${origElevation} m) pour protéger les tendons d'Achille.\n• Cardio : Zone 2 stricte (FC < 150 bpm).\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse 8%.\n• Éviter les descentes trop raides et techniques.`,
+          targetHeartRate: '< 150 bpm (Zone 2 Endurance douce)',
+          adaptedLocation: 'Mont-Royal (boucles douces / D+ allégé)',
+          adaptedElevationM,
+          adaptedSportType: 'TRAIL_LONG'
         });
       }
 
@@ -141,6 +150,9 @@ export function evaluateAdaptivePlanStatus(
 
       if (ev.sportType === 'TRAIL_INTENSE') {
         const adaptedMins = Math.max(40, Math.round(ev.durationMinutes * 0.85));
+        const origElevation = ev.metadata?.targetElevationM || 450;
+        const adaptedElevationM = Math.round(origElevation * 0.6);
+
         recommendedActions.push({
           eventId: ev.id,
           date: dateStr,
@@ -151,8 +163,11 @@ export function evaluateAdaptivePlanStatus(
           actionType: 'LIGHTEN',
           reason: 'Réduire le volume d\'intervalles anaérobies pour stabiliser l\'ACWR dans le sweet spot.',
           coachingCue: 'Réaliser 1 seule série de répétitions de côtes au lieu de 2. Descentes marchées très souples.',
-          adaptedDescription: `• Adaptation modérée (ACWR Trail ${trailAcwrRatio}) :\n• Échauffement 15 min + 1 série unique de côtes (5x 1 min) + retour au calme.\n• Allure montée contrôlée : FC max 175 bpm.\n• Descente en marchant pour amortir les chocs excentriques.`,
-          targetHeartRate: '160 - 175 bpm'
+          adaptedDescription: `• Adaptation modérée (ACWR Trail ${trailAcwrRatio}) :\n• Échauffement 15 min + 1 série unique de côtes (5x 1 min) + retour au calme.\n• D+ limité à +${adaptedElevationM} m.\n• Allure montée contrôlée : FC max 175 bpm.\n• Descente en marchant pour amortir les chocs excentriques.`,
+          targetHeartRate: '160 - 175 bpm',
+          adaptedLocation: 'Mont-Royal (pentes douces)',
+          adaptedElevationM,
+          adaptedSportType: 'TRAIL_INTENSE'
         });
       }
     }
@@ -194,6 +209,9 @@ export function buildOverridesFromActions(
       coachingCue: act.coachingCue,
       adaptedDescription: act.adaptedDescription,
       targetHeartRate: act.targetHeartRate,
+      adaptedLocation: act.adaptedLocation,
+      adaptedElevationM: act.adaptedElevationM,
+      adaptedSportType: act.adaptedSportType,
       createdAt: nowIso
     };
   }
@@ -235,6 +253,8 @@ export function applyAdaptiveModifications(
         title: override.adaptedTitle,
         durationMinutes: override.adaptedDurationMinutes,
         endDate: newEndDate.toISOString(),
+        location: override.adaptedLocation || ev.location,
+        sportType: override.adaptedSportType || ev.sportType,
         description: override.adaptedDescription || `${ev.description}\n\n🛡️ Adaptation Anti-blessure :\n${override.adaptationReason}\nConsigne : ${override.coachingCue}`,
         metadata: {
           ...ev.metadata,
@@ -242,7 +262,8 @@ export function applyAdaptiveModifications(
           adaptationReason: override.adaptationReason,
           originalTitle: override.originalTitle,
           originalDurationMinutes: override.originalDurationMinutes,
-          targetHeartRate: override.targetHeartRate || ev.metadata?.targetHeartRate
+          targetHeartRate: override.targetHeartRate || ev.metadata?.targetHeartRate,
+          targetElevationM: override.adaptedElevationM !== undefined ? override.adaptedElevationM : ev.metadata?.targetElevationM
         }
       };
 
@@ -273,6 +294,8 @@ export function applyAdaptiveModifications(
       title: override.adaptedTitle,
       durationMinutes: override.adaptedDurationMinutes,
       endDate: newEndDate.toISOString(),
+      location: override.adaptedLocation || ev.location,
+      sportType: override.adaptedSportType || ev.sportType,
       description: override.adaptedDescription || `${ev.description}\n\n🛡️ Adaptation Anti-blessure :\n${override.adaptationReason}\nConsigne : ${override.coachingCue}`,
       metadata: {
         ...ev.metadata,
@@ -280,7 +303,8 @@ export function applyAdaptiveModifications(
         adaptationReason: override.adaptationReason,
         originalTitle: override.originalTitle,
         originalDurationMinutes: override.originalDurationMinutes,
-        targetHeartRate: override.targetHeartRate || ev.metadata?.targetHeartRate
+        targetHeartRate: override.targetHeartRate || ev.metadata?.targetHeartRate,
+        targetElevationM: override.adaptedElevationM !== undefined ? override.adaptedElevationM : ev.metadata?.targetElevationM
       }
     };
   });

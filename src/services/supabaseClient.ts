@@ -16,11 +16,14 @@ export const isSupabaseConfigured = (): boolean => {
   return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http'));
 };
 
+const PERMANENT_BACKUP_KEY = 'sb-permanent-session-backup';
+
 /**
- * Resilient Triple-Layer persistent storage adapter:
+ * Resilient Triple-Layer persistent storage adapter with Permanent Recovery Mirror:
  * Layer 1: @capacitor/preferences (native SharedPreferences on Android, immune to process kills)
  * Layer 2: HTML5 window.localStorage (web DOM storage)
  * Layer 3: Persistent Document Cookie (365-day expiry with SameSite=Lax)
+ * Mirror: Isolated permanent backup that survives transient offline refresh failures
  * Includes bidirectional automatic recovery to prevent session loss.
  */
 export const persistentAuthStorage = {
@@ -75,6 +78,28 @@ export const persistentAuthStorage = {
       }
     } catch {}
 
+    // 4. Fail-Safe Recovery from Permanent Backup Mirror (recovers session if offline launch caused Supabase to purge the active slot)
+    if (key.includes('auth-token')) {
+      try {
+        const backupPref = await Preferences.get({ key: PERMANENT_BACKUP_KEY });
+        if (backupPref && typeof backupPref.value === 'string' && backupPref.value.trim().length > 0) {
+          // Re-populate the main key across layers
+          await persistentAuthStorage.setItem(key, backupPref.value);
+          return backupPref.value;
+        }
+      } catch {}
+
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const backupLocal = window.localStorage.getItem(PERMANENT_BACKUP_KEY);
+          if (backupLocal && backupLocal.trim().length > 0) {
+            await persistentAuthStorage.setItem(key, backupLocal);
+            return backupLocal;
+          }
+        }
+      } catch {}
+    }
+
     return null;
   },
   setItem: async (key: string, value: string): Promise<void> => {
@@ -100,6 +125,18 @@ export const persistentAuthStorage = {
         document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
       }
     } catch {}
+
+    // 4. Maintain Permanent Recovery Mirror for auth tokens
+    if (key.includes('auth-token')) {
+      try {
+        await Preferences.set({ key: PERMANENT_BACKUP_KEY, value });
+      } catch {}
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          window.localStorage.setItem(PERMANENT_BACKUP_KEY, value);
+        }
+      } catch {}
+    }
   },
   removeItem: async (key: string): Promise<void> => {
     try {
@@ -115,8 +152,24 @@ export const persistentAuthStorage = {
         document.cookie = `${encodeURIComponent(key)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
       }
     } catch {}
+    // Note: PERMANENT_BACKUP_KEY is intentionally NOT deleted here so transient refresh failures
+    // don't wipe the user's saved session. It is only purged when the user explicitly signs out.
   }
 };
+
+/**
+ * Purges the permanent backup mirror. Only invoked during explicit user sign out.
+ */
+export async function clearPermanentAuthBackup(): Promise<void> {
+  try {
+    await Preferences.remove({ key: PERMANENT_BACKUP_KEY });
+  } catch {}
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem(PERMANENT_BACKUP_KEY);
+    }
+  } catch {}
+}
 
 export const supabase: SupabaseClient = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey, {

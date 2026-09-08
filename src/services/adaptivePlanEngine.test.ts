@@ -132,12 +132,16 @@ describe('Adaptive Plan Engine', () => {
     expect(tueAction).toBeDefined();
     expect(tueAction?.adaptedDurationMinutes).toBe(35);
     expect(tueAction?.adaptedTitle).toContain('Footing Aérobie Doux');
+    expect(tueAction?.adaptedElevationM).toBe(0);
+    expect(tueAction?.adaptedLocation).toContain('plat');
 
     // 2. Saturday Long Run reduced by ~28% duration to protect tendons
     const satAction = status.recommendedActions.find(a => a.eventId === 'SPORT_SAT');
     expect(satAction).toBeDefined();
     expect(satAction?.adaptedDurationMinutes).toBeLessThan(115);
     expect(satAction?.adaptedDurationMinutes).toBe(83); // 115 * 0.72
+    expect(satAction?.adaptedElevationM).toBeGreaterThan(0);
+    expect(satAction?.adaptedLocation).toContain('Mont-Royal');
 
     // 3. Calisthenics MUST NOT be touched (it has zero running impact)
     const calisAction = status.recommendedActions.find(a => a.eventId === 'SPORT_MON');
@@ -176,7 +180,9 @@ describe('Adaptive Plan Engine', () => {
         actionType: 'LIGHTEN' as const,
         reason: 'Protection des tendons d\'Achille',
         coachingCue: '35 min footing souple à plat',
-        targetHeartRate: '< 142 bpm'
+        targetHeartRate: '< 142 bpm',
+        adaptedLocation: 'Terrain plat / Parc (évite le D+)',
+        adaptedElevationM: 0
       }
     ];
 
@@ -191,6 +197,8 @@ describe('Adaptive Plan Engine', () => {
     const adaptedEv = adaptedSchedules[0].events[0];
     expect(adaptedEv.title).toBe('🛡️ Footing Aérobie Doux & Récupération Z1/Z2 (35 min)');
     expect(adaptedEv.durationMinutes).toBe(35);
+    expect(adaptedEv.location).toBe('Terrain plat / Parc (évite le D+)');
+    expect(adaptedEv.metadata?.targetElevationM).toBe(0);
     expect(adaptedEv.metadata?.isAdapted).toBe(true);
     expect(adaptedEv.metadata?.originalDurationMinutes).toBe(80);
     expect(adaptedSchedules[0].sportSession?.durationMinutes).toBe(35);
