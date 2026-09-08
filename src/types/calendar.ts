@@ -53,6 +53,10 @@ export interface CalendarEvent {
     postponedToDate?: string;
     postponedReason?: string;
     isPostponedPlaceholder?: boolean;
+    isAdapted?: boolean;
+    adaptationReason?: string;
+    originalTitle?: string;
+    originalDurationMinutes?: number;
   };
 }
 
@@ -64,6 +68,48 @@ export interface WorkoutPostponeOverride {
   targetEndTime?: string;
   reason?: string;
   createdAt: string;
+}
+
+export interface AdaptiveWorkoutOverride {
+  eventId: string;
+  date: string;
+  originalTitle: string;
+  adaptedTitle: string;
+  originalDurationMinutes: number;
+  adaptedDurationMinutes: number;
+  adaptationReason: string;
+  coachingCue: string;
+  adaptedDescription?: string;
+  targetHeartRate?: string;
+  createdAt: string;
+}
+
+export interface AdaptiveWorkoutAction {
+  eventId: string;
+  date: string;
+  originalTitle: string;
+  adaptedTitle: string;
+  originalDurationMinutes: number;
+  adaptedDurationMinutes: number;
+  actionType: 'LIGHTEN' | 'POSTPONE' | 'MAINTAIN';
+  reason: string;
+  coachingCue: string;
+  adaptedDescription?: string;
+  targetHeartRate?: string;
+}
+
+export interface AdaptivePlanStatus {
+  injuryRiskLevel: 'SAFE' | 'MODERATE' | 'HIGH';
+  trailAcwrRatio: number;
+  trailAcwrStatus: 'UNDERLOAD' | 'OPTIMAL' | 'MODERATE_RISK' | 'DANGER_HIGH_RISK' | 'CALIBRATING';
+  headline: string;
+  explanation: string;
+  trailAcuteLoad7d: number;
+  trailChronicWeeklyAvg: number;
+  calisthenicsAcuteLoad7d: number;
+  calisthenicsSessionsCount7d: number;
+  recommendedActions: AdaptiveWorkoutAction[];
+  hasActiveAdaptations: boolean;
 }
 
 export interface PeriodizationContext {
@@ -85,3 +131,4 @@ export interface DailySchedule {
   hasCourse: boolean;
   hasIntensiveCourse: boolean;
 }
+

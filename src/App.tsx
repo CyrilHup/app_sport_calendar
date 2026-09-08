@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarEvent, DailySchedule, PeriodizationContext, WorkoutPostponeOverride } from './types/calendar';
+import { CalendarEvent, DailySchedule, PeriodizationContext, WorkoutPostponeOverride, AdaptiveWorkoutOverride, AdaptiveWorkoutAction } from './types/calendar';
 import { GarminActivity, GarminSyncState, ActivityComparison } from './types/garmin';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -14,6 +14,7 @@ import { getPeriodizationContext, GLOBAL_APP_CONFIG, setAppConfigOverrides } fro
 import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
+import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
@@ -47,6 +48,7 @@ export const App: React.FC = () => {
   const [schedules, setSchedules] = useState<DailySchedule[]>([]);
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [postponeOverrides, setPostponeOverrides] = useState<Record<string, WorkoutPostponeOverride>>(loadPostponeOverrides());
+  const [adaptiveOverrides, setAdaptiveOverrides] = useState<Record<string, AdaptiveWorkoutOverride>>(loadAdaptiveOverrides());
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
   const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
@@ -185,11 +187,18 @@ export const App: React.FC = () => {
 
     setBaseCalendar({ schedules: builtSchedules, allEvents: builtEvents });
 
-    // Appliquer les reports de séances enregistrés
-    const { schedules: transformedSchedules, allEvents: transformedEvents } = applyPostponements(
+    // 1. Appliquer les reports de séances enregistrés
+    const { schedules: postponedSchedules, allEvents: postponedEvents } = applyPostponements(
       builtSchedules,
       builtEvents,
       postponeOverrides
+    );
+
+    // 2. Appliquer les adaptations intelligentes anti-blessure
+    const { schedules: transformedSchedules, allEvents: transformedEvents } = applyAdaptiveModifications(
+      postponedSchedules,
+      postponedEvents,
+      adaptiveOverrides
     );
 
     setSchedules(transformedSchedules);
@@ -302,6 +311,24 @@ export const App: React.FC = () => {
     }
   };
 
+  const applyAllTransforms = (
+    baseSched: DailySchedule[],
+    baseEv: CalendarEvent[],
+    postpones: Record<string, WorkoutPostponeOverride>,
+    adaptations: Record<string, AdaptiveWorkoutOverride>
+  ) => {
+    const { schedules: postponedSched, allEvents: postponedEv } = applyPostponements(
+      baseSched,
+      baseEv,
+      postpones
+    );
+    return applyAdaptiveModifications(
+      postponedSched,
+      postponedEv,
+      adaptations
+    );
+  };
+
   const handlePostponeWorkout = (
     eventId: string,
     originalDate: string,
@@ -312,10 +339,11 @@ export const App: React.FC = () => {
     const updated = postponeWorkout(postponeOverrides, eventId, originalDate, targetDate, reason, targetStartTime);
     setPostponeOverrides(updated);
     if (baseCalendar.schedules.length > 0) {
-      const { schedules: newSched, allEvents: newEv } = applyPostponements(
+      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
         baseCalendar.schedules,
         baseCalendar.allEvents,
-        updated
+        updated,
+        adaptiveOverrides
       );
       setSchedules(newSched);
       setAllEvents(newEv);
@@ -327,10 +355,44 @@ export const App: React.FC = () => {
     const updated = cancelPostponeWorkout(postponeOverrides, eventId);
     setPostponeOverrides(updated);
     if (baseCalendar.schedules.length > 0) {
-      const { schedules: newSched, allEvents: newEv } = applyPostponements(
+      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
         baseCalendar.schedules,
         baseCalendar.allEvents,
-        updated
+        updated,
+        adaptiveOverrides
+      );
+      setSchedules(newSched);
+      setAllEvents(newEv);
+      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
+    }
+  };
+
+  const handleApplyAdaptivePlan = (actions: AdaptiveWorkoutAction[]) => {
+    const overrides = buildOverridesFromActions(actions);
+    setAdaptiveOverrides(overrides);
+    saveAdaptiveOverrides(overrides);
+    if (baseCalendar.schedules.length > 0) {
+      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
+        baseCalendar.schedules,
+        baseCalendar.allEvents,
+        postponeOverrides,
+        overrides
+      );
+      setSchedules(newSched);
+      setAllEvents(newEv);
+      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
+    }
+  };
+
+  const handleRevertAdaptivePlan = () => {
+    setAdaptiveOverrides({});
+    clearAdaptiveOverrides();
+    if (baseCalendar.schedules.length > 0) {
+      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
+        baseCalendar.schedules,
+        baseCalendar.allEvents,
+        postponeOverrides,
+        {}
       );
       setSchedules(newSched);
       setAllEvents(newEv);
@@ -438,6 +500,10 @@ export const App: React.FC = () => {
           onPostponeWorkout={handlePostponeWorkout}
           onCancelPostponeWorkout={handleCancelPostpone}
           comparisons={comparisons}
+          garminActivities={garminActivities}
+          adaptiveOverrides={adaptiveOverrides}
+          onApplyAdaptivePlan={handleApplyAdaptivePlan}
+          onRevertAdaptivePlan={handleRevertAdaptivePlan}
         />
       )}
 

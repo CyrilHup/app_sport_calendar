@@ -165,6 +165,13 @@ export interface TrainingLoadStats {
   acuteLoad7d: number;
   chronicLoad28dWeeklyAvg: number;
   fitnessTrend: FitnessDayPoint[];
+  trailAcwrRatio: number;
+  trailAcuteLoad7d: number;
+  trailChronicLoad28dWeeklyAvg: number;
+  trailAcwrStatus: 'UNDERLOAD' | 'OPTIMAL' | 'MODERATE_RISK' | 'DANGER_HIGH_RISK' | 'CALIBRATING';
+  calisthenicsAcuteLoad7d: number;
+  calisthenicsSessionsCount7d: number;
+  totalSystemicAcuteLoad7d: number;
 }
 
 export interface TrailSpecificStats {
@@ -510,10 +517,26 @@ export function computeFullStatsReport(
         if (prevComplete.totalMinutes > 0) {
           weeklyProgressionPct = Math.round((diffMin / prevComplete.totalMinutes) * 100);
         }
+        const lastRunMin = lastComplete.runningMinutes || 0;
+        const prevRunMin = prevComplete.runningMinutes || 0;
+        const runDiffMin = lastRunMin - prevRunMin;
+        const runProgressionPct = prevRunMin > 0 ? Math.round((runDiffMin / prevRunMin) * 100) : 0;
         const lastLabel = lastComplete.weekLabel.replace('Sem. ', '');
         const prevLabel = prevComplete.weekLabel.replace('Sem. ', '');
+
         progressionComparisonText = `Semaines complètes : Sem. ${lastLabel} (${formatMinutes(lastComplete.totalMinutes)}) vs Sem. ${prevLabel} (${formatMinutes(prevComplete.totalMinutes)}) : ${diffMin >= 0 ? '+' : ''}${formatMinutes(Math.abs(diffMin))} (${weeklyProgressionPct > 0 ? '+' : ''}${weeklyProgressionPct}%). Semaine actuelle en cours (${formatMinutes(curW.totalMinutes)}).`;
-        progressionStatus = weeklyProgressionPct > 20 ? 'OVERLOAD_WARNING' : (weeklyProgressionPct >= 5 ? 'SAFE_PROGRESSION' : 'RECOVERY_MAINTENANCE');
+
+        if (runProgressionPct > 20) {
+          progressionStatus = 'OVERLOAD_WARNING';
+        } else if (weeklyProgressionPct > 20 && runProgressionPct <= 10) {
+          progressionStatus = 'SAFE_PROGRESSION';
+        } else if (weeklyProgressionPct > 20) {
+          progressionStatus = 'OVERLOAD_WARNING';
+        } else if (weeklyProgressionPct >= 5) {
+          progressionStatus = 'SAFE_PROGRESSION';
+        } else {
+          progressionStatus = 'RECOVERY_MAINTENANCE';
+        }
       } else {
         // Only 1 completed week + current week in progress
         weeklyProgressionPct = 0;
@@ -525,12 +548,26 @@ export function computeFullStatsReport(
       if (prevW.totalMinutes > 0) {
         weeklyProgressionPct = Math.round((diffMin / prevW.totalMinutes) * 100);
       }
+      const lastRunMin = curW.runningMinutes || 0;
+      const prevRunMin = prevW.runningMinutes || 0;
+      const runDiffMin = lastRunMin - prevRunMin;
+      const runProgressionPct = prevRunMin > 0 ? Math.round((runDiffMin / prevRunMin) * 100) : 0;
+
       const curLabel = curW.weekLabel.replace('Sem. ', '');
       const prevLabel = prevW.weekLabel.replace('Sem. ', '');
       progressionComparisonText = `Volume sem. ${curLabel} (${formatMinutes(curW.totalMinutes)}) comparé à sem. ${prevLabel} (${formatMinutes(prevW.totalMinutes)}) : ${diffMin >= 0 ? '+' : ''}${formatMinutes(Math.abs(diffMin))} (${weeklyProgressionPct > 0 ? '+' : ''}${weeklyProgressionPct}%)`;
-      if (weeklyProgressionPct > 20) progressionStatus = 'OVERLOAD_WARNING';
-      else if (weeklyProgressionPct >= 5 && weeklyProgressionPct <= 20) progressionStatus = 'SAFE_PROGRESSION';
-      else progressionStatus = 'RECOVERY_MAINTENANCE';
+
+      if (runProgressionPct > 20) {
+        progressionStatus = 'OVERLOAD_WARNING';
+      } else if (weeklyProgressionPct > 20 && runProgressionPct <= 10) {
+        progressionStatus = 'SAFE_PROGRESSION';
+      } else if (weeklyProgressionPct > 20) {
+        progressionStatus = 'OVERLOAD_WARNING';
+      } else if (weeklyProgressionPct >= 5 && weeklyProgressionPct <= 20) {
+        progressionStatus = 'SAFE_PROGRESSION';
+      } else {
+        progressionStatus = 'RECOVERY_MAINTENANCE';
+      }
     }
   }
 
@@ -868,6 +905,8 @@ export function computeFullStatsReport(
 /**
  * Computes Chronic Training Load (CTL), Acute Training Load (ATL),
  * Training Stress Balance (TSB), and Acute:Chronic Workload Ratio (ACWR).
+ * Note: ACWR for injury risk is computed strictly on Trail & Running activities,
+ * excluding calisthenics and strength training to avoid false overload alerts.
  */
 export function computeTrainingLoadStats(
   activities: Array<any>,
@@ -875,21 +914,55 @@ export function computeTrainingLoadStats(
   daysToAnalyze: number = 60
 ): TrainingLoadStats {
   const dailyLoads: Record<string, number> = {};
+  const dailyTrailLoads: Record<string, number> = {};
+  const dailyCalisthenicsLoads: Record<string, number> = {};
+  const calisthenicsSessionsByDay: Record<string, number> = {};
 
   for (const act of activities) {
     const dKey = act.date || (act.startTimeLocal ? getGarminLocalDateKey(act) : formatDateKey(new Date()));
     let load = act.trainingLoad;
+    const dur = act.durationMinutes || 0;
+    const actType = String(act.activityType || act.type || '').toUpperCase();
+    const actName = String(act.name || act.activityName || '').toLowerCase();
+
+    // Determine activity category
+    const isTrailOrRunning =
+      actType === 'TRAIL_RUNNING' ||
+      actType === 'RUNNING' ||
+      actName.includes('trail') ||
+      actName.includes('côtes') ||
+      actName.includes('footing') ||
+      (actName.includes('course') && !actName.includes('cours') && !actName.includes('calisth'));
+
+    const isCalisthenics =
+      actType === 'STRENGTH_TRAINING' ||
+      actType === 'FITNESS_EQUIPMENT' ||
+      actName.includes('calisth') ||
+      actName.includes('muscu') ||
+      actName.includes('force') ||
+      actName.includes('dips') ||
+      actName.includes('traction') ||
+      actName.includes('gainage');
+
     if (typeof load !== 'number' || load <= 0) {
-      const dur = act.durationMinutes || 0;
       let factor = 1.0;
-      const actType = String(act.activityType || act.type || '');
       if (actType === 'TRAIL_RUNNING') factor = 1.35;
       else if (actType === 'RUNNING') factor = 1.15;
       else if (actType === 'STRENGTH_TRAINING' || actType === 'CLIMBING') factor = 0.85;
       else factor = 0.75;
       load = Math.round(dur * factor * 0.8);
     }
+
+    // Systemic whole-body load (CTL, ATL, TSB)
     dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
+
+    // Musculoskeletal mechanical impact load (Trail & Running exclusively)
+    if (isTrailOrRunning && !isCalisthenics) {
+      dailyTrailLoads[dKey] = (dailyTrailLoads[dKey] || 0) + load;
+    } else if (isCalisthenics) {
+      dailyCalisthenicsLoads[dKey] = (dailyCalisthenicsLoads[dKey] || 0) + load;
+      calisthenicsSessionsByDay[dKey] = (calisthenicsSessionsByDay[dKey] || 0) + 1;
+    }
   }
 
   const fitnessTrend: FitnessDayPoint[] = [];
@@ -934,48 +1007,62 @@ export function computeTrainingLoadStats(
   const currentAtl = latestPoint.atl;
   const currentTsb = latestPoint.tsb;
 
-  // ACWR calculation
-  let acuteSum = 0;
+  // Trail-specific ACWR (Gabbett model applied exclusively to mechanical ground impact)
+  // Calisthenics is strictly excluded from injury risk to prevent false positives.
+  let trailAcuteSum = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
-    acuteSum += (dailyLoads[formatDateKey(d)] || 0);
+    trailAcuteSum += (dailyTrailLoads[formatDateKey(d)] || 0);
   }
 
-  let chronicSum = 0;
-  let activeDaysInLast28 = 0;
+  let trailChronicSum = 0;
+  let trailActiveDaysInLast28 = 0;
   for (let i = 0; i < 28; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
-    const dLoad = dailyLoads[formatDateKey(d)] || 0;
-    chronicSum += dLoad;
-    if (dLoad > 0) activeDaysInLast28++;
+    const dLoad = dailyTrailLoads[formatDateKey(d)] || 0;
+    trailChronicSum += dLoad;
+    if (dLoad > 0) trailActiveDaysInLast28++;
   }
-  const chronicWeeklyAvg = Math.max(15, Math.round(chronicSum / 4));
-  const acwrRatio = Math.round((acuteSum / chronicWeeklyAvg) * 100) / 100;
+  const trailChronicWeeklyAvg = Math.max(15, Math.round(trailChronicSum / 4));
+  const trailAcwrRatio = Math.round((trailAcuteSum / trailChronicWeeklyAvg) * 100) / 100;
 
-  // Detect calibration/cold-start: when chronic history has very few recorded workout days
-  const isCalibrating = activeDaysInLast28 < 6 && acuteSum > 0;
+  // Calisthenics & Strength metrics over last 7 days (non-impact)
+  let calisthenicsAcuteSum = 0;
+  let calisthenicsSessionsCount7d = 0;
+  let totalSystemicAcuteSum = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(asOfDate);
+    d.setDate(asOfDate.getDate() - i);
+    const dKey = formatDateKey(d);
+    calisthenicsAcuteSum += (dailyCalisthenicsLoads[dKey] || 0);
+    calisthenicsSessionsCount7d += (calisthenicsSessionsByDay[dKey] || 0);
+    totalSystemicAcuteSum += (dailyLoads[dKey] || 0);
+  }
+
+  // Detect calibration/cold-start: when trail chronic history has very few recorded trail days
+  const isCalibrating = trailActiveDaysInLast28 < 4 && trailAcuteSum > 0;
 
   let acwrStatus: TrainingLoadStats['acwrStatus'] = 'OPTIMAL';
-  let acwrLabel = 'Zone Optimale (0.8 - 1.3) : Progression saine et risque de blessure minimal.';
-  let acwrActionAdvice = 'Charge parfaitement assimilée. Poursuivez sur cette régularité.';
+  let acwrLabel = 'Zone Optimale Trail (0.8 - 1.3) : Progression saine et risque de blessure articulaire minimal. Calisthénie bien tolérée.';
+  let acwrActionAdvice = 'Charge d\'impact Trail parfaitement assimilée. Poursuivez sur cette régularité.';
 
-  if (isCalibrating && acwrRatio > 1.4) {
+  if (isCalibrating && trailAcwrRatio > 1.4) {
     acwrStatus = 'CALIBRATING';
-    acwrLabel = 'Reprise / Calibration : Données chroniques (28j) en cours d\'accumulation suite à la reprise.';
+    acwrLabel = 'Reprise / Calibration Trail : Données chroniques de course (28j) en cours d\'accumulation suite à la reprise. Calisthénie exclue.';
     acwrActionAdvice = 'Privilégiez 80% de votre volume en endurance fondamentale (Zone 2) et veillez à vos jours de repos.';
-  } else if (acwrRatio < 0.8) {
+  } else if (trailAcwrRatio < 0.8) {
     acwrStatus = 'UNDERLOAD';
-    acwrLabel = 'Sous-charge (< 0.8) : Stimulus allégé ou période de récupération active.';
-    acwrActionAdvice = 'Profitez de la fraîcheur musculaire pour le renforcement et la mobilité.';
-  } else if (acwrRatio > 1.5) {
+    acwrLabel = 'Sous-charge Trail (< 0.8) : Stimulus mécanique de course allégé ou période de récupération active.';
+    acwrActionAdvice = 'Pieds et tendons frais. Profitez-en pour le renforcement postural et la mobilité.';
+  } else if (trailAcwrRatio > 1.5) {
     acwrStatus = 'DANGER_HIGH_RISK';
-    acwrLabel = 'Zone Critique (> 1.5) : Augmentation rapide du volume récent (+50% vs moyenne sur 4 semaines).';
-    acwrActionAdvice = 'Évitez d\'ajouter des séances intenses non prévues. Priorité au sommeil et à l\'hydratation.';
-  } else if (acwrRatio > 1.3) {
+    acwrLabel = 'Zone Critique Trail (> 1.5) : Augmentation rapide du volume d\'impact course (+50% vs moyenne sur 4 semaines). Risque tendineux élevé.';
+    acwrActionAdvice = 'Allégez la prochaine séance de côtes ou écourtez la sortie longue. Maintenez la calisthénie sans chocs.';
+  } else if (trailAcwrRatio > 1.3) {
     acwrStatus = 'MODERATE_RISK';
-    acwrLabel = 'Zone d\'Attention (1.3 - 1.5) : Montée de charge soutenue. Surveillez la fatigue.';
+    acwrLabel = 'Zone d\'Attention Trail (1.3 - 1.5) : Montée de charge mécanique soutenue. Surveillez mollets et tendons.';
     acwrActionAdvice = 'Maintenez les allures d\'endurance sans forcer et surveillez les courbatures.';
   }
 
@@ -996,14 +1083,14 @@ export function computeTrainingLoadStats(
   }
 
   const acwrStatusLabel = acwrStatus === 'OPTIMAL'
-    ? 'Sweet Spot Optimal'
+    ? 'Sweet Spot Optimal (Trail)'
     : (acwrStatus === 'CALIBRATING'
-      ? 'Calibration (Reprise)'
+      ? 'Calibration Trail'
       : (acwrStatus === 'UNDERLOAD'
-        ? 'Sous-charge'
+        ? 'Sous-charge Trail'
         : (acwrStatus === 'DANGER_HIGH_RISK'
-          ? 'Pic de Charge Élevé'
-          : 'Charge Soutenue')));
+          ? 'Pic de Charge Trail Élevé'
+          : 'Charge Trail Soutenue')));
 
   return {
     currentCtl,
@@ -1011,15 +1098,22 @@ export function computeTrainingLoadStats(
     currentTsb,
     formStatus,
     formLabel,
-    acwrRatio,
+    acwrRatio: trailAcwrRatio,
     acwrStatus,
     acwrStatusLabel,
     acwrLabel,
     acwrActionAdvice,
     isCalibrating,
-    acuteLoad7d: acuteSum,
-    chronicLoad28dWeeklyAvg: chronicWeeklyAvg,
-    fitnessTrend
+    acuteLoad7d: trailAcuteSum,
+    chronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,
+    fitnessTrend,
+    trailAcwrRatio,
+    trailAcuteLoad7d: trailAcuteSum,
+    trailChronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,
+    trailAcwrStatus: acwrStatus,
+    calisthenicsAcuteLoad7d: calisthenicsAcuteSum,
+    calisthenicsSessionsCount7d,
+    totalSystemicAcuteLoad7d: totalSystemicAcuteSum
   };
 }
 

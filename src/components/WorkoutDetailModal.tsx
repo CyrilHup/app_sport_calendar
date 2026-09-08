@@ -196,6 +196,34 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         </div>
 
         <div className="modal-body" style={{ gap: '12px' }}>
+          {/* 🛡️ Alerte Séance Adaptée Anti-blessure */}
+          {event.metadata?.isAdapted && (
+            <div
+              style={{
+                background: 'rgba(56, 189, 248, 0.12)',
+                border: '1px solid #38bdf8',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 14px',
+                fontSize: '0.8rem',
+                color: '#7dd3fc',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, color: '#38bdf8' }}>
+                <ShieldCheck size={16} />
+                <span>Séance adaptée par le Coach Anti-blessure (Protection Tendons & ACWR)</span>
+              </div>
+              <div>{event.metadata.adaptationReason}</div>
+              {event.metadata.originalDurationMinutes && (
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  Durée initiale : {event.metadata.originalDurationMinutes} min • Modulée à {event.durationMinutes} min
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Télémétrie Réalisée Garmin Connect (Si séance complétée) */}
           {comparison?.actualActivity && (
             <div

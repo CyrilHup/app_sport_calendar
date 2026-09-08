@@ -1533,7 +1533,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
             <div className="stats-kpi-card" style={{ borderLeft: `3px solid ${trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)'))}` }}>
               <div className="kpi-header">
-                <span className="kpi-title">Ratio ACWR (Risque Blessure)</span>
+                <span className="kpi-title">Ratio ACWR Trail (Blessure)</span>
                 <ShieldAlert size={16} color={trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : 'var(--accent-amber)')} />
               </div>
               <div className="kpi-main-value" style={{ color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')) }}>
@@ -1543,6 +1543,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                 <span style={{ fontSize: '0.74rem', fontWeight: 700, color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')) }}>
                   {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
                 </span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Calisthénie isolée</span>
               </div>
             </div>
           </div>
@@ -1560,10 +1561,10 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               <div>
                 <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <ShieldAlert size={16} color="var(--primary)" />
-                  Spectre du Ratio ACWR (Modèle de Gabbett - Risque de Blessure)
+                  Spectre du Ratio ACWR Trail (Modèle de Gabbett - Risque de Blessure Course)
                 </h4>
                 <p style={{ margin: '3px 0 0 0', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-                  Rapport entre la charge aiguë des 7 derniers jours ({trainingLoad.acuteLoad7d} TRIMP) et la charge chronique sur 28 jours ({trainingLoad.chronicLoad28dWeeklyAvg} TRIMP/sem).
+                  Rapport entre la charge aiguë d'impact Trail des 7 derniers jours ({trainingLoad.acuteLoad7d} TRIMP) et la tolérance chronique sur 28 jours ({trainingLoad.chronicLoad28dWeeklyAvg} TRIMP/sem).
                 </p>
               </div>
               <span
@@ -1576,8 +1577,20 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                   color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)'))
                 }}
               >
-                Ratio Actuel : {trainingLoad.acwrRatio} • {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
+                Ratio Trail : {trainingLoad.acwrRatio} • {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
               </span>
+            </div>
+
+            {/* Calisthenics vs Trail Load Distinction Strip */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '12px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: 'var(--primary)' }}>🏃 <strong>Charge Trail & Course (7j) :</strong> {trainingLoad.acuteLoad7d} TRIMP</span>
+              </div>
+              <div style={{ width: 1, height: 16, background: 'var(--border-color)' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ color: '#a78bfa' }}>🤸 <strong>Calisthénie / Renfo (7j) :</strong> {trainingLoad.calisthenicsAcuteLoad7d} TRIMP ({trainingLoad.calisthenicsSessionsCount7d} séance(s))</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--accent-green)', fontWeight: 600 }}>• Zéro impact articulaire de course (exclue du risque de blessure)</span>
+              </div>
             </div>
 
             {/* Gauge Bar */}
@@ -1644,7 +1657,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
             <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <div>
-                <strong style={{ color: 'var(--text-primary)' }}>Diagnostic :</strong> {trainingLoad.acwrLabel}
+                <strong style={{ color: 'var(--text-primary)' }}>Diagnostic Anti-blessure :</strong> {trainingLoad.acwrLabel}
               </div>
               {trainingLoad.acwrActionAdvice && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-green)', fontWeight: 600, fontSize: '0.78rem' }}>

@@ -25,6 +25,9 @@ android {
 }
 
 repositories {
+    google()
+    maven { url 'https://maven-central.storage-download.googleapis.com/maven2/' }
+    mavenCentral()
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
     }
