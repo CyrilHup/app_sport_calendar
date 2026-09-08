@@ -608,19 +608,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         const renderDayEventsContent = (day: DailySchedule, isSingleDayView: boolean = false) => {
           const eventsToDisplay = day.events.filter(e => {
             if (filter !== 'all') return e.category === filter;
-            if (isFusedMode) {
-              return e.category === 'sport' || e.category === 'course';
-            }
-            return true;
+            return e.category === 'sport' || e.category === 'course';
           });
 
           const mobilityEvent = day.events.find(e => e.category === 'mobility');
           const catchupForThisDay = comparisons.filter(c => c.isPostponedCatchup && c.executedDate === day.date);
           const unplannedForThisDay = comparisons.filter(c => c.status === 'UNPLANNED' && c.date === day.date);
 
+          const hasAnyDisplayableItem = filter === 'all'
+            ? (eventsToDisplay.length > 0 || catchupForThisDay.length > 0 || unplannedForThisDay.length > 0 || Boolean(mobilityEvent))
+            : eventsToDisplay.length > 0;
+
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-              {eventsToDisplay.length === 0 && catchupForThisDay.length === 0 && unplannedForThisDay.length === 0 && (!isFusedMode || !mobilityEvent) ? (
+              {!hasAnyDisplayableItem ? (
                 <div style={{ textAlign: 'center', padding: isSingleDayView ? '40px 16px' : '24px 8px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                   <span>😴 Repos complet / Aucun événement prévu ce jour</span>
                 </div>
