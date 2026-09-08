@@ -2,11 +2,21 @@ import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, GarminActivity } from '../types/garmin';
 import { getGarminLocalDateKey, getMondayWeekKey } from './comparisonEngine';
 import { formatDateKey } from './icsParser';
+import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 
 /**
- * Official start date of the QMT-80 periodization training plan.
+ * Official start date of the preparation (reprise & fondations).
+ * Linked to GLOBAL_APP_CONFIG.SPORT_START_DATE.
  */
-export const PLAN_START_DATE = '2026-09-01';
+export const PLAN_START_DATE = GLOBAL_APP_CONFIG.SPORT_START_DATE || '2026-09-01';
+
+/**
+ * Standard default weekly targets when no planned session is scheduled.
+ */
+export const DEFAULT_WEEKLY_TARGETS = {
+  plannedDurationMin: 285,
+  plannedElevationM: 780
+};
 
 export type TimeRangeScope = 'plan' | '4w' | '12w' | 'all' | (string & {});
 

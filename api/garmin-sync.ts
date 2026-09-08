@@ -16,19 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-function classifyActivity(typeKey?: string, name?: string): string {
-  const k = String(typeKey || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-  if (k.includes('climb') || k.includes('boulder') || n.includes('grimp') || n.includes('escalade')) return 'CLIMBING';
-  if (k.includes('trail')) return 'TRAIL_RUNNING';
-  if (k.includes('run') || n.includes('course') || n.includes('footing') || n.includes('jog')) return 'RUNNING';
-  if (k.includes('strength') || k.includes('weight') || k.includes('gym') || n.includes('muscu') || n.includes('calisth')) return 'STRENGTH_TRAINING';
-  if (k.includes('cycl') || k.includes('bike') || n.includes('vélo')) return 'CYCLING';
-  if (k.includes('walk') || n.includes('marche')) return 'WALKING';
-  if (k.includes('swim') || n.includes('natation')) return 'SWIMMING';
-  if (k.includes('cardio') || k.includes('hiit')) return 'CARDIO';
-  return 'OTHER';
-}
+import { classifyGarminActivityType } from '../src/services/activityClassifier';
 
 const SESSION_FILE = path.join(os.tmpdir(), '.garmin_session.json');
 
@@ -280,7 +268,7 @@ export default async function handler(req: any, res: any) {
     const activities = (rawActivities || []).map((a: any) => {
       const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');
       const actName = String(a.activityName || '');
-      const activityType = classifyActivity(typeKey, actName);
+      const activityType = classifyGarminActivityType(typeKey, actName);
 
       const movingDurSec = a.movingDuration || a.duration || a.elapsedDuration || 0;
       const elapsedDurSec = a.elapsedDuration || a.duration || 0;

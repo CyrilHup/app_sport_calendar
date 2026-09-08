@@ -19,7 +19,9 @@ import {
   Watch,
   AlertTriangle,
   Loader2,
-  Sparkles
+  Sparkles,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
@@ -27,6 +29,10 @@ import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommenda
 import { pushWeekWorkoutsToGarmin } from '../services/garminService';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { formatDateKey } from '../services/icsParser';
+import { computeTrainingLoadStats } from '../services/statsEngine';
+import { evaluateAdaptivePlanStatus } from '../services/adaptivePlanEngine';
+import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
+import { GarminActivity } from '../types/garmin';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -41,6 +47,10 @@ interface CalendarViewProps {
   ) => void;
   onCancelPostponeWorkout?: (eventId: string) => void;
   comparisons?: ActivityComparison[];
+  garminActivities?: GarminActivity[];
+  adaptiveOverrides?: Record<string, AdaptiveWorkoutOverride>;
+  onApplyAdaptivePlan?: (actions: AdaptiveWorkoutAction[]) => void;
+  onRevertAdaptivePlan?: () => void;
 }
 
 type FilterCategory = 'all' | 'sport' | 'course' | 'trajet' | 'mobility';
@@ -52,7 +62,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   referenceDateStr,
   onPostponeWorkout,
   onCancelPostponeWorkout,
-  comparisons = []
+  comparisons = [],
+  garminActivities = [],
+  adaptiveOverrides = {},
+  onApplyAdaptivePlan,
+  onRevertAdaptivePlan
 }) => {
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
@@ -129,6 +143,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const displayedDays = schedules.slice(
     Math.max(0, currentWeekStartIdx),
     Math.max(7, currentWeekStartIdx + 7)
+  );
+
+  const displayedSportSessions = displayedDays
+    .map(d => d.sportSession)
+    .filter((e): e is CalendarEvent => Boolean(e));
+
+  const trainingLoad = computeTrainingLoadStats(garminActivities || [], new Date(todayKey));
+  const adaptiveStatus = evaluateAdaptivePlanStatus(
+    trainingLoad,
+    readiness,
+    displayedSportSessions,
+    adaptiveOverrides
   );
 
   const formatTime = (iso: string) => {
@@ -372,8 +398,154 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       )}
 
-      {/* Proactive Plan Adaptation Suggestion if fatigue detected */}
-      {proactiveRec.shouldAdapt && todaySchedule?.sportSession && !isTodaySessionCompleted && (
+      {/* 🛡️ Coach Adaptatif QMT : Anti-blessure & Progression */}
+      {adaptiveStatus.hasActiveAdaptations ? (
+        <div
+          style={{
+            background: 'rgba(16, 185, 129, 0.08)',
+            border: '1px solid rgba(16, 185, 129, 0.35)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '10px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#34d399' }}>
+            <ShieldCheck size={16} color="#10b981" />
+            <div>
+              <strong>Plan Adaptatif Anti-blessure Actif :</strong> Vos sorties de trail sont modulées pour respecter votre tolérance mécanique (ACWR Trail = {adaptiveStatus.trailAcwrRatio}). Calisthénie maintenue intacte.
+            </div>
+          </div>
+          {onRevertAdaptivePlan && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={onRevertAdaptivePlan}
+              style={{
+                fontSize: '0.74rem',
+                padding: '4px 10px',
+                color: 'var(--text-secondary)',
+                borderColor: 'var(--border-color)'
+              }}
+              title="Rétablir le plan d'entraînement nominal"
+            >
+              <RotateCcw size={12} /> Rétablir le plan standard
+            </button>
+          )}
+        </div>
+      ) : adaptiveStatus.injuryRiskLevel === 'HIGH' && adaptiveStatus.recommendedActions.length > 0 ? (
+        <div
+          style={{
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '12px 16px',
+            marginBottom: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: '#f87171', fontWeight: 700 }}>
+              <ShieldAlert size={17} color="#ef4444" />
+              <span>{adaptiveStatus.headline}</span>
+            </div>
+            {onApplyAdaptivePlan && (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => onApplyAdaptivePlan(adaptiveStatus.recommendedActions)}
+                style={{
+                  fontSize: '0.74rem',
+                  padding: '5px 12px',
+                  background: 'var(--primary)',
+                  color: 'white',
+                  borderRadius: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Sparkles size={13} /> Appliquer l'adaptation anti-blessure
+              </button>
+            )}
+          </div>
+          <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+            {adaptiveStatus.explanation}
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '2px' }}>
+            {adaptiveStatus.recommendedActions.map((act, idx) => (
+              <span
+                key={idx}
+                style={{
+                  fontSize: '0.72rem',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: 4,
+                  padding: '2px 8px',
+                  color: 'var(--text-primary)'
+                }}
+              >
+                • {act.adaptedTitle} ({act.reason})
+              </span>
+            ))}
+            <span
+              style={{
+                fontSize: '0.72rem',
+                background: 'rgba(167, 139, 250, 0.1)',
+                border: '1px solid rgba(167, 139, 250, 0.25)',
+                borderRadius: 4,
+                padding: '2px 8px',
+                color: '#c4b5fd'
+              }}
+            >
+              🤸 Calisthénie maintenue (zéro impact articulaire)
+            </span>
+          </div>
+        </div>
+      ) : adaptiveStatus.injuryRiskLevel === 'MODERATE' && adaptiveStatus.recommendedActions.length > 0 ? (
+        <div
+          style={{
+            background: 'rgba(245, 158, 11, 0.08)',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '8px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.78rem', color: '#fbbf24' }}>
+            <AlertTriangle size={15} color="#f59e0b" />
+            <span>
+              <strong>{adaptiveStatus.headline} :</strong> ACWR Trail à {adaptiveStatus.trailAcwrRatio}. Calisthénie isolée ({adaptiveStatus.calisthenicsSessionsCount7d} séance(s)).
+            </span>
+          </div>
+          {onApplyAdaptivePlan && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => onApplyAdaptivePlan(adaptiveStatus.recommendedActions)}
+              style={{
+                fontSize: '0.74rem',
+                padding: '4px 10px',
+                color: '#fbbf24',
+                borderColor: 'rgba(245, 158, 11, 0.4)'
+              }}
+            >
+              <Sparkles size={12} /> Moduler les côtes
+            </button>
+          )}
+        </div>
+      ) : proactiveRec.shouldAdapt && todaySchedule?.sportSession && !isTodaySessionCompleted ? (
         <div className="proactive-coach-banner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem', color: '#fca5a5' }}>
             <AlertTriangle size={15} color="#ef4444" />
@@ -428,7 +600,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </button>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Fonction commune de rendu des séances et événements d'un jour */}
 
@@ -546,6 +718,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: isSingleDayView ? '0.88rem' : '0.8rem' }}>
                               {ev.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
                             </span>
+                            {ev.metadata?.isAdapted && (
+                              <span
+                                style={{
+                                  fontSize: '0.66rem',
+                                  fontWeight: 800,
+                                  background: 'rgba(56, 189, 248, 0.18)',
+                                  color: '#38bdf8',
+                                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                                  borderRadius: '4px',
+                                  padding: '1px 5px',
+                                  flexShrink: 0
+                                }}
+                                title={`Séance adaptée anti-blessure : ${ev.metadata.adaptationReason || ''}`}
+                              >
+                                🛡️ Adapté
+                              </span>
+                            )}
                           </div>
                           {isSportCard && onPostponeWorkout && (
                             <button

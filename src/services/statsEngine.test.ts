@@ -466,5 +466,78 @@ describe('statsEngine unit tests', () => {
     expect(report.trainingLoad.chronicLoad28dWeeklyAvg).toBeGreaterThan(15);
     expect(report.trainingLoad.acwrActionAdvice).toBeDefined();
   });
+
+  it('excludes calisthenics from trail ACWR injury ratio while preserving whole-body fitness', () => {
+    const runOnlyActivities: GarminActivity[] = [
+      {
+        activityId: 'run-1',
+        activityName: 'Sortie Trail Mont-Royal',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-02T08:00:00',
+        durationMinutes: 50,
+        trainingLoad: 80,
+        distanceKm: 8,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'run-2',
+        activityName: 'Footing endurance',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-04T08:00:00',
+        durationMinutes: 45,
+        trainingLoad: 65,
+        distanceKm: 7.5,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const activitiesWithHeavyCalisthenics: GarminActivity[] = [
+      ...runOnlyActivities,
+      {
+        activityId: 'calis-1',
+        activityName: 'Calisthenics Push & Core',
+        activityType: 'STRENGTH_TRAINING',
+        startTimeLocal: '2026-09-01T17:00:00',
+        durationMinutes: 65,
+        trainingLoad: 110, // High training load from Garmin Connect
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'calis-2',
+        activityName: 'Calisthenics Pull & Tractions',
+        activityType: 'STRENGTH_TRAINING',
+        startTimeLocal: '2026-09-03T17:00:00',
+        durationMinutes: 65,
+        trainingLoad: 115,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'calis-3',
+        activityName: 'Calisthenics Skills & Handstand',
+        activityType: 'STRENGTH_TRAINING',
+        startTimeLocal: '2026-09-05T17:00:00',
+        durationMinutes: 55,
+        trainingLoad: 95,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const reportRunOnly = computeFullStatsReport(runOnlyActivities, [], [], 'all', new Date('2026-09-07T12:00:00'));
+    const reportWithCalis = computeFullStatsReport(activitiesWithHeavyCalisthenics, [], [], 'all', new Date('2026-09-07T12:00:00'));
+
+    // Trail injury load (acute load & ACWR) MUST be identical despite 3 heavy calisthenics workouts
+    expect(reportWithCalis.trainingLoad.trailAcuteLoad7d).toBe(reportRunOnly.trainingLoad.trailAcuteLoad7d);
+    expect(reportWithCalis.trainingLoad.acwrRatio).toBe(reportRunOnly.trainingLoad.acwrRatio);
+    expect(reportWithCalis.trainingLoad.trailAcwrRatio).toBe(reportRunOnly.trainingLoad.trailAcwrRatio);
+
+    // Calisthenics load is recorded separately
+    expect(reportWithCalis.trainingLoad.calisthenicsAcuteLoad7d).toBe(320); // 110 + 115 + 95
+    expect(reportWithCalis.trainingLoad.calisthenicsSessionsCount7d).toBe(3);
+
+    // Whole-body systemic load (CTL/ATL) DOES include calisthenics
+    expect(reportWithCalis.trainingLoad.totalSystemicAcuteLoad7d).toBeGreaterThan(reportRunOnly.trainingLoad.totalSystemicAcuteLoad7d);
+    expect(reportWithCalis.trainingLoad.currentAtl).toBeGreaterThan(reportRunOnly.trainingLoad.currentAtl);
+  });
 });
+
 

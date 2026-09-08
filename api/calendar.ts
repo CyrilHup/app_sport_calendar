@@ -1,4 +1,6 @@
 // Vercel Serverless Function: Consolidated iCal Subscription Feed (/api/calendar.ics)
+import { parseICSString, buildCompleteCalendar, RawIcsEvent } from '../src/services/icsParser';
+import { generateICSContent } from '../src/services/googleCalendarService';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -17,27 +19,33 @@ export default async function handler(req: any, res: any) {
       process.env.VITE_ICAL_FEED_URL ||
       '';
 
-    let rawIcs = '';
+    let rawCourses: RawIcsEvent[] = [];
     if (requestedUrl) {
       try {
         const resp = await fetch(requestedUrl);
         if (resp.ok) {
-          rawIcs = await resp.text();
+          const rawIcs = await resp.text();
+          rawCourses = parseICSString(rawIcs);
         }
       } catch (e) {
         console.warn('Could not fetch remote iCal in serverless function:', e);
       }
     }
 
+    // Compute start from Monday of current week
+    const now = new Date();
+    const day = (now.getDay() + 6) % 7;
+    const startMonday = new Date(now);
+    startMonday.setDate(now.getDate() - day);
+    startMonday.setHours(0, 0, 0, 0);
+
+    const { allEvents } = buildCompleteCalendar(rawCourses, startMonday, 90);
+    const fullIcsContent = generateICSContent(allEvents);
+
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
     res.setHeader('Content-Disposition', 'inline; filename="qmt80_training_schedule.ics"');
     res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=86400');
-
-    if (rawIcs) {
-      res.status(200).send(rawIcs);
-    } else {
-      res.status(200).send('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//QMT80//EN\r\nEND:VCALENDAR\r\n');
-    }
+    res.status(200).send(fullIcsContent);
   } catch (err: any) {
     res.status(500).send(`Erreur: ${err.message || 'Unknown error'}`);
   }

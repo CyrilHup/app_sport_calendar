@@ -248,7 +248,7 @@ export function applyPostponements(
       return true;
     });
 
-    currentAllEvents.push(movedSportEvent, ...newTravelEvents);
+    currentAllEvents.push(ghostPlaceholder, movedSportEvent, ...newTravelEvents);
   }
 
   currentAllEvents.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
