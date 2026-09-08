@@ -508,6 +508,7 @@ export const App: React.FC = () => {
         <CalendarView
           schedules={schedules}
           referenceDateStr={formatDateKey(referenceDate)}
+          referenceDate={referenceDate}
           onPostponeWorkout={handlePostponeWorkout}
           onCancelPostponeWorkout={handleCancelPostpone}
           comparisons={comparisons}

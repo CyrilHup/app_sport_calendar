@@ -33,6 +33,7 @@ import { GarminActivity } from '../types/garmin';
 interface CalendarViewProps {
   schedules: DailySchedule[];
   referenceDateStr?: string;
+  referenceDate?: Date;
   onPostponeWorkout?: (
     eventId: string,
     originalDate: string,
@@ -54,6 +55,7 @@ type ViewMode = 'day' | 'grid' | 'list';
 export const CalendarView: React.FC<CalendarViewProps> = ({
   schedules,
   referenceDateStr,
+  referenceDate,
   onPostponeWorkout,
   onCancelPostponeWorkout,
   comparisons = [],
@@ -65,7 +67,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
-  const todayKey = referenceDateStr || formatDateKey(new Date());
+  const effectiveRefDate = referenceDate || (referenceDateStr ? new Date(referenceDateStr + 'T12:00:00') : new Date());
+  const todayKey = referenceDateStr || formatDateKey(effectiveRefDate);
   const currentTodayIndex = schedules.findIndex(s => s.date === todayKey);
   const currentWeekOffset = currentTodayIndex >= 0 ? Math.floor(currentTodayIndex / 7) : 0;
 
@@ -113,7 +116,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     .map(d => d.sportSession)
     .filter((e): e is CalendarEvent => Boolean(e));
 
-  const trainingLoad = computeTrainingLoadStats(garminActivities || [], new Date(todayKey));
+  const trainingLoad = computeTrainingLoadStats(garminActivities || [], effectiveRefDate);
   const adaptiveStatus = evaluateAdaptivePlanStatus(
     trainingLoad,
     readiness,
@@ -319,7 +322,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#34d399' }}>
             <ShieldCheck size={16} color="#10b981" />
             <div>
-              <strong>Plan Adaptatif Anti-blessure Actif :</strong> Vos sorties de trail sont modulées pour respecter votre tolérance mécanique (ACWR Trail = {adaptiveStatus.trailAcwrRatio}). Calisthénie maintenue intacte.
+              <strong>Plan Adaptatif Anti-blessure Actif :</strong> Vos sorties de trail sont modulées pour respecter votre tolérance mécanique (ACWR actuel : {adaptiveStatus.trailAcwrRatio} en Sweet Spot). Calisthénie maintenue intacte.
             </div>
           </div>
           {onRevertAdaptivePlan && (
@@ -660,7 +663,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                               </span>
                             )}
                           </div>
-                          {isSportCard && onPostponeWorkout && (
+                          {isSportCard && onPostponeWorkout && !evComp?.isPostponedCatchup && evComp?.status !== 'COMPLIANT' && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -718,18 +721,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {evComp?.isPostponedCatchup && evComp.executedDate && (
                           <div style={{
                             fontSize: '0.68rem',
-                            color: '#38bdf8',
+                            color: '#34d399',
                             fontWeight: 700,
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 3,
-                            background: 'rgba(56, 189, 248, 0.12)',
-                            border: '1px solid rgba(56, 189, 248, 0.25)',
+                            gap: 4,
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
                             padding: '3px 6px',
                             borderRadius: 4,
                             marginTop: 3
                           }}>
-                            <span>🔄 Réalisée le {formatFriendlyDateStr(evComp.executedDate)} ({evComp.actualActivity?.durationMinutes}m)</span>
+                            <CheckCircle2 size={11} color="#10b981" />
+                            <span>Validée par anticipation le {formatFriendlyDateStr(evComp.executedDate)} ({evComp.actualActivity?.durationMinutes}m)</span>
                           </div>
                         )}
 
@@ -795,17 +799,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         }
                       }}
                       style={{
-                        borderLeftColor: '#38bdf8',
-                        background: 'rgba(56, 189, 248, 0.08)',
-                        border: '1px solid rgba(56, 189, 248, 0.25)',
+                        borderLeftColor: '#10b981',
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
                         padding: isSingleDayView ? '10px 14px' : '8px 10px',
                         cursor: 'pointer'
                       }}
-                      title="Séance de rattrapage Garmin. Cliquer pour voir les détails."
+                      title="Activité Garmin réalisée en avance. Cliquer pour voir les détails télémétriques."
                     >
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                        <span style={{ fontSize: '0.74rem', color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <span>🔄</span> Rattrapage Garmin
+                        <span style={{ fontSize: '0.74rem', color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <CheckCircle2 size={12} color="#10b981" /> Course Réalisée (Garmin)
                         </span>
                         <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 3 }}>
                           {comp.actualActivity?.durationMinutes}m
@@ -814,8 +818,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <div style={{ fontSize: isSingleDayView ? '0.84rem' : '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {comp.actualActivity?.activityName || comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
                       </div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                        Remplace la séance du {formatFriendlyDateStr(comp.scheduledDate || '')}
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>
+                        ✅ Validée par anticipation pour le {formatFriendlyDateStr(comp.scheduledDate || '')}
                       </div>
                     </div>
                   ))}
@@ -1196,8 +1200,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           )}
 
                           {evComp?.isPostponedCatchup && evComp.executedDate && (
-                            <div style={{ fontSize: '0.7rem', color: '#38bdf8', fontWeight: 700, marginTop: 3, display: 'flex', alignItems: 'center', gap: 3 }}>
-                              <span>🔄 Réalisée en rattrapage le {formatFriendlyDateStr(evComp.executedDate)} sur Garmin ({evComp.actualActivity?.durationMinutes}m)</span>
+                            <div style={{ fontSize: '0.7rem', color: '#34d399', fontWeight: 700, marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <CheckCircle2 size={11} color="#10b981" />
+                              <span>Validée par anticipation le {formatFriendlyDateStr(evComp.executedDate)} sur Garmin ({evComp.actualActivity?.durationMinutes}m)</span>
                             </div>
                           )}
 
@@ -1233,17 +1238,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           }
                         }}
                         style={{
-                          borderLeftColor: '#38bdf8',
-                          background: 'rgba(56, 189, 248, 0.08)',
-                          border: '1px solid rgba(56, 189, 248, 0.25)',
+                          borderLeftColor: '#10b981',
+                          background: 'rgba(16, 185, 129, 0.08)',
+                          border: '1px solid rgba(16, 185, 129, 0.25)',
                           padding: '10px 12px',
                           cursor: 'pointer'
                         }}
-                        title="Séance de rattrapage Garmin. Cliquer pour voir les détails."
+                        title="Activité Garmin réalisée en avance. Cliquer pour voir les détails."
                       >
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                          <span style={{ fontSize: '0.76rem', color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span>🔄</span> Rattrapage Garmin
+                          <span style={{ fontSize: '0.76rem', color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <CheckCircle2 size={12} color="#10b981" /> Course Réalisée (Garmin)
                           </span>
                           <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
                             {comp.actualActivity?.durationMinutes}m réalisés
@@ -1252,8 +1257,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         <div style={{ fontSize: '0.84rem', color: '#ffffff', fontWeight: 700, marginTop: 4 }}>
                           {comp.actualActivity?.activityName || comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
                         </div>
-                        <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                          Remplace la séance du {formatFriendlyDateStr(comp.scheduledDate || '')}
+                        <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: 2 }}>
+                          ✅ Validée par anticipation pour le {formatFriendlyDateStr(comp.scheduledDate || '')}
                         </div>
                       </div>
                     ))}

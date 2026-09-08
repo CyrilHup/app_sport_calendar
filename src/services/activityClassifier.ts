@@ -40,9 +40,15 @@ export function classifyGarminActivityType(
     key.includes('weight') ||
     key.includes('gym') ||
     key.includes('fitness') ||
+    key.includes('cardio') ||
+    key.includes('hiit') ||
     name.includes('muscu') ||
     name.includes('calisth') ||
-    name.includes('force')
+    name.includes('force') ||
+    name.includes('renfo') ||
+    name.includes('gainage') ||
+    name.includes('pompe') ||
+    name.includes('traction')
   ) {
     return 'STRENGTH_TRAINING';
   }
@@ -92,9 +98,9 @@ export function inferOtherProfileCategory(act: GarminActivity): string | undefin
     return dPlus > 80 ? 'Trail / Dénivelé' : 'Course à pied';
   }
   if (
-    dist === 0 &&
-    act.durationMinutes >= 20 &&
-    (key.includes('strength') || key.includes('gym') || key.includes('fitness'))
+    dist < 0.2 &&
+    act.durationMinutes >= 15 &&
+    (key.includes('strength') || key.includes('gym') || key.includes('fitness') || key.includes('cardio') || key.includes('hiit') || key.includes('other') || act.activityType === 'OTHER')
   ) {
     return 'Renforcement musculaire';
   }

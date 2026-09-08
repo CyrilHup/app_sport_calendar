@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeFullStatsReport,
+  computeTrainingLoadStats,
+  calculateSessionTrimp,
   formatMinutes,
   formatPace,
   parsePaceStringToSeconds,
@@ -538,6 +540,109 @@ describe('statsEngine unit tests', () => {
     expect(reportWithCalis.trainingLoad.totalSystemicAcuteLoad7d).toBeGreaterThan(reportRunOnly.trainingLoad.totalSystemicAcuteLoad7d);
     expect(reportWithCalis.trainingLoad.currentAtl).toBeGreaterThan(reportRunOnly.trainingLoad.currentAtl);
   });
+
+  it('calculates accurate Banister TRIMP with real cardio telemetry vs theoretical planned workouts', () => {
+    // 1. Theoretical planned 35-min footing without telemetry (Zone 1/2 baseline)
+    const plannedEasy = calculateSessionTrimp(35, 'RUN_EASY', 'Footing Aérobie Doux & Récupération Z1/Z2 (35 min)');
+    expect(plannedEasy.trimp).toBe(32);
+    expect(plannedEasy.isRealTelemetry).toBe(false);
+    expect(plannedEasy.ratePerMin).toBe(0.92);
+
+    // 2. Theoretical planned 70-min hill workout (TRAIL_INTENSE)
+    const plannedHills = calculateSessionTrimp(70, 'TRAIL_INTENSE', 'Côtes & D+ Mont-Royal');
+    expect(plannedHills.trimp).toBe(76);
+    expect(plannedHills.factor).toBe(1.35);
+
+    // 3. Real 18-min run executed at 4:31/km with 162 bpm avg, 197 bpm peak, +15m D+
+    const executedRun = calculateSessionTrimp(
+      18,
+      'RUNNING',
+      'Course',
+      null,
+      {
+        avgHeartRate: 162,
+        maxHeartRate: 197,
+        elevationGainM: 15,
+        distanceKm: 4.09,
+        athleteFcMax: 203,
+        athleteFcRest: 48
+      }
+    );
+
+    // 18 min at high intensity (162 bpm avg = 73.5% HRr, rate ~2.22 TRIMP/min) -> 40 TRIMP
+    expect(executedRun.trimp).toBe(40);
+    expect(executedRun.cardioTrimp).toBe(35);
+    expect(executedRun.isRealTelemetry).toBe(true);
+    expect(executedRun.ratePerMin).toBe(2.22);
+    expect(executedRun.formulaText).toContain('18 min × 2.22 TRIMP/min = 40 TRIMP');
+    expect(executedRun.formulaText).toContain('FC moy. 162 bpm');
+    expect(executedRun.formulaText).toContain('Pic 197 bpm');
+    expect(executedRun.details).toContain('Banister FC réelle');
+    expect(executedRun.details).toContain('74% Réserve Cardiaque');
+
+    // 4. Verification that computeTrainingLoadStats integrates real telemetry TRIMP
+    const realActivities: GarminActivity[] = [
+      {
+        activityId: 'act-run-18m',
+        activityName: 'Course 18 min soutenue',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-07T14:00:00',
+        durationMinutes: 18,
+        distanceKm: 4.09,
+        elevationGainM: 15,
+        avgHeartRate: 162,
+        maxHeartRate: 197,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const tlStats = computeTrainingLoadStats(realActivities, new Date('2026-09-07T18:00:00'));
+    // Acute load must be 40 TRIMP (not the generic 17 TRIMP from duration without cardio!)
+    expect(tlStats.trailAcuteLoad7d).toBe(40);
+    expect(tlStats.recentSessions7d[0].trimp).toBe(40);
+    expect(tlStats.recentSessions7d[0].formulaText).toContain('40 TRIMP');
+  });
+
+  it('maintains timezone consistency for ACWR and acute load on reference date', () => {
+    const activities: GarminActivity[] = [
+      {
+        activityId: 'act-sept1',
+        activityName: 'Trail Mont-Royal',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-01T10:00:00',
+        durationMinutes: 85,
+        distanceKm: 12.0,
+        elevationGainM: 420,
+        avgHeartRate: 155,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-sept7',
+        activityName: 'Course 18 min',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-07T14:00:00',
+        durationMinutes: 18,
+        distanceKm: 4.0,
+        avgHeartRate: 162,
+        maxHeartRate: 197,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    // Reference date: Sept 8 noon vs Date object
+    const dateObj = new Date('2026-09-08T14:00:00');
+    const noonDate = new Date('2026-09-08T12:00:00');
+
+    const stats1 = computeTrainingLoadStats(activities, dateObj);
+    const stats2 = computeTrainingLoadStats(activities, noonDate);
+
+    // Both must evaluate Sept 8 as day 0, meaning Sept 1 is 7 days prior (outside the 7d acute window)
+    // and Sept 7 is 1 day prior (inside acute window)
+    expect(stats1.trailAcuteLoad7d).toBe(stats2.trailAcuteLoad7d);
+    expect(stats1.trailAcwrRatio).toBe(stats2.trailAcwrRatio);
+    expect(stats1.trailAcuteLoad7d).toBe(40); // Only the Sept 7 run (40 TRIMP)
+  });
 });
+
 
 

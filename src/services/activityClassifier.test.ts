@@ -23,6 +23,8 @@ describe('Activity Classifier', () => {
   it('correctly classifies strength and calisthenics', () => {
     expect(classifyGarminActivityType('strength_training', 'Muscu')).toBe('STRENGTH_TRAINING');
     expect(classifyGarminActivityType(undefined, 'Calisthénie Gym ÉTS')).toBe('STRENGTH_TRAINING');
+    expect(classifyGarminActivityType('cardio_training', 'Montréal Cardio')).toBe('STRENGTH_TRAINING');
+    expect(classifyGarminActivityType('indoor_cardio', 'Renfo maison')).toBe('STRENGTH_TRAINING');
   });
 
   it('infers other profile category from objective telemetry', () => {

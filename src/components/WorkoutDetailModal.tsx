@@ -154,20 +154,37 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     ? 'Terrain plat / Parc (évite le D+)'
     : event.location;
 
-  const sessionTrimpInfo = isSport ? calculateSessionTrimp(
+  const plannedTrimpInfo = isSport ? calculateSessionTrimp(
     event.durationMinutes,
     isRecoveryFooting ? 'RUN_EASY' : event.sportType,
     event.title,
-    comparison?.actualActivity?.trainingLoad
+    null
   ) : null;
 
   const originalTrimpInfo = isSport && isAdapted ? calculateSessionTrimp(
     event.metadata?.originalDurationMinutes || event.durationMinutes,
     (event.metadata as any)?.originalSportType || event.sportType,
-    event.metadata?.originalTitle || event.title
+    event.metadata?.originalTitle || event.title,
+    null
   ) : null;
 
-  const trimpSaved = (originalTrimpInfo && sessionTrimpInfo) ? Math.max(0, originalTrimpInfo.trimp - sessionTrimpInfo.trimp) : 0;
+  const actualTrimpInfo = (isSport && comparison?.actualActivity) ? calculateSessionTrimp(
+    comparison.actualActivity.durationMinutes,
+    comparison.actualActivity.activityType,
+    comparison.actualActivity.activityName,
+    comparison.actualActivity.trainingLoad,
+    {
+      avgHeartRate: comparison.actualActivity.avgHeartRate,
+      maxHeartRate: comparison.actualActivity.maxHeartRate,
+      elevationGainM: comparison.actualActivity.elevationGainM,
+      distanceKm: comparison.actualActivity.distanceKm,
+      athleteFcMax
+    }
+  ) : null;
+
+  const sessionTrimpInfo = actualTrimpInfo || plannedTrimpInfo;
+
+  const trimpSaved = (originalTrimpInfo && plannedTrimpInfo) ? Math.max(0, originalTrimpInfo.trimp - plannedTrimpInfo.trimp) : 0;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -232,7 +249,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div>{event.metadata?.adaptationReason}</div>
 
               {/* Comparaison détaillée de la charge */}
-              {originalTrimpInfo && sessionTrimpInfo && (
+              {originalTrimpInfo && plannedTrimpInfo && (
                 <div style={{ background: 'rgba(0, 0, 0, 0.35)', padding: '8px 12px', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: '0.74rem' }}>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Charge initiale prévue : </span>
@@ -242,7 +259,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span style={{ color: 'var(--text-muted)' }}>➔</span>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Charge modulée : </span>
-                    <strong style={{ color: 'var(--accent-green)' }}>{sessionTrimpInfo.trimp} TRIMP</strong>
+                    <strong style={{ color: 'var(--accent-green)' }}>{plannedTrimpInfo.trimp} TRIMP</strong>
                     <span style={{ color: 'var(--text-muted)' }}> ({event.durationMinutes} min)</span>
                   </div>
                 </div>
@@ -338,6 +355,22 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     {comparison.actualActivity.trainingLoad ? `Charge EPOC ${comparison.actualActivity.trainingLoad}` : (comparison.actualActivity.maxHeartRate ? `Max ${comparison.actualActivity.maxHeartRate} bpm` : '')}
                   </span>
                 </div>
+
+                {actualTrimpInfo && (
+                  <div style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.35)', padding: '8px', borderRadius: 4 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                      <Zap size={11} color="#38bdf8" /> Charge Réelle
+                    </div>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#38bdf8' }}>
+                      {actualTrimpInfo.trimp} TRIMP
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp ? '#fbbf24' : 'var(--accent-green)' }}>
+                      {plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp
+                        ? `${actualTrimpInfo.trimp > plannedTrimpInfo.trimp ? '+' : ''}${actualTrimpInfo.trimp - plannedTrimpInfo.trimp} vs prévu`
+                        : (actualTrimpInfo.isRealTelemetry ? 'Banister FC' : 'EPOC')}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Feedback notes */}
@@ -422,8 +455,10 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <div style={{ fontWeight: 800, fontSize: '0.95rem', color: sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : '#c4b5fd', marginTop: 3 }}>
                   {sessionTrimpInfo.trimp} TRIMP
                 </div>
-                <span style={{ fontSize: '0.68rem', color: sessionTrimpInfo.isMechanicalImpact ? 'var(--accent-green)' : 'var(--text-secondary)' }}>
-                  {sessionTrimpInfo.isMechanicalImpact ? 'Impact Course (ACWR)' : 'Force / Zéro choc'}
+                <span style={{ fontSize: '0.68rem', color: actualTrimpInfo ? '#38bdf8' : (sessionTrimpInfo.isMechanicalImpact ? 'var(--accent-green)' : 'var(--text-secondary)') }}>
+                  {actualTrimpInfo
+                    ? `Réalisé sur montre (${actualTrimpInfo.isRealTelemetry ? 'Banister FC' : 'EPOC'})`
+                    : (sessionTrimpInfo.isMechanicalImpact ? 'Impact Course (ACWR)' : 'Force / Zéro choc')}
                 </span>
               </div>
             )}
@@ -445,34 +480,58 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff' }}>
                   <Zap size={14} color="var(--accent-orange)" />
-                  <span>COMMENT CETTE CHARGE EST CALCULÉE ET UTILISÉE ?</span>
+                  <span>
+                    {actualTrimpInfo ? 'CHARGE PHYSIOLOGIQUE RÉELLEMENT ENREGISTRÉE' : 'COMMENT CETTE CHARGE EST CALCULÉE ET UTILISÉE ?'}
+                  </span>
                 </div>
               </div>
+
               {/* Décomposition Pédagogique des Coefficients */}
-              <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 6, fontSize: '0.74rem', display: 'flex', flexDirection: 'column', gap: 5, borderLeft: '3px solid var(--accent-cyan)' }}>
-                <div style={{ fontWeight: 800, color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>📊 Décomposition du calcul :</span>
-                  <span style={{ fontFamily: 'monospace' }}>{event.durationMinutes} min × {sessionTrimpInfo.ratePerMin} TRIMP/min = {sessionTrimpInfo.trimp} TRIMP</span>
+              <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '10px 12px', borderRadius: 6, fontSize: '0.74rem', display: 'flex', flexDirection: 'column', gap: 5, borderLeft: `3px solid ${actualTrimpInfo ? '#38bdf8' : 'var(--accent-cyan)'}` }}>
+                <div style={{ fontWeight: 800, color: actualTrimpInfo ? '#38bdf8' : 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span>📊 {actualTrimpInfo ? 'Calcul physiologique réel (Montre Garmin) :' : 'Décomposition du calcul théorique :'}</span>
+                  <span style={{ fontFamily: 'monospace' }}>{sessionTrimpInfo.formulaText}</span>
                 </div>
-                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  • <strong style={{ color: '#e2e8f0' }}>0.80 TRIMP/min (Modèle Banister) :</strong> Taux standard de dépense aérobie en endurance douce (~48 TRIMP pour 1 heure en Zone 2).
-                </div>
-                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  • <strong style={{ color: '#e2e8f0' }}>Facteur {sessionTrimpInfo.factor} ({sessionTrimpInfo.factorLabel}) :</strong> Majoration des contraintes mécaniques liées aux impacts répétés de la foulée au sol (+15% par rapport à une activité sans choc).
-                </div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
-                  ➔ Taux net appliqué : 0.80 × {sessionTrimpInfo.factor} = {sessionTrimpInfo.ratePerMin} TRIMP / minute d'effort.
-                </div>
+
+                {actualTrimpInfo?.isRealTelemetry ? (
+                  <>
+                    <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      • <strong style={{ color: '#e2e8f0' }}>Fréquence cardiaque réelle :</strong> {sessionTrimpInfo.details}.
+                    </div>
+                    {comparison?.actualActivity?.avgPaceMinKm && (
+                      <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                        • <strong style={{ color: '#e2e8f0' }}>Allure soutenue ({comparison.actualActivity.avgPaceMinKm}) :</strong> Intensité aérobie plus élevée qu'une simple récupération, entraînant une dépense et une fatigue plus rapides par minute.
+                      </div>
+                    )}
+                    {plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp && (
+                      <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '6px 8px', borderRadius: 4, color: '#93c5fd', marginTop: 4, lineHeight: 1.4 }}>
+                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {event.durationMinutes} min de footing doux ({plannedTrimpInfo.trimp} TRIMP). La séance réalisée ({comparison?.actualActivity?.durationMinutes} min) a été courue à un rythme plus soutenu (FC moy. {comparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {comparison?.actualActivity?.maxHeartRate || '--'} bpm). La charge réelle enregistrée (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) est celle qui alimente votre charge aiguë (ATL) et votre ratio ACWR pour protéger fidèlement vos tendons.
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      • <strong style={{ color: '#e2e8f0' }}>0.80 TRIMP/min (Modèle Banister) :</strong> Taux standard de dépense aérobie en endurance douce (~48 TRIMP pour 1 heure en Zone 2).
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                      • <strong style={{ color: '#e2e8f0' }}>Facteur {sessionTrimpInfo.factor} ({sessionTrimpInfo.factorLabel}) :</strong> Majoration des contraintes mécaniques liées aux impacts répétés de la foulée au sol (+15% par rapport à une activité sans choc).
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
+                      ➔ Taux net appliqué : 0.80 × {sessionTrimpInfo.factor} = {sessionTrimpInfo.ratePerMin} TRIMP / minute d'effort.
+                    </div>
+                  </>
+                )}
               </div>
 
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 {sessionTrimpInfo.isMechanicalImpact ? (
                   <>
-                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance de <strong>{event.durationMinutes} min</strong> applique des forces de freinage excentriques répétées. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> sont directement ajoutés à votre <strong>charge aiguë (7 jours)</strong> pour surveiller le risque de blessure tendineuse (ratio ACWR de Tim Gabbett) et alimentent votre fatigue ATL dans le modèle Banister.
+                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance de <strong>{actualTrimpInfo ? (comparison?.actualActivity?.durationMinutes || event.durationMinutes) : event.durationMinutes} min</strong> applique des forces de freinage excentriques répétées. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> sont directement ajoutés à votre <strong>charge aiguë (7 jours)</strong> pour surveiller le risque de blessure tendineuse (ratio ACWR de Tim Gabbett) et alimentent votre fatigue ATL dans le modèle Banister.
                   </>
                 ) : (
                   <>
-                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance de <strong>{event.durationMinutes} min</strong> ne génère <strong>aucune onde de choc au sol</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre fitness CTL général, mais sont <strong>totalement isolés du ratio ACWR de blessure tendineuse</strong> pour vous éviter de fausses alertes.
+                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance de <strong>{actualTrimpInfo ? (comparison?.actualActivity?.durationMinutes || event.durationMinutes) : event.durationMinutes} min</strong> ne génère <strong>aucune onde de choc au sol</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre fitness CTL général, mais sont <strong>totalement isolés du ratio ACWR de blessure tendineuse</strong> pour vous éviter de fausses alertes.
                   </>
                 )}
               </div>

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/garmin';
 import { formatDateKey } from '../services/icsParser';
+import { calculateSessionTrimp } from '../services/statsEngine';
+import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import {
   Activity,
   AlertTriangle,
@@ -142,7 +144,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
       case 'FITNESS_EQUIPMENT':
         return (
           <span className="badge-tag" style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1', border: '1px solid rgba(148, 163, 184, 0.3)', fontSize: '0.65rem' }}>
-            Musculation
+            Renfo / Calisthénie
           </span>
         );
       case 'OTHER':
@@ -296,6 +298,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 <th>Durée</th>
                 <th>Fréquence Cardiaque</th>
                 <th>Dénivelé D+</th>
+                <th>Charge TRIMP</th>
                 <th>Concordance</th>
                 <th>Actions & Évaluation</th>
               </tr>
@@ -313,6 +316,33 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 const isOther = comp.actualActivity?.activityType === 'OTHER';
                 const planId = comp.plannedEvent?.id;
                 const isManuallyPaired = Boolean(planId && manualPairs[planId]);
+
+                const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
+                  comp.actualActivity.durationMinutes,
+                  comp.actualActivity.activityType,
+                  comp.actualActivity.activityName,
+                  comp.actualActivity.trainingLoad,
+                  {
+                    avgHeartRate: comp.actualActivity.avgHeartRate,
+                    maxHeartRate: comp.actualActivity.maxHeartRate,
+                    elevationGainM: comp.actualActivity.elevationGainM,
+                    distanceKm: comp.actualActivity.distanceKm,
+                    athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
+                    athleteFcRest: 48
+                  }
+                ) : null;
+
+                const plannedTrimp = comp.plannedEvent ? calculateSessionTrimp(
+                  comp.plannedEvent.durationMinutes,
+                  comp.plannedEvent.sportType || comp.plannedEvent.title,
+                  comp.plannedEvent.title,
+                  null,
+                  {
+                    elevationGainM: comp.plannedEvent.metadata?.targetElevationM,
+                    athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
+                    athleteFcRest: 48
+                  }
+                ) : null;
 
                 return (
                   <React.Fragment key={comp.id}>
@@ -479,6 +509,63 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         )}
                       </td>
 
+                      {/* Charge TRIMP */}
+                      <td>
+                        {actualTrimp ? (
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{
+                                fontWeight: 800,
+                                color: actualTrimp.isRealTelemetry ? '#38bdf8' : 'var(--text-primary)',
+                                fontSize: '0.84rem'
+                              }}>
+                                ⚡ {actualTrimp.trimp} TRIMP
+                              </span>
+                              {actualTrimp.isRealTelemetry && (
+                                <span
+                                  style={{
+                                    fontSize: '0.62rem',
+                                    background: 'rgba(56, 189, 248, 0.15)',
+                                    color: '#38bdf8',
+                                    border: '1px solid rgba(56, 189, 248, 0.3)',
+                                    padding: '1px 5px',
+                                    borderRadius: 3,
+                                    fontWeight: 700
+                                  }}
+                                  title="Calculé via FC réelle Banister (réserve cardiaque)"
+                                >
+                                  Cardio
+                                </span>
+                              )}
+                            </div>
+                            {plannedTrimp && (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                                Prévu : {plannedTrimp.trimp} TRIMP{' '}
+                                {actualTrimp.trimp !== plannedTrimp.trimp && (
+                                  <span style={{
+                                    fontWeight: 700,
+                                    color: actualTrimp.trimp > plannedTrimp.trimp ? '#f59e0b' : '#34d399'
+                                  }}>
+                                    ({actualTrimp.trimp > plannedTrimp.trimp ? '+' : ''}{actualTrimp.trimp - plannedTrimp.trimp})
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : plannedTrimp ? (
+                          <div>
+                            <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+                              Prévu : {plannedTrimp.trimp} TRIMP
+                            </span>
+                            <div style={{ fontSize: '0.68rem', color: '#ef4444', fontWeight: 600, marginTop: 1 }}>
+                              Réalisé : 0 TRIMP
+                            </div>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>--</span>
+                        )}
+                      </td>
+
                       {/* Statut */}
                       <td>{getStatusBadge(comp.status, comp.complianceScore)}</td>
 
@@ -545,8 +632,39 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                     {/* Ligne Déroulante de Détail */}
                     {isExpanded && (
                       <tr style={{ background: 'rgba(255, 255, 255, 0.02)' }}>
-                        <td colSpan={7} style={{ padding: '12px 18px' }}>
+                        <td colSpan={8} style={{ padding: '12px 18px' }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {/* Décomposition Charge TRIMP */}
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                              background: actualTrimp ? 'rgba(56, 189, 248, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                              border: actualTrimp ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid var(--border-color)',
+                              borderRadius: 6,
+                              padding: '8px 12px',
+                              fontSize: '0.76rem'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <Zap size={14} color={actualTrimp ? '#38bdf8' : 'var(--text-muted)'} />
+                                <span style={{ fontWeight: 700, color: actualTrimp ? '#38bdf8' : 'var(--text-primary)' }}>
+                                  {actualTrimp ? `Charge Exécutée : ${actualTrimp.trimp} TRIMP` : `Charge Prévue : ${plannedTrimp?.trimp || 0} TRIMP`}
+                                </span>
+                                {actualTrimp && plannedTrimp && (
+                                  <span style={{ color: 'var(--text-muted)' }}>
+                                    (Objectif initial : {plannedTrimp.trimp} TRIMP • Écart : {actualTrimp.trimp - plannedTrimp.trimp > 0 ? `+${actualTrimp.trimp - plannedTrimp.trimp}` : actualTrimp.trimp - plannedTrimp.trimp} TRIMP)
+                                  </span>
+                                )}
+                              </div>
+                              {actualTrimp && (
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
+                                  {actualTrimp.formulaText} {actualTrimp.details && `• ${actualTrimp.details}`}
+                                </div>
+                              )}
+                            </div>
+
                             <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                               Détail & Diagnostics Coach :
                             </div>
@@ -633,6 +751,33 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           {displayedComparisons.map(comp => {
             const planId = comp.plannedEvent?.id;
             const isManuallyPaired = Boolean(planId && manualPairs[planId]);
+
+            const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
+              comp.actualActivity.durationMinutes,
+              comp.actualActivity.activityType,
+              comp.actualActivity.activityName,
+              comp.actualActivity.trainingLoad,
+              {
+                avgHeartRate: comp.actualActivity.avgHeartRate,
+                maxHeartRate: comp.actualActivity.maxHeartRate,
+                elevationGainM: comp.actualActivity.elevationGainM,
+                distanceKm: comp.actualActivity.distanceKm,
+                athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
+                athleteFcRest: 48
+              }
+            ) : null;
+
+            const plannedTrimp = comp.plannedEvent ? calculateSessionTrimp(
+              comp.plannedEvent.durationMinutes,
+              comp.plannedEvent.sportType || comp.plannedEvent.title,
+              comp.plannedEvent.title,
+              null,
+              {
+                elevationGainM: comp.plannedEvent.metadata?.targetElevationM,
+                athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
+                athleteFcRest: 48
+              }
+            ) : null;
 
             return (
               <div
@@ -734,6 +879,12 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                       <div>
                         <Compass size={11} style={{ display: 'inline', marginRight: 3 }} />
                         D+ / D- : <strong>+{comp.actualActivity.elevationGainM}m</strong> {comp.actualActivity.elevationLossM ? <span style={{ color: 'var(--accent-blue)' }}>(-{comp.actualActivity.elevationLossM}m)</span> : null}
+                      </div>
+                    )}
+                    {actualTrimp && (
+                      <div style={{ color: actualTrimp.isRealTelemetry ? '#38bdf8' : 'var(--text-primary)', fontWeight: 600 }}>
+                        <Zap size={11} style={{ display: 'inline', marginRight: 3 }} />
+                        Charge : <strong>{actualTrimp.trimp} TRIMP</strong> {plannedTrimp && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Prévu {plannedTrimp.trimp})</span>}
                       </div>
                     )}
                     {comp.actualActivity.trainingEffectLabel && (

@@ -316,6 +316,7 @@ export function computeFullStatsReport(
     elevationGainM: number;
     elevationLossM: number;
     avgHeartRate: number | null;
+    maxHeartRate?: number | null;
     avgCadence: number | null;
     avgPaceSecPerKm: number | null;
     trainingLoad: number | null;
@@ -348,6 +349,7 @@ export function computeFullStatsReport(
         elevationGainM: act.elevationGainM || 0,
         elevationLossM: act.elevationLossM || 0,
         avgHeartRate: act.avgHeartRate || null,
+        maxHeartRate: act.maxHeartRate || null,
         avgCadence: act.avgCadence || null,
         avgPaceSecPerKm: paceSec,
         trainingLoad: act.trainingLoad || null,
@@ -380,6 +382,7 @@ export function computeFullStatsReport(
         elevationGainM: dGain,
         elevationLossM: dLoss,
         avgHeartRate: hr,
+        maxHeartRate: act?.maxHeartRate || null,
         avgCadence: act?.avgCadence || null,
         avgPaceSecPerKm: parsePaceStringToSeconds(act?.avgPaceMinKm),
         trainingLoad: act?.trainingLoad || null,
@@ -929,19 +932,20 @@ export function computeFullStatsReport(
   };
 }
 
-/**
- * Calcule la charge physiologique individuelle d'une séance (en TRIMP)
- * et détermine si elle engendre des impacts articulaires mécaniques (Course/Trail)
- * ou s'il s'agit de renforcement/calisthénie sans choc au sol.
- */
-export function calculateSessionTrimp(
-  durationMinutes: number,
-  typeOrSportType?: string,
-  name?: string,
-  garminLoad?: number | null
-): {
+export interface SessionTrimpOptions {
+  avgHeartRate?: number | null;
+  maxHeartRate?: number | null;
+  elevationGainM?: number | null;
+  distanceKm?: number | null;
+  athleteFcMax?: number | null;
+  athleteFcRest?: number | null;
+}
+
+export interface SessionTrimpResult {
   trimp: number;
+  cardioTrimp?: number;
   isMechanicalImpact: boolean;
+  isRealTelemetry: boolean;
   factor: number;
   factorLabel: string;
   baseRate: number;
@@ -949,7 +953,23 @@ export function calculateSessionTrimp(
   categoryLabel: string;
   formulaText: string;
   details: string;
-} {
+}
+
+/**
+ * Calcule la charge physiologique individuelle d'une séance (en TRIMP)
+ * et détermine si elle engendre des impacts articulaires mécaniques (Course/Trail)
+ * ou s'il s'agit de renforcement/calisthénie sans choc au sol.
+ * 
+ * Si des données cardio réelles sont disponibles (ex: montre Garmin Connect sans Firstbeat EPOC),
+ * applique le modèle exponentiel de Banister (1991) basé sur la réserve cardiaque (HRr).
+ */
+export function calculateSessionTrimp(
+  durationMinutes: number,
+  typeOrSportType?: string,
+  name?: string,
+  garminLoad?: number | null,
+  options?: SessionTrimpOptions
+): SessionTrimpResult {
   const dur = Math.max(0, durationMinutes || 0);
   const actType = String(typeOrSportType || '').toUpperCase();
   const actName = String(name || '').toLowerCase();
@@ -978,11 +998,14 @@ export function calculateSessionTrimp(
     actName.includes('footing') ||
     (actName.includes('course') && !actName.includes('cours') && !actName.includes('calisth'));
 
+  // 1. Charge EPOC native Firstbeat de Garmin prioritaire si présente
   if (typeof garminLoad === 'number' && garminLoad > 0) {
     const isImpact = isTrailOrRunning && !isCalisthenics;
     return {
       trimp: Math.round(garminLoad),
+      cardioTrimp: Math.round(garminLoad),
       isMechanicalImpact: isImpact,
+      isRealTelemetry: true,
       factor: 1.0,
       factorLabel: 'Charge réelle Garmin (EPOC)',
       baseRate: Math.round((garminLoad / Math.max(1, durationMinutes)) * 100) / 100,
@@ -993,15 +1016,18 @@ export function calculateSessionTrimp(
     };
   }
 
+  // 2. Détermination du facteur d'impact mécanique et de terrain
   let factor = 1.0;
   let factorLabel = 'Endurance générale (×1.0)';
   let categoryLabel = 'Endurance générale';
 
-  if (actType === 'TRAIL_RUNNING' || actType === 'TRAIL_INTENSE' || actType === 'TRAIL_LONG' || actName.includes('trail') || actName.includes('côtes')) {
+  const hasHighElevation = typeof options?.elevationGainM === 'number' && options.elevationGainM >= 100;
+
+  if (actType === 'TRAIL_RUNNING' || actType === 'TRAIL_INTENSE' || actType === 'TRAIL_LONG' || actName.includes('trail') || actName.includes('côtes') || hasHighElevation) {
     factor = 1.35;
     factorLabel = 'Trail D+ & Côtes (×1.35)';
     categoryLabel = 'Trail & Côtes (Impact excentrique élevé)';
-  } else if (actType === 'RUNNING' || actType === 'RUN_EASY' || actType === 'RUN_TEMPO' || actName.includes('footing') || actName.includes('course')) {
+  } else if (actType === 'RUNNING' || actType === 'RUN_EASY' || actType === 'RUN_TEMPO' || actName.includes('footing') || actName.includes('course') || isTrailOrRunning) {
     factor = 1.15;
     factorLabel = 'Course sur plat (×1.15)';
     categoryLabel = 'Course sur plat (Impact modéré)';
@@ -1015,14 +1041,51 @@ export function calculateSessionTrimp(
     categoryLabel = 'Récupération active & Mobilité';
   }
 
-  const baseRate = 0.8; // 0.80 TRIMP/min = référence aérobie Banister (Zone 2 douce = ~48 TRIMP/h)
+  const isMechanicalImpact = isTrailOrRunning && !isCalisthenics;
+
+  // 3. Calcul Banister physiologique si cardiofréquencemètre réel disponible
+  if (typeof options?.avgHeartRate === 'number' && options.avgHeartRate > 55 && dur > 0) {
+    const fcMax = options.athleteFcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+    const fcRest = options.athleteFcRest || 48;
+    const avgHr = options.avgHeartRate;
+
+    // Fraction de réserve cardiaque (Heart Rate Reserve ratio)
+    const hrReserveFraction = Math.max(0.05, Math.min(1.0, (avgHr - fcRest) / Math.max(40, fcMax - fcRest)));
+    // Formule classique Banister (1991) pour hommes : y = 0.64 * e^(1.92 * HRr)
+    const banisterExp = 0.64 * Math.exp(1.92 * hrReserveFraction);
+    const baseRate = Math.round(hrReserveFraction * banisterExp * 100) / 100; // Taux physiologique net / min
+    const cardioTrimp = Math.round(dur * baseRate);
+    const ratePerMin = Math.round(baseRate * factor * 100) / 100;
+    const trimp = Math.round(dur * ratePerMin);
+
+    const hrReservePct = Math.round(hrReserveFraction * 100);
+    const maxHrStr = options.maxHeartRate ? `, Pic ${Math.round(options.maxHeartRate)} bpm` : '';
+
+    return {
+      trimp,
+      cardioTrimp,
+      isMechanicalImpact,
+      isRealTelemetry: true,
+      factor,
+      factorLabel,
+      baseRate,
+      ratePerMin,
+      categoryLabel,
+      formulaText: `${dur} min × ${ratePerMin} TRIMP/min = ${trimp} TRIMP (FC moy. ${Math.round(avgHr)} bpm${maxHrStr})`,
+      details: `Banister FC réelle (${baseRate} TRIMP/min, ${hrReservePct}% Réserve Cardiaque) × Impact ${factorLabel}`
+    };
+  }
+
+  // 4. Repli standard basé sur l'endurance aérobie théorique Z2 (séance planifiée non encore exécutée)
+  const baseRate = 0.8; // 0.80 TRIMP/min = référence aérobie Banister Z2 douce
   const ratePerMin = Math.round(baseRate * factor * 100) / 100; // ex: 0.8 * 1.15 = 0.92 TRIMP/min
   const trimp = Math.round(dur * ratePerMin);
-  const isMechanicalImpact = isTrailOrRunning && !isCalisthenics;
 
   return {
     trimp,
+    cardioTrimp: Math.round(dur * baseRate),
     isMechanicalImpact,
+    isRealTelemetry: false,
     factor,
     factorLabel,
     baseRate,
@@ -1055,7 +1118,13 @@ export function computeTrainingLoadStats(
     const actType = String(act.activityType || act.type || '');
     const actName = String(act.name || act.activityName || '');
 
-    const sessionInfo = calculateSessionTrimp(dur, actType, actName, act.trainingLoad);
+    const sessionInfo = calculateSessionTrimp(dur, actType, actName, act.trainingLoad, {
+      avgHeartRate: act.avgHeartRate,
+      maxHeartRate: act.maxHeartRate,
+      elevationGainM: act.elevationGainM,
+      distanceKm: act.distanceKm,
+      athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX
+    });
     const load = sessionInfo.trimp;
 
     // Systemic whole-body load (CTL, ATL, TSB)
@@ -1210,7 +1279,13 @@ export function computeTrainingLoadStats(
       const dur = act.durationMinutes || 0;
       const actType = String(act.activityType || act.type || '');
       const actName = String(act.name || act.activityName || 'Séance');
-      const sessionInfo = calculateSessionTrimp(dur, actType, actName, act.trainingLoad);
+      const sessionInfo = calculateSessionTrimp(dur, actType, actName, act.trainingLoad, {
+        avgHeartRate: act.avgHeartRate,
+        maxHeartRate: act.maxHeartRate,
+        elevationGainM: act.elevationGainM,
+        distanceKm: act.distanceKm,
+        athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX
+      });
       recentSessions7d.push({
         id: act.id || `${dKey}-${actName}-${recentSessions7d.length}`,
         date: dKey,

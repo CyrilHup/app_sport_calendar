@@ -449,7 +449,11 @@ function evaluateSingleWorkout(
 
   // 2. Évaluation de la fréquence cardiaque (FCmax = 203 bpm)
   let hrCompliance: 'OPTIMAL' | 'TOO_HIGH' | 'TOO_LOW' | 'N/A' = 'OPTIMAL';
-  const targetRange = plan.metadata?.targetHeartRateRange;
+  const titleLower = plan.title.toLowerCase();
+  const isRecovery = plan.sportType === 'RUN_EASY' || titleLower.includes('récupération') || titleLower.includes('footing');
+  const targetRange: [number, number] | undefined = isRecovery
+    ? (plan.metadata?.targetHeartRateRange && plan.metadata.targetHeartRateRange[1] <= 150 ? plan.metadata.targetHeartRateRange : [115, 142])
+    : plan.metadata?.targetHeartRateRange;
 
   if (act.avgHeartRate && targetRange) {
     const [minTarget, maxTarget] = targetRange;
@@ -457,7 +461,7 @@ function evaluateSingleWorkout(
       hrCompliance = 'TOO_HIGH';
       score -= 20;
       feedbackNotes.push(
-        `⚠️ Fréquence cardiaque élevée : moy. ${act.avgHeartRate} bpm (plafond cible : ${maxTarget} bpm). Risque d'épuisement prématuré.`
+        `⚠️ Fréquence cardiaque élevée : moy. ${act.avgHeartRate} bpm (plafond cible : ${maxTarget} bpm). Effort plus soutenu que la récupération prescrite.`
       );
     } else if (act.avgHeartRate < minTarget - 12) {
       hrCompliance = 'TOO_LOW';
@@ -474,16 +478,19 @@ function evaluateSingleWorkout(
   }
 
   // 3. Évaluation du dénivelé D+ (séances trail)
+  const targetElevationM = isRecovery ? 0 : plan.metadata?.targetElevationM;
   let elevationDeltaM: number | undefined = undefined;
-  if (plan.metadata?.targetElevationM && act.elevationGainM !== undefined) {
-    elevationDeltaM = act.elevationGainM - plan.metadata.targetElevationM;
+  if (targetElevationM !== undefined && targetElevationM > 0 && act.elevationGainM !== undefined) {
+    elevationDeltaM = act.elevationGainM - targetElevationM;
     if (Math.abs(elevationDeltaM) > 70) {
       feedbackNotes.push(
-        `Dénivelé D+ : +${act.elevationGainM} m réalisés (${elevationDeltaM > 0 ? '+' : ''}${elevationDeltaM} m vs cible +${plan.metadata.targetElevationM} m).`
+        `Dénivelé D+ : +${act.elevationGainM} m réalisés (${elevationDeltaM > 0 ? '+' : ''}${elevationDeltaM} m vs cible +${targetElevationM} m).`
       );
     } else {
-      feedbackNotes.push(`Cible de dénivelé D+ atteinte : +${act.elevationGainM} m (cible ~${plan.metadata.targetElevationM} m).`);
+      feedbackNotes.push(`Cible de dénivelé D+ atteinte : +${act.elevationGainM} m (cible ~${targetElevationM} m).`);
     }
+  } else if (isRecovery && act.elevationGainM !== undefined) {
+    feedbackNotes.push(`Dénivelé D+ : +${act.elevationGainM} m réalisés (profil plat préservé).`);
   }
 
   // 4. Métriques Firstbeat & Terrain supplémentaires
@@ -621,7 +628,10 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
       key.includes('calisthenics') ||
       actName.includes('muscu') ||
       actName.includes('force') ||
-      actName.includes('gym');
+      actName.includes('gym') ||
+      actName.includes('cardio') ||
+      actName.includes('renfo') ||
+      actName.includes('calisth');
 
     // Si c'est une activité de course ou de vélo, exclusion
     if (actType === 'RUNNING' || actType === 'TRAIL_RUNNING' || actType === 'CYCLING') {
