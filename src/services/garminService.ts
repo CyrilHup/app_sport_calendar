@@ -15,6 +15,7 @@ import { setAppConfigOverrides } from './periodizationEngine';
 
 
 import { Preferences } from '@capacitor/preferences';
+import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storageService';
 
 const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
 const GARMIN_STATE_KEY = 'garmin_sync_state';
@@ -104,8 +105,21 @@ export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
     type = classifyGarminActivityType(a.garminTypeKey, a.activityName);
   }
 
+  let actName = a.activityName;
+  const lower = (actName || '').trim().toLowerCase();
+  if (
+    lower === 'cardio' ||
+    lower === 'cardio training' ||
+    lower === 'indoor cardio' ||
+    lower === 'indoor_cardio' ||
+    lower === 'entraînement cardio'
+  ) {
+    actName = 'Calisthénie / Renforcement';
+  }
+
   return {
     ...a,
+    activityName: actName,
     activityType: type
   };
 }
@@ -115,16 +129,9 @@ export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
  * Returns an EMPTY array if no activities have been synchronized yet (NO hardcoded mock data).
  */
 export function loadStoredGarminActivities(): GarminActivity[] {
-  try {
-    const raw = localStorage.getItem(GARMIN_STORAGE_KEY);
-    if (raw) {
-      const parsed: GarminActivity[] = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.map(normalizeGarminActivity);
-      }
-    }
-  } catch (e) {
-    console.error("Failed to load stored garmin activities", e);
+  const parsed = storageGet<GarminActivity[]>(STORAGE_KEYS.GARMIN_ACTIVITIES, []);
+  if (Array.isArray(parsed)) {
+    return parsed.map(normalizeGarminActivity);
   }
   return [];
 }
@@ -133,42 +140,28 @@ export function loadStoredGarminActivities(): GarminActivity[] {
  * Persists synchronized Garmin activities.
  */
 export function saveGarminActivities(activities: GarminActivity[]): void {
-  try {
-    const normalized = activities.map(normalizeGarminActivity);
-    localStorage.setItem(GARMIN_STORAGE_KEY, JSON.stringify(normalized));
-  } catch (e) {
-    console.error("Failed to save garmin activities", e);
-  }
+  const normalized = activities.map(normalizeGarminActivity);
+  storageSet(STORAGE_KEYS.GARMIN_ACTIVITIES, normalized);
 }
 
 /**
  * Loads Garmin connection state.
  */
 export function loadGarminSyncState(): GarminSyncState {
-  try {
-    const raw = localStorage.getItem(GARMIN_STATE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error("Failed to load garmin state", e);
-  }
-  return {
+  return storageGet<GarminSyncState>(STORAGE_KEYS.GARMIN_STATE, {
     connected: false,
     lastSyncTime: undefined,
     accountEmail: undefined,
     activitiesCount: 0,
     isSyncing: false
-  };
+  });
 }
 
 /**
  * Saves Garmin connection state.
  */
 export function saveGarminSyncState(state: GarminSyncState): void {
-  try {
-    localStorage.setItem(GARMIN_STATE_KEY, JSON.stringify(state));
-  } catch (e) {
-    console.error("Failed to save garmin state", e);
-  }
+  storageSet(STORAGE_KEYS.GARMIN_STATE, state);
 }
 
 /**
@@ -190,14 +183,25 @@ export async function syncWithGarminAPI(credentials?: {
       body: JSON.stringify(credsToUse || {})
     });
 
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
+    let data: any;
+    const responseText = await response.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
       return {
         success: false,
         activities: [],
         count: 0,
-        error: data.error || 'Failed to authenticate and fetch activities from Garmin Connect.'
+        error: `Erreur serveur Garmin (Code HTTP ${response.status}) : ${responseText.slice(0, 160).trim() || 'Réponse non-JSON reçue du serveur'}`
+      };
+    }
+
+    if (!response.ok || !data?.success) {
+      return {
+        success: false,
+        activities: [],
+        count: 0,
+        error: data?.error || 'Échec de l\'authentification ou de la récupération des activités Garmin Connect.'
       };
     }
 
@@ -339,8 +343,33 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 /**
+ * Strips emojis, pictographs, and incompatible special symbols for Garmin watch displays (e.g. Forerunner 55).
+ * Normalizes punctuation and limits string length if specified.
+ */
+export function sanitizeGarminText(text?: string | null, maxLength?: number): string {
+  if (!text) return '';
+  let cleaned = text
+    // 1. Normalize special symbols and arrows FIRST before dingbats emoji range
+    .replace(/[➔➜➝➞]/g, '->')
+    .replace(/[•●▪]/g, '-')
+    .replace(/[–—]/g, '-')
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”«»]/g, '"')
+    // 2. Strip emojis, pictographs, and remaining dingbats
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
+    // 3. Collapse consecutive whitespaces and trim
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (maxLength && cleaned.length > maxLength) {
+    cleaned = cleaned.slice(0, maxLength).trim();
+  }
+  return cleaned;
+}
+
+/**
  * Constructs a structured Garmin workout payload from a planned CalendarEvent.
- * Calibrated specifically for Garmin Forerunner 55 compatibility.
+ * Calibrated specifically for Garmin Forerunner 55 compatibility (clean text, no emojis, concise notes).
  */
 export function buildWorkoutPayloadFromEvent(
   event: CalendarEvent,
@@ -641,12 +670,23 @@ export function buildWorkoutPayloadFromEvent(
     ];
   }
 
+  // Sanitize all step notes for clean Forerunner 55 watch screen rendering
+  const cleanedSteps = steps.map(st => ({
+    ...st,
+    stepNotes: sanitizeGarminText(st.stepNotes, 48)
+  }));
+
+  // Clean title, strip emojis, and cap at 36 characters for Forerunner 55 screen
+  const cleanRawTitle = sanitizeGarminText(event.title);
+  const prefixedTitle = cleanRawTitle.startsWith('[QMT') ? cleanRawTitle : `[QMT] ${cleanRawTitle}`;
+  const finalTitle = sanitizeGarminText(prefixedTitle, 36);
+
   return {
-    title: `${titlePrefix}${event.title}`,
+    title: finalTitle,
     sportType,
     scheduledDate: dateKey,
-    description: `${event.title} - ${durMin} min.\n${event.description || ''}`,
-    steps,
+    description: sanitizeGarminText(`${cleanRawTitle} - ${durMin} min\n${event.description || ''}`, 250),
+    steps: cleanedSteps,
     targetWatch
   };
 }
@@ -674,11 +714,21 @@ export async function pushWorkoutToGarmin(
       })
     });
 
-    const data = await response.json();
-    if (!response.ok || !data.success) {
+    let data: any;
+    const responseText = await response.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
       return {
         success: false,
-        error: data.error || 'Erreur lors de l\'envoi de la séance vers Garmin Connect.'
+        error: `Erreur serveur Garmin (Code HTTP ${response.status}) : ${responseText.slice(0, 160).trim() || 'Réponse non-JSON reçue du serveur'}`
+      };
+    }
+
+    if (!response.ok || !data?.success) {
+      return {
+        success: false,
+        error: data?.error || 'Erreur lors de l\'envoi de la séance vers Garmin Connect.'
       };
     }
 
@@ -743,11 +793,21 @@ export async function fetchGarminWellness(): Promise<{ success: boolean; wellnes
       })
     });
 
-    const data = await response.json();
-    if (!response.ok || !data.success || !data.wellness) {
+    let data: any;
+    const responseText = await response.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
       return {
         success: false,
-        error: data.error || 'Données bien-être Garmin indisponibles.'
+        error: `Erreur serveur Garmin (Code HTTP ${response.status}) : ${responseText.slice(0, 160).trim() || 'Réponse non-JSON reçue du serveur'}`
+      };
+    }
+
+    if (!response.ok || !data?.success || !data?.wellness) {
+      return {
+        success: false,
+        error: data?.error || 'Données bien-être Garmin indisponibles.'
       };
     }
 
@@ -763,4 +823,65 @@ export async function fetchGarminWellness(): Promise<{ success: boolean; wellnes
     };
   }
 }
+
+/**
+ * Nettoie les entraînements en double sur Garmin Connect (anciennes versions avec émojis ou doublons de synchronisation).
+ */
+export async function cleanDuplicateGarminWorkouts(): Promise<{
+  success: boolean;
+  deletedCount: number;
+  deletedNames?: string[];
+  message: string;
+  error?: string;
+}> {
+  try {
+    const creds = loadGarminCredentials();
+    const response = await fetch(getApiUrl('/api/garmin-sync'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: creds?.email,
+        password: creds?.password,
+        action: 'clean-duplicates'
+      })
+    });
+
+    let data: any;
+    const responseText = await response.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      return {
+        success: false,
+        deletedCount: 0,
+        message: 'Réponse non-JSON reçue du serveur.',
+        error: `Code HTTP ${response.status}`
+      };
+    }
+
+    if (!response.ok || !data?.success) {
+      return {
+        success: false,
+        deletedCount: 0,
+        message: data?.error || 'Erreur lors du nettoyage des doublons Garmin.',
+        error: data?.error
+      };
+    }
+
+    return {
+      success: true,
+      deletedCount: data.deletedCount || 0,
+      deletedNames: data.deletedNames || [],
+      message: data.message || `${data.deletedCount || 0} doublons supprimés.`
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      deletedCount: 0,
+      message: err?.message || 'Erreur réseau lors du nettoyage des doublons Garmin.',
+      error: err?.message
+    };
+  }
+}
+
 

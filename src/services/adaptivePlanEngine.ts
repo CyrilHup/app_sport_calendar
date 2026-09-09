@@ -7,6 +7,7 @@ import {
 } from '../types/calendar';
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
+import { storageGet, storageSet, storageRemove } from './storageService';
 
 export const ADAPTIVE_PLAN_STORAGE_KEY = 'sport_calendar_adaptive_overrides';
 
@@ -14,38 +15,21 @@ export const ADAPTIVE_PLAN_STORAGE_KEY = 'sport_calendar_adaptive_overrides';
  * Charge les adaptations actives du plan depuis le localStorage.
  */
 export function loadAdaptiveOverrides(): Record<string, AdaptiveWorkoutOverride> {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(ADAPTIVE_PLAN_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (err) {
-    console.warn('Impossible de charger les adaptations du localStorage:', err);
-  }
-  return {};
+  return storageGet<Record<string, AdaptiveWorkoutOverride>>(ADAPTIVE_PLAN_STORAGE_KEY, {});
 }
 
 /**
  * Sauvegarde les adaptations actives du plan dans le localStorage.
  */
 export function saveAdaptiveOverrides(overrides: Record<string, AdaptiveWorkoutOverride>): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(ADAPTIVE_PLAN_STORAGE_KEY, JSON.stringify(overrides));
-  } catch (err) {
-    console.warn('Impossible de sauvegarder les adaptations dans le localStorage:', err);
-  }
+  storageSet(ADAPTIVE_PLAN_STORAGE_KEY, overrides);
 }
 
 /**
  * Supprime toutes les adaptations actives du plan (rétablissement du plan nominal).
  */
 export function clearAdaptiveOverrides(): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.removeItem(ADAPTIVE_PLAN_STORAGE_KEY);
-  } catch (err) {
-    console.warn('Impossible de supprimer les adaptations du localStorage:', err);
-  }
+  storageRemove(ADAPTIVE_PLAN_STORAGE_KEY);
 }
 
 /**

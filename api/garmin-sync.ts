@@ -1,22 +1,105 @@
 // Vercel Serverless Function: Live Garmin Connect Sync & Push Engine
-import garminPkg from '@flow-js/garmin-connect';
-const GarminConnect = (garminPkg as any).GarminConnect || (garminPkg as any).default || garminPkg;
-const WorkoutBuilder = (garminPkg as any).WorkoutBuilder;
-const WorkoutType = (garminPkg as any).WorkoutType;
-const Step = (garminPkg as any).Step;
-const StepType = (garminPkg as any).StepType;
-const TimeDuration = (garminPkg as any).TimeDuration;
-const DistanceDuration = (garminPkg as any).DistanceDuration;
-const LapPressDuration = (garminPkg as any).LapPressDuration;
-const HrmZoneTarget = (garminPkg as any).HrmZoneTarget;
-const HrmTarget = (garminPkg as any).HrmTarget;
-const NoTarget = (garminPkg as any).NoTarget;
+if (typeof (globalThis as any).__dirname === 'undefined') {
+  (globalThis as any).__dirname = process.cwd();
+}
+if (typeof (globalThis as any).__filename === 'undefined') {
+  (globalThis as any).__filename = process.cwd();
+}
+
+import * as garminPkg from '@flow-js/garmin-connect';
+
+const GarminConnect =
+  (garminPkg as any).GarminConnect ||
+  (garminPkg as any).default?.GarminConnect ||
+  (garminPkg as any).default ||
+  garminPkg;
+const WorkoutBuilder = (garminPkg as any).WorkoutBuilder || (garminPkg as any).default?.WorkoutBuilder;
+const WorkoutType = (garminPkg as any).WorkoutType || (garminPkg as any).default?.WorkoutType;
+const Step = (garminPkg as any).Step || (garminPkg as any).default?.Step;
+const StepType = (garminPkg as any).StepType || (garminPkg as any).default?.StepType;
+const TimeDuration = (garminPkg as any).TimeDuration || (garminPkg as any).default?.TimeDuration;
+const DistanceDuration = (garminPkg as any).DistanceDuration || (garminPkg as any).default?.DistanceDuration;
+const LapPressDuration = (garminPkg as any).LapPressDuration || (garminPkg as any).default?.LapPressDuration;
+const HrmZoneTarget = (garminPkg as any).HrmZoneTarget || (garminPkg as any).default?.HrmZoneTarget;
+const HrmTarget = (garminPkg as any).HrmTarget || (garminPkg as any).default?.HrmTarget;
+const NoTarget = (garminPkg as any).NoTarget || (garminPkg as any).default?.NoTarget;
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-import { classifyGarminActivityType } from '../src/services/activityClassifier';
+/**
+ * Self-contained Garmin activity type classifier for Vercel Serverless execution.
+ * Avoids fragile cross-directory TypeScript imports from src/.
+ */
+function classifyGarminActivityType(rawTypeKey?: string, activityName?: string): string {
+  const key = String(rawTypeKey || '').toLowerCase();
+  const name = String(activityName || '').toLowerCase();
+
+  if (
+    key.includes('climb') ||
+    key.includes('boulder') ||
+    name.includes('grimp') ||
+    name.includes('climb') ||
+    name.includes('boulder') ||
+    name.includes('escalade') ||
+    name.includes('bloc')
+  ) {
+    return 'CLIMBING';
+  }
+
+  if (key.includes('trail')) {
+    return 'TRAIL_RUNNING';
+  }
+
+  if (
+    key.includes('run') ||
+    name.includes('course') ||
+    name.includes('footing') ||
+    name.includes('jog')
+  ) {
+    return 'RUNNING';
+  }
+
+  if (
+    key.includes('strength') ||
+    key.includes('weight') ||
+    key.includes('gym') ||
+    key.includes('fitness') ||
+    key.includes('cardio') ||
+    key.includes('hiit') ||
+    name.includes('muscu') ||
+    name.includes('calisth') ||
+    name.includes('force') ||
+    name.includes('renfo') ||
+    name.includes('gainage') ||
+    name.includes('pompe') ||
+    name.includes('traction')
+  ) {
+    return 'STRENGTH_TRAINING';
+  }
+
+  if (
+    key.includes('cycl') ||
+    key.includes('bike') ||
+    name.includes('vélo') ||
+    name.includes('bike')
+  ) {
+    return 'CYCLING';
+  }
+
+  if (
+    key.includes('walk') ||
+    key.includes('hike') ||
+    name.includes('marche') ||
+    name.includes('walk') ||
+    name.includes('randonnée')
+  ) {
+    return 'WALKING';
+  }
+
+  return 'OTHER';
+}
 
 const SESSION_FILE = process.env.VERCEL
   ? path.join(os.tmpdir(), '.garmin_session.json')
@@ -40,6 +123,67 @@ function saveCachedSession(username: string, tokens: any) {
   } catch (e) {
     console.warn('Could not save cached Garmin session:', e);
   }
+}
+
+function sanitizeGarminText(text: string, maxLength?: number): string {
+  if (!text) return '';
+  let cleaned = text
+    .replace(/[➔➜➝➞]/g, '->')
+    .replace(/[•●▪]/g, '-')
+    .replace(/[–—]/g, '-')
+    .replace(/[’‘]/g, "'")
+    .replace(/[“”«»]/g, '"')
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (maxLength && cleaned.length > maxLength) {
+    cleaned = cleaned.slice(0, maxLength).trim();
+  }
+  return cleaned;
+}
+
+function hasGarminEmojiOrSpecialSymbols(text: string): boolean {
+  if (!text) return false;
+  return /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}➔➜➝➞•●▪–—]/u.test(text);
+}
+
+function normalizeWorkoutTitleForMatching(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[➔➜➝➞•●▪–—\-_/\\|:;,()[\]{}"'`~*+?&!]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function areWorkoutsEquivalent(title1: string, title2: string): boolean {
+  const norm1 = normalizeWorkoutTitleForMatching(title1);
+  const norm2 = normalizeWorkoutTitleForMatching(title2);
+
+  if (!norm1 || !norm2) return false;
+  if (norm1 === norm2) return true;
+
+  const minLen = Math.min(norm1.length, norm2.length);
+  if (minLen >= 10 && (norm1.startsWith(norm2.slice(0, minLen)) || norm2.startsWith(norm1.slice(0, minLen)))) {
+    return true;
+  }
+
+  const tokens1 = norm1.split(' ').filter(t => t.length >= 3);
+  const tokens2 = norm2.split(' ').filter(t => t.length >= 3);
+  if (tokens1.length > 0 && tokens2.length > 0) {
+    const intersection = tokens1.filter(t => tokens2.includes(t));
+    const overlap1 = intersection.length / tokens1.length;
+    const overlap2 = intersection.length / tokens2.length;
+    if (overlap1 >= 0.8 || overlap2 >= 0.8) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 export default async function handler(req: any, res: any) {
@@ -150,7 +294,30 @@ export default async function handler(req: any, res: any) {
         wt = isFR55 ? WorkoutType.Cardio : WorkoutType.Strength;
       }
 
-      const wb = new WorkoutBuilder(wt, workout.title, workout.description || 'Séance QMT-80 Performance Hub');
+      const cleanTitle = sanitizeGarminText(workout.title, 36);
+      const cleanDesc = sanitizeGarminText(workout.description || 'Seance QMT-80 Performance Hub', 250);
+
+      // 1. Déduplication automatique : Nettoyer tout ancien entraînement équivalent sur Garmin Connect (avec émojis, ancienne version, etc.)
+      try {
+        const existingWorkouts: any[] = await gc.getWorkouts(1, 100);
+        if (Array.isArray(existingWorkouts)) {
+          for (const ew of existingWorkouts) {
+            const ewName = ew.workoutName || '';
+            if (areWorkoutsEquivalent(ewName, workout.title) || areWorkoutsEquivalent(ewName, cleanTitle)) {
+              try {
+                await gc.deleteWorkout({ workoutId: String(ew.workoutId) });
+                console.log(`[Deduplication] Deleted duplicate Garmin workout ${ew.workoutId} ("${ewName}") before recreating clean version`);
+              } catch (delErr) {
+                console.warn(`[Deduplication] Could not delete duplicate workout ${ew.workoutId}:`, delErr);
+              }
+            }
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('[Deduplication] Could not fetch existing workouts for deduplication:', fetchErr);
+      }
+
+      const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
 
       for (const st of workout.steps) {
         let stepType = StepType.Run;
@@ -176,7 +343,7 @@ export default async function handler(req: any, res: any) {
           target = new HrmZoneTarget(st.targetHrLow);
         }
 
-        wb.addStep(new Step(stepType, duration, target, st.stepNotes || ''));
+        wb.addStep(new Step(stepType, duration, target, sanitizeGarminText(st.stepNotes || '', 48)));
       }
 
       const builtWorkout = wb.build();
@@ -200,6 +367,85 @@ export default async function handler(req: any, res: any) {
         message: `Séance "${workout.title}" créée et programmée avec succès sur votre Garmin !`
       });
       return;
+    }
+
+    // ----------------------------------------------------
+    // ACTION: CLEAN DUPLICATE WORKOUTS ON GARMIN CONNECT
+    // ----------------------------------------------------
+    if (action === 'clean-duplicates') {
+      try {
+        const workouts: any[] = await gc.getWorkouts(1, 100);
+        if (!Array.isArray(workouts) || workouts.length === 0) {
+          res.status(200).json({
+            success: true,
+            deletedCount: 0,
+            deletedNames: [],
+            message: 'Aucun entraînement trouvé sur votre compte Garmin.'
+          });
+          return;
+        }
+
+        const groups: Array<{ canonicalTitle: string; workouts: any[] }> = [];
+        for (const w of workouts) {
+          const title = w.workoutName || '';
+          const matchGroup = groups.find(g => areWorkoutsEquivalent(g.canonicalTitle, title));
+          if (matchGroup) {
+            matchGroup.workouts.push(w);
+          } else {
+            groups.push({ canonicalTitle: title, workouts: [w] });
+          }
+        }
+
+        let deletedCount = 0;
+        const deletedNames: string[] = [];
+
+        for (const group of groups) {
+          if (group.workouts.length <= 1) continue;
+
+          // Trier: sans émojis d'abord, puis date la plus récente, puis ID le plus élevé
+          const sorted = [...group.workouts].sort((a, b) => {
+            const aEmoji = hasGarminEmojiOrSpecialSymbols(a.workoutName);
+            const bEmoji = hasGarminEmojiOrSpecialSymbols(b.workoutName);
+            if (aEmoji !== bEmoji) return aEmoji ? 1 : -1;
+
+            const aTime = a.updateDate ? new Date(a.updateDate).getTime() : 0;
+            const bTime = b.updateDate ? new Date(b.updateDate).getTime() : 0;
+            if (aTime !== bTime) return bTime - aTime;
+
+            const aId = parseInt(String(a.workoutId) || '0', 10);
+            const bId = parseInt(String(b.workoutId) || '0', 10);
+            return bId - aId;
+          });
+
+          // Conserver le premier (propre et récent), supprimer tous les doublons
+          const toDelete = sorted.slice(1);
+          for (const dup of toDelete) {
+            try {
+              await gc.deleteWorkout({ workoutId: String(dup.workoutId) });
+              deletedCount++;
+              deletedNames.push(`${dup.workoutName} (ID: ${dup.workoutId})`);
+            } catch (err) {
+              console.warn(`Could not delete duplicate workout ${dup.workoutId}:`, err);
+            }
+          }
+        }
+
+        res.status(200).json({
+          success: true,
+          deletedCount,
+          deletedNames,
+          message: deletedCount > 0
+            ? `${deletedCount} entraînement${deletedCount > 1 ? 's' : ''} en double supprimé${deletedCount > 1 ? 's' : ''} de votre compte Garmin Connect !`
+            : 'Aucun doublon détecté sur votre compte Garmin.'
+        });
+        return;
+      } catch (cleanErr: any) {
+        res.status(500).json({
+          success: false,
+          error: cleanErr?.message || 'Erreur lors du nettoyage des doublons Garmin.'
+        });
+        return;
+      }
     }
 
     // ----------------------------------------------------
@@ -292,8 +538,18 @@ export default async function handler(req: any, res: any) {
 
     const activities = (rawActivities || []).map((a: any) => {
       const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');
-      const actName = String(a.activityName || '');
+      let actName = String(a.activityName || '');
       const activityType = classifyGarminActivityType(typeKey, actName);
+
+      if (
+        actName.trim().toLowerCase() === 'cardio' ||
+        actName.trim().toLowerCase() === 'cardio training' ||
+        actName.trim().toLowerCase() === 'indoor cardio' ||
+        actName.trim().toLowerCase() === 'indoor_cardio' ||
+        actName.trim().toLowerCase() === 'entraînement cardio'
+      ) {
+        actName = 'Calisthénie / Renforcement';
+      }
 
       const movingDurSec = a.movingDuration || a.duration || a.elapsedDuration || 0;
       const elapsedDurSec = a.elapsedDuration || a.duration || 0;
@@ -328,7 +584,7 @@ export default async function handler(req: any, res: any) {
 
       return {
         activityId: String(a.activityId || `${Date.now()}-${Math.random()}`),
-        activityName: a.activityName || 'Garmin Activity',
+        activityName: actName || 'Garmin Activity',
         activityType,
         garminTypeKey: typeKey || undefined,
         startTimeLocal: a.startTimeLocal || a.startTimeGMT || new Date().toISOString(),

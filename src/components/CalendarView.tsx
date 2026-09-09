@@ -18,20 +18,25 @@ import {
   AlertTriangle,
   Sparkles,
   ShieldCheck,
-  ShieldAlert
+  ShieldAlert,
+  Watch,
+  RefreshCw
 } from 'lucide-react';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { formatDateKey } from '../services/icsParser';
+import { formatDateKey, formatTime, formatFriendlyDay } from '../services/dateUtils';
 import { computeTrainingLoadStats, calculateSessionTrimp } from '../services/statsEngine';
 import { evaluateAdaptivePlanStatus } from '../services/adaptivePlanEngine';
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
+import { formatGarminActivityName, getGarminExecutionBadge } from '../services/activityClassifier';
+import { syncCurrentWeekWorkoutsToGarmin, isGarminAutoSyncEnabled } from '../services/garminAutoSyncService';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
+  allEvents?: CalendarEvent[];
   referenceDateStr?: string;
   referenceDate?: Date;
   onPostponeWorkout?: (
@@ -47,13 +52,149 @@ interface CalendarViewProps {
   adaptiveOverrides?: Record<string, AdaptiveWorkoutOverride>;
   onApplyAdaptivePlan?: (actions: AdaptiveWorkoutAction[]) => void;
   onRevertAdaptivePlan?: () => void;
+  onOpenGarminSync?: () => void;
 }
 
 type FilterCategory = 'all' | 'sport' | 'course' | 'mobility';
 type ViewMode = 'day' | 'grid' | 'list';
 
+interface CatchupGarminCardProps {
+  comp: ActivityComparison;
+  isList?: boolean;
+  isSingleDayView?: boolean;
+  onSelect: (event: CalendarEvent, comp: ActivityComparison) => void;
+  formatFriendlyDate: (dateStr: string) => string;
+}
+
+const CatchupGarminCard: React.FC<CatchupGarminCardProps> = ({
+  comp,
+  isList,
+  isSingleDayView,
+  onSelect,
+  formatFriendlyDate
+}) => {
+  const badge = getGarminExecutionBadge(comp.actualActivity, comp.plannedEvent);
+  const displayName = formatGarminActivityName(
+    comp.actualActivity?.activityName,
+    comp.plannedEvent?.title,
+    comp.actualActivity?.activityType
+  );
+
+  return (
+    <div
+      key={`catchup-${isList ? 'list-' : ''}${comp.id}`}
+      className="event-card sport"
+      onClick={() => {
+        if (comp.plannedEvent) {
+          onSelect(comp.plannedEvent, comp);
+        }
+      }}
+      style={{
+        borderLeftColor: '#10b981',
+        background: 'rgba(16, 185, 129, 0.08)',
+        border: '1px solid rgba(16, 185, 129, 0.25)',
+        padding: isList ? '10px 12px' : isSingleDayView ? '10px 14px' : '8px 10px',
+        cursor: 'pointer'
+      }}
+      title="Activité Garmin réalisée en avance. Cliquer pour voir les détails télémétriques."
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+        <span style={{ fontSize: isList ? '0.76rem' : '0.74rem', color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <CheckCircle2 size={12} color="#10b981" /> {badge.label}
+        </span>
+        <span style={{ fontSize: isList ? '0.7rem' : '0.68rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: isList ? 4 : 3 }}>
+          {comp.actualActivity?.durationMinutes}m{isList ? ' réalisés' : ''}
+        </span>
+      </div>
+      <div style={{ fontSize: isList ? '0.84rem' : isSingleDayView ? '0.84rem' : '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: isList ? 4 : 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isList ? 'normal' : 'nowrap' }}>
+        {displayName}
+      </div>
+      <div style={{ fontSize: isList ? '0.74rem' : '0.7rem', color: '#94a3b8', marginTop: isList ? 3 : 2 }}>
+        ✅ Validée par anticipation pour le {formatFriendlyDate(comp.scheduledDate || '')}
+      </div>
+    </div>
+  );
+};
+
+interface UnplannedGarminCardProps {
+  comp: ActivityComparison;
+  isList?: boolean;
+  isSingleDayView?: boolean;
+  onSelect: (event: CalendarEvent, comp: ActivityComparison) => void;
+}
+
+const UnplannedGarminCard: React.FC<UnplannedGarminCardProps> = ({
+  comp,
+  isList,
+  isSingleDayView,
+  onSelect
+}) => {
+  const act = comp.actualActivity;
+  if (!act) return null;
+  const badge = getGarminExecutionBadge(act);
+  const displayName = formatGarminActivityName(act.activityName, undefined, act.activityType);
+
+  const syntheticEvent: CalendarEvent = {
+    id: `unplanned-${isList ? 'list-' : ''}${act.activityId}`,
+    title: displayName || 'Séance Garmin Hors-Plan',
+    description: `Activité non planifiée enregistrée sur Garmin Connect.\nType: ${badge.label}\nDistance: ${act.distanceKm ? act.distanceKm.toFixed(2) : 0} km\nD+: ${act.elevationGainM || 0}m`,
+    startDate: act.startTimeLocal,
+    endDate: new Date(new Date(act.startTimeLocal).getTime() + act.durationMinutes * 60000).toISOString(),
+    category: 'sport',
+    colorId: 'unplanned',
+    colorHex: '#f59e0b',
+    durationMinutes: act.durationMinutes,
+    emoji: badge.icon,
+    location: 'Garmin Connect',
+    metadata: {
+      targetElevationM: act.elevationGainM,
+      targetHeartRate: act.avgHeartRate ? `${act.avgHeartRate} bpm` : undefined
+    }
+  };
+
+  return (
+    <div
+      key={`unplanned-${isList ? 'list-' : ''}${comp.id}`}
+      className="event-card sport"
+      onClick={() => onSelect(syntheticEvent, comp)}
+      title="Activité non planifiée enregistrée sur Garmin. Cliquer pour voir les détails télémétriques."
+      style={{
+        borderLeftColor: '#f59e0b',
+        background: 'rgba(245, 158, 11, 0.08)',
+        border: '1px solid rgba(245, 158, 11, 0.25)',
+        padding: isList ? '10px 12px' : isSingleDayView ? '10px 14px' : '8px 10px',
+        cursor: 'pointer'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+        <span style={{ fontSize: isList ? '0.76rem' : '0.74rem', color: '#f59e0b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span>{badge.icon}</span> Bonus Garmin
+        </span>
+        <span style={{ fontSize: isList ? '0.7rem' : '0.68rem', color: '#f59e0b', fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', padding: '2px 6px', borderRadius: isList ? 4 : 3 }}>
+          {act.durationMinutes}m{isList ? ' réalisés' : ''}
+        </span>
+      </div>
+      <div style={{ fontSize: isList ? '0.84rem' : isSingleDayView ? '0.84rem' : '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: isList ? 4 : 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: isList ? 'normal' : 'nowrap' }}>
+        {act.activityName}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: isList ? '0.72rem' : '0.7rem', color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
+        {Boolean(act.distanceKm && act.distanceKm > 0) && (
+          <span>📏 {act.distanceKm!.toFixed(1)} km</span>
+        )}
+        {Boolean(act.elevationGainM && act.elevationGainM > 0) && (
+          <span>⛰️ +{Math.round(act.elevationGainM!)}m</span>
+        )}
+        {Boolean(act.avgHeartRate) && (
+          <span>❤️ {act.avgHeartRate} bpm</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export const CalendarView: React.FC<CalendarViewProps> = ({
   schedules,
+  allEvents = [],
   referenceDateStr,
   referenceDate,
   onPostponeWorkout,
@@ -62,7 +203,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   garminActivities = [],
   adaptiveOverrides = {},
   onApplyAdaptivePlan,
-  onRevertAdaptivePlan
+  onRevertAdaptivePlan,
+  onOpenGarminSync
 }) => {
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
@@ -81,6 +223,40 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
     return currentTodayIndex >= 0 ? currentTodayIndex % 7 : 0;
   });
+
+  const [isSyncingWeekGarmin, setIsSyncingWeekGarmin] = useState<boolean>(false);
+  const [garminSyncFeedback, setGarminSyncFeedback] = useState<string | null>(null);
+
+  const handleManualSyncCurrentWeek = async () => {
+    setIsSyncingWeekGarmin(true);
+    setGarminSyncFeedback(null);
+    triggerHapticFeedback('light');
+
+    try {
+      const res = await syncCurrentWeekWorkoutsToGarmin(allEvents, effectiveRefDate, { force: true });
+      if (res.success) {
+        triggerHapticFeedback('success');
+        if (res.pushedCount > 0) {
+          setGarminSyncFeedback(`${res.pushedCount} séance${res.pushedCount > 1 ? 's' : ''} envoyée${res.pushedCount > 1 ? 's' : ''} sur Garmin !`);
+        } else {
+          setGarminSyncFeedback('Séances de la semaine déjà synchronisées !');
+        }
+      } else if (res.reason === 'NO_CREDENTIALS') {
+        triggerHapticFeedback('warning');
+        setGarminSyncFeedback('Identifiants Garmin non configurés');
+        if (onOpenGarminSync) onOpenGarminSync();
+      } else {
+        triggerHapticFeedback('warning');
+        setGarminSyncFeedback(res.error || 'Erreur lors de la synchronisation Garmin');
+      }
+    } catch {
+      triggerHapticFeedback('warning');
+      setGarminSyncFeedback('Erreur réseau ou proxy');
+    } finally {
+      setIsSyncingWeekGarmin(false);
+      setTimeout(() => setGarminSyncFeedback(null), 4500);
+    }
+  };
 
   useEffect(() => {
     if (!hasInitializedOffset && schedules.length > 0) {
@@ -130,19 +306,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return sum + Math.max(0, orig - adapt);
   }, 0);
 
-  const formatTime = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
-  };
-
-  const formatFriendlyDateStr = (dateStr: string) => {
-    try {
-      const d = new Date(dateStr + 'T12:00:00');
-      return d.toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' });
-    } catch {
-      return dateStr;
-    }
-  };
+  const formatFriendlyDateStr = formatFriendlyDay;
 
   const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
@@ -300,6 +464,40 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           >
             🧘 Mobilité ({countMobility})
           </button>
+
+          {/* Bouton Synchro Semaine Garmin */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {garminSyncFeedback && (
+              <span style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 600 }}>
+                {garminSyncFeedback}
+              </span>
+            )}
+            <button
+              type="button"
+              className="chip-btn"
+              onClick={handleManualSyncCurrentWeek}
+              disabled={isSyncingWeekGarmin}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(37, 99, 235, 0.12)',
+                borderColor: 'rgba(56, 189, 248, 0.4)',
+                color: '#38bdf8',
+                fontWeight: 600,
+                padding: '4px 10px',
+                fontSize: '0.74rem'
+              }}
+              title="Synchroniser ou actualiser toutes les séances de la semaine courante sur votre montre Garmin Forerunner 55"
+            >
+              {isSyncingWeekGarmin ? (
+                <RefreshCw size={12} className="spin-animation" />
+              ) : (
+                <Watch size={13} />
+              )}
+              <span>{isSyncingWeekGarmin ? 'Envoi Garmin...' : 'Sync Semaine Garmin'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -789,109 +987,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   })}
 
                   {catchupForThisDay.map(comp => (
-                    <div
+                    <CatchupGarminCard
                       key={`catchup-${comp.id}`}
-                      className="event-card sport"
-                      onClick={() => {
-                        if (comp.plannedEvent) {
-                          setSelectedEvent(comp.plannedEvent);
-                          setSelectedComparison(comp);
-                        }
+                      comp={comp}
+                      isSingleDayView={isSingleDayView}
+                      onSelect={(ev, c) => {
+                        setSelectedEvent(ev);
+                        setSelectedComparison(c);
                       }}
-                      style={{
-                        borderLeftColor: '#10b981',
-                        background: 'rgba(16, 185, 129, 0.08)',
-                        border: '1px solid rgba(16, 185, 129, 0.25)',
-                        padding: isSingleDayView ? '10px 14px' : '8px 10px',
-                        cursor: 'pointer'
-                      }}
-                      title="Activité Garmin réalisée en avance. Cliquer pour voir les détails télémétriques."
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                        <span style={{ fontSize: '0.74rem', color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <CheckCircle2 size={12} color="#10b981" /> Course Réalisée (Garmin)
-                        </span>
-                        <span style={{ fontSize: '0.68rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 3 }}>
-                          {comp.actualActivity?.durationMinutes}m
-                        </span>
-                      </div>
-                      <div style={{ fontSize: isSingleDayView ? '0.84rem' : '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {comp.actualActivity?.activityName || comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
-                      </div>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 2 }}>
-                        ✅ Validée par anticipation pour le {formatFriendlyDateStr(comp.scheduledDate || '')}
-                      </div>
-                    </div>
+                      formatFriendlyDate={formatFriendlyDateStr}
+                    />
                   ))}
 
-                  {unplannedForThisDay.map(comp => {
-                    const act = comp.actualActivity;
-                    if (!act) return null;
-                    const isRun = act.activityType?.toLowerCase().includes('run') || act.activityType?.toLowerCase().includes('course');
-                    const isBike = act.activityType?.toLowerCase().includes('cycl') || act.activityType?.toLowerCase().includes('vélo');
-                    const isWalk = act.activityType?.toLowerCase().includes('walk') || act.activityType?.toLowerCase().includes('rando');
-                    const icon = isRun ? '🏃' : isBike ? '🚴' : isWalk ? '🥾' : '⚡';
-
-                    const syntheticEvent: CalendarEvent = {
-                      id: `unplanned-${act.activityId}`,
-                      title: act.activityName || 'Séance Garmin Hors-Plan',
-                      description: `Activité non planifiée enregistrée sur Garmin Connect.\nType: ${act.activityType}\nDistance: ${act.distanceKm ? act.distanceKm.toFixed(2) : 0} km\nD+: ${act.elevationGainM || 0}m`,
-                      startDate: act.startTimeLocal,
-                      endDate: new Date(new Date(act.startTimeLocal).getTime() + act.durationMinutes * 60000).toISOString(),
-                      category: 'sport',
-                      colorId: 'unplanned',
-                      colorHex: '#f59e0b',
-                      durationMinutes: act.durationMinutes,
-                      emoji: icon,
-                      location: 'Garmin Connect',
-                      metadata: {
-                        targetElevationM: act.elevationGainM,
-                        targetHeartRate: act.avgHeartRate ? `${act.avgHeartRate} bpm` : undefined
-                      }
-                    };
-
-                    return (
-                      <div
-                        key={`unplanned-${comp.id}`}
-                        className="event-card sport"
-                        onClick={() => {
-                          setSelectedEvent(syntheticEvent);
-                          setSelectedComparison(comp);
-                        }}
-                        title="Activité non planifiée enregistrée sur Garmin. Cliquer pour voir les détails télémétriques."
-                        style={{
-                          borderLeftColor: '#f59e0b',
-                          background: 'rgba(245, 158, 11, 0.08)',
-                          border: '1px solid rgba(245, 158, 11, 0.25)',
-                          padding: isSingleDayView ? '10px 14px' : '8px 10px',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                          <span style={{ fontSize: '0.74rem', color: '#f59e0b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span>{icon}</span> Bonus Garmin
-                          </span>
-                          <span style={{ fontSize: '0.68rem', color: '#f59e0b', fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', padding: '2px 6px', borderRadius: 3 }}>
-                            {act.durationMinutes}m
-                          </span>
-                        </div>
-                        <div style={{ fontSize: isSingleDayView ? '0.84rem' : '0.76rem', color: '#ffffff', fontWeight: 700, marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {act.activityName}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
-                          {Boolean(act.distanceKm && act.distanceKm > 0) && (
-                            <span>📏 {act.distanceKm!.toFixed(1)} km</span>
-                          )}
-                          {Boolean(act.elevationGainM && act.elevationGainM > 0) && (
-                            <span>⛰️ +{Math.round(act.elevationGainM!)}m</span>
-                          )}
-                          {Boolean(act.avgHeartRate) && (
-                            <span>❤️ {act.avgHeartRate} bpm</span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {unplannedForThisDay.map(comp => (
+                    <UnplannedGarminCard
+                      key={`unplanned-${comp.id}`}
+                      comp={comp}
+                      isSingleDayView={isSingleDayView}
+                      onSelect={(ev, c) => {
+                        setSelectedEvent(ev);
+                        setSelectedComparison(c);
+                      }}
+                    />
+                  ))}
                 </>
               )}
 
@@ -1228,110 +1346,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                     {/* Cartes de séances de rattrapage exécutées ce jour */}
                     {catchupForThisDay.map(comp => (
-                      <div
+                      <CatchupGarminCard
                         key={`catchup-list-${comp.id}`}
-                        className="event-card sport"
-                        onClick={() => {
-                          if (comp.plannedEvent) {
-                            setSelectedEvent(comp.plannedEvent);
-                            setSelectedComparison(comp);
-                          }
+                        comp={comp}
+                        isList
+                        onSelect={(ev, c) => {
+                          setSelectedEvent(ev);
+                          setSelectedComparison(c);
                         }}
-                        style={{
-                          borderLeftColor: '#10b981',
-                          background: 'rgba(16, 185, 129, 0.08)',
-                          border: '1px solid rgba(16, 185, 129, 0.25)',
-                          padding: '10px 12px',
-                          cursor: 'pointer'
-                        }}
-                        title="Activité Garmin réalisée en avance. Cliquer pour voir les détails."
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                          <span style={{ fontSize: '0.76rem', color: '#34d399', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <CheckCircle2 size={12} color="#10b981" /> Course Réalisée (Garmin)
-                          </span>
-                          <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 700, background: 'rgba(16, 185, 129, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
-                            {comp.actualActivity?.durationMinutes}m réalisés
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '0.84rem', color: '#ffffff', fontWeight: 700, marginTop: 4 }}>
-                          {comp.actualActivity?.activityName || comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '')}
-                        </div>
-                        <div style={{ fontSize: '0.74rem', color: '#94a3b8', marginTop: 2 }}>
-                          ✅ Validée par anticipation pour le {formatFriendlyDateStr(comp.scheduledDate || '')}
-                        </div>
-                      </div>
+                        formatFriendlyDate={formatFriendlyDateStr}
+                      />
                     ))}
 
                     {/* Cartes de séances non planifiées (bonus) Garmin ce jour */}
-                    {unplannedForThisDay.map(comp => {
-                      const act = comp.actualActivity;
-                      if (!act) return null;
-                      const isRun = act.activityType?.toLowerCase().includes('run') || act.activityType?.toLowerCase().includes('course');
-                      const isBike = act.activityType?.toLowerCase().includes('cycl') || act.activityType?.toLowerCase().includes('vélo');
-                      const isWalk = act.activityType?.toLowerCase().includes('walk') || act.activityType?.toLowerCase().includes('rando');
-                      const icon = isRun ? '🏃' : isBike ? '🚴' : isWalk ? '🥾' : '⚡';
-
-                      const syntheticEvent: CalendarEvent = {
-                        id: `unplanned-list-${act.activityId}`,
-                        title: act.activityName || 'Séance Garmin Hors-Plan',
-                        description: `Activité non planifiée enregistrée sur Garmin Connect.\nType: ${act.activityType}\nDistance: ${act.distanceKm ? act.distanceKm.toFixed(2) : 0} km\nD+: ${act.elevationGainM || 0}m`,
-                        startDate: act.startTimeLocal,
-                        endDate: new Date(new Date(act.startTimeLocal).getTime() + act.durationMinutes * 60000).toISOString(),
-                        category: 'sport',
-                        colorId: 'unplanned',
-                        colorHex: '#f59e0b',
-                        durationMinutes: act.durationMinutes,
-                        emoji: icon,
-                        location: 'Garmin Connect',
-                        metadata: {
-                          targetElevationM: act.elevationGainM,
-                          targetHeartRate: act.avgHeartRate ? `${act.avgHeartRate} bpm` : undefined
-                        }
-                      };
-
-                      return (
-                        <div
-                          key={`unplanned-list-${comp.id}`}
-                          className="event-card sport"
-                          onClick={() => {
-                            setSelectedEvent(syntheticEvent);
-                            setSelectedComparison(comp);
-                          }}
-                          title="Activité non planifiée enregistrée sur Garmin. Cliquer pour voir les détails télémétriques."
-                          style={{
-                            borderLeftColor: '#f59e0b',
-                            background: 'rgba(245, 158, 11, 0.08)',
-                            border: '1px solid rgba(245, 158, 11, 0.25)',
-                            padding: '10px 12px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                            <span style={{ fontSize: '0.76rem', color: '#f59e0b', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span>{icon}</span> Bonus Garmin
-                            </span>
-                            <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700, background: 'rgba(245, 158, 11, 0.15)', padding: '2px 6px', borderRadius: 4 }}>
-                              {act.durationMinutes}m réalisés
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '0.84rem', color: '#ffffff', fontWeight: 700, marginTop: 4 }}>
-                            {act.activityName}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 4, flexWrap: 'wrap' }}>
-                            {Boolean(act.distanceKm && act.distanceKm > 0) && (
-                              <span>📏 {act.distanceKm!.toFixed(1)} km</span>
-                            )}
-                            {Boolean(act.elevationGainM && act.elevationGainM > 0) && (
-                              <span>⛰️ +{Math.round(act.elevationGainM!)}m</span>
-                            )}
-                            {Boolean(act.avgHeartRate) && (
-                              <span>❤️ {act.avgHeartRate} bpm</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {unplannedForThisDay.map(comp => (
+                      <UnplannedGarminCard
+                        key={`unplanned-list-${comp.id}`}
+                        comp={comp}
+                        isList
+                        onSelect={(ev, c) => {
+                          setSelectedEvent(ev);
+                          setSelectedComparison(c);
+                        }}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -1351,6 +1389,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         }}
         onPostpone={onPostponeWorkout}
         onCancelPostpone={onCancelPostponeWorkout}
+        onOpenGarminSync={onOpenGarminSync}
       />
     </div>
   );

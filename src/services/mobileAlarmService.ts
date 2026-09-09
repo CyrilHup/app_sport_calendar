@@ -18,21 +18,16 @@ export interface ScheduledAlarmItem {
   minutesBefore: number;
 }
 
-const STORAGE_KEY_ALARMS = 'app_scheduled_run_alarms';
+import { STORAGE_KEYS, storageGet, storageSet } from './storageService';
+
+const STORAGE_KEY_ALARMS = STORAGE_KEYS.ALARMS;
 
 function getStoredAlarms(): ScheduledAlarmItem[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_ALARMS);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+  return storageGet<ScheduledAlarmItem[]>(STORAGE_KEY_ALARMS, []);
 }
 
 function saveStoredAlarms(alarms: ScheduledAlarmItem[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_ALARMS, JSON.stringify(alarms));
-  } catch {}
+  storageSet(STORAGE_KEY_ALARMS, alarms);
 }
 
 /**

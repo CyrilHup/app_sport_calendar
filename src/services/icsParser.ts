@@ -1,5 +1,6 @@
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { COLOR_MAP, GLOBAL_APP_CONFIG, getDailyWorkoutPlan, getPeriodizationContext } from './periodizationEngine';
+import { formatDateKey } from './dateUtils';
 
 export interface RawIcsEvent {
   uid: string;
@@ -139,12 +140,7 @@ export function analyzeETSEvent(ev: RawIcsEvent) {
   };
 }
 
-export function formatDateKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
+export { formatDateKey } from './dateUtils';
 
 export function buildCompleteCalendar(
   rawCourses: RawIcsEvent[],

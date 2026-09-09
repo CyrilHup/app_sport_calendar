@@ -7,8 +7,13 @@ import {
   loadGarminCredentials,
   parseGPXString,
   saveGarminCredentials,
-  syncWithGarminAPI
+  syncWithGarminAPI,
+  cleanDuplicateGarminWorkouts
 } from '../services/garminService';
+import {
+  isGarminAutoSyncEnabled,
+  setGarminAutoSyncEnabled
+} from '../services/garminAutoSyncService';
 import {
   downloadICSFile,
   triggerGoogleCalendarOAuthSync,
@@ -33,6 +38,7 @@ import {
   Share2,
   Shield,
   Sparkles,
+  Trash2,
   User as UserIcon,
   Watch,
   X,
@@ -133,6 +139,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [garminSyncMsg, setGarminSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [isGarminProcessing, setIsGarminProcessing] = useState(false);
   const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.email && !cloudGarminEmail);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => isGarminAutoSyncEnabled());
+  const [isCleaningDuplicates, setIsCleaningDuplicates] = useState<boolean>(false);
+  const [cleanDuplicatesMsg, setCleanDuplicatesMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
   useEffect(() => {
     if (user?.user_metadata?.garmin_email) {
@@ -292,6 +301,28 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       text: 'Identifiants Garmin dissociés (local et Cloud).',
       isError: false
     });
+  };
+
+  const handleCleanDuplicates = async () => {
+    setIsCleaningDuplicates(true);
+    setCleanDuplicatesMsg(null);
+    try {
+      const res = await cleanDuplicateGarminWorkouts();
+      if (res.success) {
+        setCleanDuplicatesMsg({
+          text: res.deletedCount > 0
+            ? `✅ ${res.deletedCount} entraînement${res.deletedCount > 1 ? 's' : ''} en double supprimé${res.deletedCount > 1 ? 's' : ''} sur Garmin Connect !`
+            : '✨ Aucun doublon détecté sur votre compte Garmin (tout est propre !).'
+        });
+      } else {
+        setCleanDuplicatesMsg({ text: res.error || res.message, isError: true });
+      }
+    } catch (err: any) {
+      setCleanDuplicatesMsg({ text: err.message || 'Erreur lors du nettoyage.', isError: true });
+    } finally {
+      setIsCleaningDuplicates(false);
+      setTimeout(() => setCleanDuplicatesMsg(null), 7000);
+    }
   };
 
   const handleGPXUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1174,6 +1205,45 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                 </div>
               </div>
 
+              {/* Carte Synchronisation Automatique de la Semaine */}
+              <div
+                style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <Watch size={18} color="#38bdf8" style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff' }}>
+                      Synchronisation Automatique de la Semaine (Forerunner 55)
+                    </div>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                      Envoie et met à jour automatiquement les séances de la semaine courante (lundi au dimanche) sur votre montre. Dès qu'une séance est reportée, déplacée ou adaptée, Garmin est synchronisé sans émojis pour un affichage net.
+                    </p>
+                  </div>
+                </div>
+
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                  <input
+                    type="checkbox"
+                    checked={autoSyncEnabled}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      setAutoSyncEnabled(val);
+                      setGarminAutoSyncEnabled(val);
+                    }}
+                    style={{ width: 18, height: 18, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                  />
+                </label>
+              </div>
+
               {/* Latest Garmin Telemetry & Wellness Ingestion */}
               {(() => {
                 const latestWellness = getLatestWellnessData();
@@ -1327,6 +1397,65 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                   </span>
                 </button>
               </form>
+
+              {/* Outil de nettoyage automatique des doublons Garmin */}
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  background: 'rgba(255, 255, 255, 0.02)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-xs)',
+                  padding: '10px 12px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <div>
+                    <strong style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>
+                      🧹 Nettoyage des doublons d'entraînements
+                    </strong>
+                    <p style={{ margin: '2px 0 0', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                      Supprime automatiquement les anciennes versions (avec émojis, titres antérieurs ou doublons) pour ne garder que la séance propre sur votre montre.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCleanDuplicates}
+                    disabled={isCleaningDuplicates || isGarminProcessing}
+                    className="btn-secondary"
+                    style={{
+                      padding: '7px 12px',
+                      fontSize: '0.76rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      color: '#fca5a5',
+                      borderColor: 'rgba(239, 68, 68, 0.35)',
+                      background: 'rgba(239, 68, 68, 0.08)'
+                    }}
+                    title="Recherche et supprime les doublons dans Garmin Connect"
+                  >
+                    <Trash2 size={13} className={isCleaningDuplicates ? 'spin-animation' : ''} />
+                    <span>{isCleaningDuplicates ? 'Nettoyage en cours...' : 'Purger les doublons'}</span>
+                  </button>
+                </div>
+
+                {cleanDuplicatesMsg && (
+                  <div
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: 4,
+                      fontSize: '0.74rem',
+                      background: cleanDuplicatesMsg.isError ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                      border: cleanDuplicatesMsg.isError ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                      color: cleanDuplicatesMsg.isError ? '#f87171' : '#34d399'
+                    }}
+                  >
+                    {cleanDuplicatesMsg.text}
+                  </div>
+                )}
+              </div>
 
               {/* GPX Upload Area */}
               <label

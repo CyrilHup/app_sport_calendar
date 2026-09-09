@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/garmin';
-import { formatDateKey } from '../services/icsParser';
+import { formatDateKey } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
+import { formatGarminActivityName } from '../services/activityClassifier';
 import {
   Activity,
   AlertTriangle,
@@ -378,7 +379,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           <div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                {comp.actualActivity.activityName}
+                                {formatGarminActivityName(comp.actualActivity.activityName, comp.plannedEvent?.title, comp.actualActivity.activityType)}
                               </span>
                               {getActivityTypeBadge(comp.actualActivity.activityType)}
                             </div>
@@ -796,7 +797,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                     <span style={{ fontSize: '1.3rem' }}>{comp.plannedEvent?.emoji || '⌚'}</span>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>{comp.actualActivity?.activityName || comp.plannedEvent?.title}</span>
+                        <span>{formatGarminActivityName(comp.actualActivity?.activityName, comp.plannedEvent?.title, comp.actualActivity?.activityType)}</span>
                         {getActivityTypeBadge(comp.actualActivity?.activityType)}
                         {comp.isPostponedCatchup && comp.scheduledDate && (
                           <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>

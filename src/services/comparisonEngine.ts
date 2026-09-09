@@ -1,8 +1,10 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, ComparisonStatus, GarminActivity } from '../types/garmin';
-import { classifyGarminActivityType, inferOtherProfileCategory } from './activityClassifier';
-import { formatDateKey } from './icsParser';
+import { classifyGarminActivityType, inferOtherProfileCategory, isStrengthOrCalisthenics } from './activityClassifier';
+import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay } from './dateUtils';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
+
+export { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay };
 
 export interface WeeklyStatsSummary {
   plannedDurationMin: number;
@@ -22,39 +24,6 @@ export interface WeeklyStatsSummary {
   estimatedTss: number;
   totalGarminTrainingLoad: number;
   hasNativeGarminLoad: boolean;
-}
-
-/**
- * Extrait la clé de date locale YYYY-MM-DD d'une activité Garmin sans dérive de fuseau horaire.
- */
-export function getGarminLocalDateKey(act: GarminActivity): string {
-  if (act.startTimeLocal) {
-    return act.startTimeLocal.slice(0, 10);
-  }
-  return new Date().toISOString().slice(0, 10);
-}
-
-/**
- * Calcule la clé de début de semaine (Lundi YYYY-MM-DD) pour une date YYYY-MM-DD.
- */
-export function getMondayWeekKey(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00');
-  const day = (d.getDay() + 6) % 7; // 0=Lundi, ..., 6=Dimanche
-  const mon = new Date(d);
-  mon.setDate(d.getDate() - day);
-  return formatDateKey(mon);
-}
-
-/**
- * Formate une date YYYY-MM-DD en texte court et convivial (ex: "sam. 5 sept.").
- */
-export function formatFriendlyDay(dateKey: string): string {
-  try {
-    const d = new Date(dateKey + 'T12:00:00');
-    return d.toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' });
-  } catch {
-    return dateKey;
-  }
 }
 
 /**
@@ -616,22 +585,8 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
   if (isPlanStrength) {
     const inferred = inferOtherProfileCategory(act);
     const isActStrength =
-      actType === 'STRENGTH_TRAINING' ||
-      actType === 'FITNESS_EQUIPMENT' ||
-      inferred === 'Renforcement musculaire' ||
-      key.includes('strength') ||
-      key.includes('gym') ||
-      key.includes('fitness') ||
-      key.includes('cardio') ||
-      key.includes('hiit') ||
-      key.includes('crossfit') ||
-      key.includes('calisthenics') ||
-      actName.includes('muscu') ||
-      actName.includes('force') ||
-      actName.includes('gym') ||
-      actName.includes('cardio') ||
-      actName.includes('renfo') ||
-      actName.includes('calisth');
+      isStrengthOrCalisthenics(act) ||
+      inferred === 'Renforcement musculaire';
 
     // Si c'est une activité de course ou de vélo, exclusion
     if (actType === 'RUNNING' || actType === 'TRAIL_RUNNING' || actType === 'CYCLING') {

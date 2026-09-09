@@ -7,14 +7,11 @@ import {
   Clock,
   Compass,
   Heart,
-  HelpCircle,
-  Loader2,
   MapPin,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
   TrendingDown,
-  Watch,
   X,
   Activity,
   AlertCircle,
@@ -22,10 +19,11 @@ import {
 } from 'lucide-react';
 import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { pushWorkoutToGarmin, buildWorkoutPayloadFromEvent } from '../services/garminService';
+import { buildWorkoutPayloadFromEvent } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { useAuth } from '../contexts/AuthContext';
 import { ActivityComparison } from '../types/garmin';
+import { formatTime } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
 
 interface WorkoutDetailModalProps {
@@ -76,27 +74,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(event.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
 
-  // Garmin Workout Push state
-  const [isPushingGarmin, setIsPushingGarmin] = useState<boolean>(false);
-  const [garminPushResult, setGarminPushResult] = useState<{ success: boolean; message?: string; error?: string } | null>(null);
   const selectedWatch = 'FORERUNNER_55';
-
   const workoutPreview = event.category === 'sport' ? buildWorkoutPayloadFromEvent(event, event.startDate.slice(0, 10), selectedWatch) : null;
-
-  const handlePushToGarmin = async () => {
-    setIsPushingGarmin(true);
-    setGarminPushResult(null);
-    triggerHapticFeedback('light');
-
-    const result = await pushWorkoutToGarmin(event, event.startDate.slice(0, 10), selectedWatch);
-    setIsPushingGarmin(false);
-    setGarminPushResult(result);
-    if (result.success) {
-      triggerHapticFeedback('success');
-    } else {
-      triggerHapticFeedback('warning');
-    }
-  };
 
   const handleQuickPostpone = (daysOffset: number) => {
     const d = new Date(currentEventDateKey + 'T12:00:00');
@@ -131,9 +110,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const startDate = new Date(event.startDate);
   const endDate = new Date(event.endDate);
-
-  const formatTime = (d: Date) =>
-    d.toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
 
   const formatDate = (d: Date) =>
     d.toLocaleDateString('fr-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -505,7 +481,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     )}
                     {plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp && (
                       <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '6px 8px', borderRadius: 4, color: '#93c5fd', marginTop: 4, lineHeight: 1.4 }}>
-                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {event.durationMinutes} min de footing doux ({plannedTrimpInfo.trimp} TRIMP). La séance réalisée ({comparison?.actualActivity?.durationMinutes} min) a été courue à un rythme plus soutenu (FC moy. {comparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {comparison?.actualActivity?.maxHeartRate || '--'} bpm). La charge réelle enregistrée (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) est celle qui alimente votre charge aiguë (ATL) et votre ratio ACWR pour protéger fidèlement vos tendons.
+                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {event.durationMinutes} min de {event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.title.toLowerCase().includes('calisth') ? 'calisthénie / renforcement' : 'footing doux'} ({plannedTrimpInfo.trimp} TRIMP). La séance réalisée ({comparison?.actualActivity?.durationMinutes} min) {event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.title.toLowerCase().includes('calisth') ? 'a été réalisée' : 'a été courue'} à un rythme plus soutenu (FC moy. {comparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {comparison?.actualActivity?.maxHeartRate || '--'} bpm). La charge réelle enregistrée (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) est celle qui alimente votre charge aiguë (ATL) et votre ratio ACWR pour protéger fidèlement vos tendons.
                       </div>
                     )}
                   </>
@@ -750,38 +726,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             </div>
           )}
 
-          {/* Feedback de push Garmin */}
-          {garminPushResult && (
-            <div
-              style={{
-                background: garminPushResult.success ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                border: `1px solid ${garminPushResult.success ? '#10b981' : '#ef4444'}`,
-                padding: '8px 12px',
-                borderRadius: 4,
-                fontSize: '0.78rem',
-                color: garminPushResult.success ? '#34d399' : '#f87171',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 8
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {garminPushResult.success ? <CheckCircle2 size={15} /> : <AlertCircle size={15} />}
-                <span>{garminPushResult.message || garminPushResult.error}</span>
-              </div>
-              {!garminPushResult.success && onOpenGarminSync && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={onOpenGarminSync}
-                  style={{ fontSize: '0.7rem', padding: '2px 8px' }}
-                >
-                  Connecter Garmin
-                </button>
-              )}
-            </div>
-          )}
+
         </div>
 
         {/* Footer avec Actions Principales directes : Garmin, Alarme, Fermer */}
@@ -799,42 +744,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {/* Bouton Envoi Montre Garmin (Toujours accessible pour programmer ou renvoyer vers la montre) */}
-            {isSport && !event.metadata?.isPostponedPlaceholder && (
-              <button
-                type="button"
-                onClick={handlePushToGarmin}
-                disabled={isPushingGarmin}
-                style={{
-                  background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: 6,
-                  padding: '8px 12px',
-                  fontWeight: 700,
-                  fontSize: '0.78rem',
-                  cursor: isPushingGarmin ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)'
-                }}
-                title="Programmer directement la séance sur Garmin Connect (Forerunner 55)"
-              >
-                {isPushingGarmin ? (
-                  <>
-                    <Loader2 size={13} className="spin-animation" />
-                    <span>Envoi vers montre...</span>
-                  </>
-                ) : (
-                  <>
-                    <Watch size={14} />
-                    <span>{comparison?.actualActivity ? 'Renvoyer vers Forerunner 55' : 'Envoyer vers Forerunner 55'}</span>
-                  </>
-                )}
-              </button>
-            )}
-
             {/* Bouton Alarme & Rappel */}
             <button
               type="button"

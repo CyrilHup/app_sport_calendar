@@ -9,7 +9,8 @@ import { AccountModal, AccountModalTab } from './components/AccountModal';
 import { QMTPlanOverview } from './components/QMTPlanOverview';
 import { StatsDashboard } from './components/StatsDashboard';
 import { MobileNav } from './components/MobileNav';
-import { buildCompleteCalendar, parseICSString, RawIcsEvent, formatDateKey } from './services/icsParser';
+import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
+import { formatDateKey, getMondayOfWeek } from './services/dateUtils';
 import { getPeriodizationContext, GLOBAL_APP_CONFIG, setAppConfigOverrides } from './services/periodizationEngine';
 import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
@@ -20,29 +21,18 @@ import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
 import { getApiUrl } from './services/apiConfig';
-
-const MANUAL_PAIRS_STORAGE_KEY = 'garmin_manual_pairs';
-const CACHED_ETS_ICS_KEY = 'cached_ets_ics';
+import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncService';
+import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } from './services/storageService';
 
 function loadManualPairs(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(MANUAL_PAIRS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {};
+  return storageGet<Record<string, string>>(STORAGE_KEYS.GARMIN_MANUAL_PAIRS, {});
 }
 
 function saveManualPairs(pairs: Record<string, string>): void {
-  localStorage.setItem(MANUAL_PAIRS_STORAGE_KEY, JSON.stringify(pairs));
+  storageSet(STORAGE_KEYS.GARMIN_MANUAL_PAIRS, pairs);
 }
 
-function getMondayOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7; // 0=Monday, ..., 6=Sunday
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
+
 
 export const App: React.FC = () => {
   const [baseCalendar, setBaseCalendar] = useState<{ schedules: DailySchedule[]; allEvents: CalendarEvent[] }>({ schedules: [], allEvents: [] });
@@ -157,7 +147,7 @@ export const App: React.FC = () => {
       if (res.ok) {
         const icsText = await res.text();
         if (icsText && icsText.includes('BEGIN:VCALENDAR')) {
-          localStorage.setItem(CACHED_ETS_ICS_KEY, icsText);
+          storageSetRaw(STORAGE_KEYS.CACHED_ETS_ICS, icsText);
           rawCourses = parseICSString(icsText);
         }
       }
@@ -167,7 +157,7 @@ export const App: React.FC = () => {
 
     // Offline / Network fallback for calendar courses
     if (rawCourses.length === 0) {
-      const cachedIcs = localStorage.getItem(CACHED_ETS_ICS_KEY);
+      const cachedIcs = storageGetRaw(STORAGE_KEYS.CACHED_ETS_ICS, '');
       if (cachedIcs) {
         try {
           rawCourses = parseICSString(cachedIcs);
@@ -227,10 +217,14 @@ export const App: React.FC = () => {
         const garminEndpoint = getApiUrl('/api/garmin-sync');
         const garminRes = await fetch(garminEndpoint);
         if (garminRes.ok) {
-          const garminData = await garminRes.json();
-          if (garminData.activities && Array.isArray(garminData.activities) && garminData.activities.length > 0) {
-            loadedActivities = garminData.activities;
-            saveGarminActivities(loadedActivities);
+          try {
+            const garminData = await garminRes.json();
+            if (garminData.activities && Array.isArray(garminData.activities) && garminData.activities.length > 0) {
+              loadedActivities = garminData.activities;
+              saveGarminActivities(loadedActivities);
+            }
+          } catch {
+            // Ignore non-json response
           }
         }
       }
@@ -262,6 +256,9 @@ export const App: React.FC = () => {
     };
     setGarminState(updatedGarminState);
     saveGarminSyncState(updatedGarminState);
+
+    // Automatically ensure current week workouts are synced to Garmin (signature checks prevent duplicates)
+    syncCurrentWeekWorkoutsToGarmin(transformedEvents, referenceDate).catch(() => {});
 
     setIsRecharging(false);
   };
@@ -330,6 +327,23 @@ export const App: React.FC = () => {
     );
   };
 
+  const recomputeAndSyncCalendar = (
+    postpones: Record<string, WorkoutPostponeOverride>,
+    adaptations: Record<string, AdaptiveWorkoutOverride>
+  ) => {
+    if (baseCalendar.schedules.length === 0) return;
+    const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
+      baseCalendar.schedules,
+      baseCalendar.allEvents,
+      postpones,
+      adaptations
+    );
+    setSchedules(newSched);
+    setAllEvents(newEv);
+    setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
+    syncCurrentWeekWorkoutsToGarmin(newEv, referenceDate).catch(() => {});
+  };
+
   const handlePostponeWorkout = (
     eventId: string,
     originalDate: string,
@@ -339,74 +353,34 @@ export const App: React.FC = () => {
   ) => {
     const updated = postponeWorkout(postponeOverrides, eventId, originalDate, targetDate, reason, targetStartTime);
     setPostponeOverrides(updated);
-    if (baseCalendar.schedules.length > 0) {
-      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
-        baseCalendar.schedules,
-        baseCalendar.allEvents,
-        updated,
-        adaptiveOverrides
-      );
-      setSchedules(newSched);
-      setAllEvents(newEv);
-      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
-    }
+    recomputeAndSyncCalendar(updated, adaptiveOverrides);
   };
 
   const handleCancelPostpone = (eventId: string) => {
     const updated = cancelPostponeWorkout(postponeOverrides, eventId);
     setPostponeOverrides(updated);
-    if (baseCalendar.schedules.length > 0) {
-      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
-        baseCalendar.schedules,
-        baseCalendar.allEvents,
-        updated,
-        adaptiveOverrides
-      );
-      setSchedules(newSched);
-      setAllEvents(newEv);
-      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
-    }
+    recomputeAndSyncCalendar(updated, adaptiveOverrides);
   };
 
   const handleApplyAdaptivePlan = (actions: AdaptiveWorkoutAction[]) => {
     const overrides = buildOverridesFromActions(actions);
     setAdaptiveOverrides(overrides);
     saveAdaptiveOverrides(overrides);
-    if (baseCalendar.schedules.length > 0) {
-      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
-        baseCalendar.schedules,
-        baseCalendar.allEvents,
-        postponeOverrides,
-        overrides
-      );
-      setSchedules(newSched);
-      setAllEvents(newEv);
-      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
-    }
+    recomputeAndSyncCalendar(postponeOverrides, overrides);
   };
 
   const handleRevertAdaptivePlan = () => {
     setAdaptiveOverrides({});
     clearAdaptiveOverrides();
-    if (baseCalendar.schedules.length > 0) {
-      const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
-        baseCalendar.schedules,
-        baseCalendar.allEvents,
-        postponeOverrides,
-        {}
-      );
-      setSchedules(newSched);
-      setAllEvents(newEv);
-      setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
-    }
+    recomputeAndSyncCalendar(postponeOverrides, {});
   };
 
   // Compute full current week's targets for accurate microcycle telemetry progress
   const currentMonday = getMondayOfWeek(referenceDate);
-  const weekStartStr = currentMonday.toISOString().slice(0, 10);
+  const weekStartStr = formatDateKey(currentMonday);
   const weekEndDate = new Date(currentMonday);
   weekEndDate.setDate(currentMonday.getDate() + 6);
-  const weekEndStr = weekEndDate.toISOString().slice(0, 10);
+  const weekEndStr = formatDateKey(weekEndDate);
 
   const refDateKey = formatDateKey(referenceDate);
   const todayIdx = schedules.findIndex(s => s.date === refDateKey);
@@ -507,6 +481,7 @@ export const App: React.FC = () => {
       {activeTab === 'calendar' && (
         <CalendarView
           schedules={schedules}
+          allEvents={allEvents}
           referenceDateStr={formatDateKey(referenceDate)}
           referenceDate={referenceDate}
           onPostponeWorkout={handlePostponeWorkout}
@@ -516,6 +491,7 @@ export const App: React.FC = () => {
           adaptiveOverrides={adaptiveOverrides}
           onApplyAdaptivePlan={handleApplyAdaptivePlan}
           onRevertAdaptivePlan={handleRevertAdaptivePlan}
+          onOpenGarminSync={() => handleOpenAccountModal('garmin')}
         />
       )}
 

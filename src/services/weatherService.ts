@@ -22,7 +22,9 @@ export interface MontRoyalWeather {
   lastUpdated: string;
 }
 
-const WEATHER_STORAGE_KEY = 'mont_royal_weather_cache_v2';
+import { STORAGE_KEYS, storageGet, storageSet } from './storageService';
+
+const WEATHER_STORAGE_KEY = STORAGE_KEYS.WEATHER_CACHE;
 const CACHE_DURATION_MS = 25 * 60 * 1000; // 25 minutes
 
 function getWeatherEmojiAndDesc(code: number): { emoji: string; desc: string } {
@@ -41,16 +43,13 @@ function getWeatherEmojiAndDesc(code: number): { emoji: string; desc: string } {
 
 export async function fetchMontRoyalWeather(): Promise<MontRoyalWeather> {
   // Check local cache
-  try {
-    const rawCache = localStorage.getItem(WEATHER_STORAGE_KEY);
-    if (rawCache) {
-      const parsed = JSON.parse(rawCache);
-      const cacheAge = Date.now() - new Date(parsed.lastUpdated).getTime();
-      if (cacheAge < CACHE_DURATION_MS) {
-        return parsed;
-      }
+  const cached = storageGet<MontRoyalWeather | null>(WEATHER_STORAGE_KEY, null);
+  if (cached && cached.lastUpdated) {
+    const cacheAge = Date.now() - new Date(cached.lastUpdated).getTime();
+    if (cacheAge < CACHE_DURATION_MS) {
+      return cached;
     }
-  } catch {}
+  }
 
   // Mont-Royal coordinates (Montreal, Quebec)
   const lat = 45.5048;
@@ -135,10 +134,7 @@ export async function fetchMontRoyalWeather(): Promise<MontRoyalWeather> {
       lastUpdated: new Date().toISOString()
     };
 
-    try {
-      localStorage.setItem(WEATHER_STORAGE_KEY, JSON.stringify(result));
-    } catch {}
-
+    storageSet(WEATHER_STORAGE_KEY, result);
     return result;
   } catch {
     // Secours hors ligne

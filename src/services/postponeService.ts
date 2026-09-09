@@ -1,5 +1,7 @@
 import { CalendarEvent, DailySchedule, WorkoutPostponeOverride } from '../types/calendar';
 import { COLOR_MAP } from './periodizationEngine';
+import { storageGet, storageSet } from './storageService';
+import { formatFriendlyDay } from './dateUtils';
 
 export const POSTPONE_STORAGE_KEY = 'sport_calendar_postponed_workouts';
 
@@ -7,39 +9,17 @@ export const POSTPONE_STORAGE_KEY = 'sport_calendar_postponed_workouts';
  * Charge les reports de séances enregistrés dans le localStorage.
  */
 export function loadPostponeOverrides(): Record<string, WorkoutPostponeOverride> {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(POSTPONE_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (err) {
-    console.warn('Impossible de charger les reports de séance du localStorage:', err);
-  }
-  return {};
+  return storageGet<Record<string, WorkoutPostponeOverride>>(POSTPONE_STORAGE_KEY, {});
 }
 
 /**
  * Sauvegarde les reports de séances dans le localStorage.
  */
 export function savePostponeOverrides(overrides: Record<string, WorkoutPostponeOverride>): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(POSTPONE_STORAGE_KEY, JSON.stringify(overrides));
-  } catch (err) {
-    console.warn('Impossible de sauvegarder les reports de séance dans le localStorage:', err);
-  }
+  storageSet(POSTPONE_STORAGE_KEY, overrides);
 }
 
-/**
- * Formate une date YYYY-MM-DD en texte lisible (ex: "dimanche 6 sept.").
- */
-function formatFriendlyDate(dateKey: string): string {
-  try {
-    const d = new Date(dateKey + 'T12:00:00');
-    return d.toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' });
-  } catch {
-    return dateKey;
-  }
-}
+const formatFriendlyDate = formatFriendlyDay;
 
 /**
  * Construit un nouvel objet Date en appliquant les heures et minutes d'origine (ou spécifiées)

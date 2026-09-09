@@ -1,7 +1,7 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, GarminActivity } from '../types/garmin';
-import { getGarminLocalDateKey, getMondayWeekKey } from './comparisonEngine';
-import { formatDateKey } from './icsParser';
+import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey } from './dateUtils';
+import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 
 /**
@@ -974,33 +974,13 @@ export function calculateSessionTrimp(
   const actType = String(typeOrSportType || '').toUpperCase();
   const actName = String(name || '').toLowerCase();
 
-  const isCalisthenics =
-    actType === 'STRENGTH_TRAINING' ||
-    actType === 'FITNESS_EQUIPMENT' ||
-    actType === 'CALISTHENICS' ||
-    actType === 'GYM_FORCE' ||
-    actName.includes('calisth') ||
-    actName.includes('muscu') ||
-    actName.includes('force') ||
-    actName.includes('dips') ||
-    actName.includes('traction') ||
-    actName.includes('gainage');
-
-  const isTrailOrRunning =
-    actType === 'TRAIL_RUNNING' ||
-    actType === 'TRAIL_INTENSE' ||
-    actType === 'TRAIL_LONG' ||
-    actType === 'RUNNING' ||
-    actType === 'RUN_EASY' ||
-    actType === 'RUN_TEMPO' ||
-    actName.includes('trail') ||
-    actName.includes('côtes') ||
-    actName.includes('footing') ||
-    (actName.includes('course') && !actName.includes('cours') && !actName.includes('calisth'));
+  const isCalisthenics = isStrengthOrCalisthenics(typeOrSportType, name);
+  const isRunningDiscipline = isTrailOrRunning(typeOrSportType, name);
+  const hasRunningImpact = isRunningDiscipline && !isCalisthenics;
 
   // 1. Charge EPOC native Firstbeat de Garmin prioritaire si présente
   if (typeof garminLoad === 'number' && garminLoad > 0) {
-    const isImpact = isTrailOrRunning && !isCalisthenics;
+    const isImpact = hasRunningImpact;
     return {
       trimp: Math.round(garminLoad),
       cardioTrimp: Math.round(garminLoad),
@@ -1027,7 +1007,7 @@ export function calculateSessionTrimp(
     factor = 1.35;
     factorLabel = 'Trail D+ & Côtes (×1.35)';
     categoryLabel = 'Trail & Côtes (Impact excentrique élevé)';
-  } else if (actType === 'RUNNING' || actType === 'RUN_EASY' || actType === 'RUN_TEMPO' || actName.includes('footing') || actName.includes('course') || isTrailOrRunning) {
+  } else if (actType === 'RUNNING' || actType === 'RUN_EASY' || actType === 'RUN_TEMPO' || actName.includes('footing') || actName.includes('course') || hasRunningImpact) {
     factor = 1.15;
     factorLabel = 'Course sur plat (×1.15)';
     categoryLabel = 'Course sur plat (Impact modéré)';
@@ -1041,7 +1021,7 @@ export function calculateSessionTrimp(
     categoryLabel = 'Récupération active & Mobilité';
   }
 
-  const isMechanicalImpact = isTrailOrRunning && !isCalisthenics;
+  const isMechanicalImpact = hasRunningImpact;
 
   // 3. Calcul Banister physiologique si cardiofréquencemètre réel disponible
   if (typeof options?.avgHeartRate === 'number' && options.avgHeartRate > 55 && dur > 0) {

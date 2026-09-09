@@ -1,5 +1,6 @@
 import { CalendarEvent } from '../types/calendar';
 import { GarminWellnessData } from '../types/garmin';
+import { storageGet, storageSet } from './storageService';
 
 const WELLNESS_STORAGE_KEY = 'garmin_wellness_history';
 
@@ -8,26 +9,16 @@ const WELLNESS_STORAGE_KEY = 'garmin_wellness_history';
  * Map keyed by date YYYY-MM-DD.
  */
 export function loadWellnessHistory(): Record<string, GarminWellnessData> {
-  try {
-    const raw = localStorage.getItem(WELLNESS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.warn('Could not load wellness history:', e);
-  }
-  return {};
+  return storageGet<Record<string, GarminWellnessData>>(WELLNESS_STORAGE_KEY, {});
 }
 
 /**
  * Persists a day's Garmin wellness data.
  */
 export function saveWellnessData(data: GarminWellnessData): void {
-  try {
-    const history = loadWellnessHistory();
-    history[data.date] = data;
-    localStorage.setItem(WELLNESS_STORAGE_KEY, JSON.stringify(history));
-  } catch (e) {
-    console.warn('Could not save wellness data:', e);
-  }
+  const history = loadWellnessHistory();
+  history[data.date] = data;
+  storageSet(WELLNESS_STORAGE_KEY, history);
 }
 
 /**
