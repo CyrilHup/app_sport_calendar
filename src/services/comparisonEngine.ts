@@ -1,6 +1,6 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, ComparisonStatus, GarminActivity } from '../types/garmin';
-import { classifyGarminActivityType, inferOtherProfileCategory, isStrengthOrCalisthenics } from './activityClassifier';
+import { classifyGarminActivityType, inferOtherProfileCategory, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay } from './dateUtils';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 
@@ -446,10 +446,11 @@ function evaluateSingleWorkout(
     }
   }
 
-  // 3. Évaluation du dénivelé D+ (séances trail)
-  const targetElevationM = isRecovery ? 0 : plan.metadata?.targetElevationM;
+  // 3. Évaluation du dénivelé D+ (séances trail uniquement)
+  const isCalisthenics = !isTrailOrRunning(plan) && isStrengthOrCalisthenics(plan);
+  const targetElevationM = (isRecovery || isCalisthenics) ? 0 : plan.metadata?.targetElevationM;
   let elevationDeltaM: number | undefined = undefined;
-  if (targetElevationM !== undefined && targetElevationM > 0 && act.elevationGainM !== undefined) {
+  if (!isCalisthenics && targetElevationM !== undefined && targetElevationM > 0 && act.elevationGainM !== undefined) {
     elevationDeltaM = act.elevationGainM - targetElevationM;
     if (Math.abs(elevationDeltaM) > 70) {
       feedbackNotes.push(
@@ -458,7 +459,7 @@ function evaluateSingleWorkout(
     } else {
       feedbackNotes.push(`Cible de dénivelé D+ atteinte : +${act.elevationGainM} m (cible ~${targetElevationM} m).`);
     }
-  } else if (isRecovery && act.elevationGainM !== undefined) {
+  } else if (!isCalisthenics && isRecovery && act.elevationGainM !== undefined && act.elevationGainM > 0) {
     feedbackNotes.push(`Dénivelé D+ : +${act.elevationGainM} m réalisés (profil plat préservé).`);
   }
 
@@ -474,7 +475,7 @@ function evaluateSingleWorkout(
   if (act.trainingLoad) {
     feedbackNotes.push(`📊 Charge EPOC native : ${act.trainingLoad} pts`);
   }
-  if (act.elevationLossM) {
+  if (!isCalisthenics && act.elevationLossM && act.elevationLossM > 0) {
     feedbackNotes.push(`⛰️ Dénivelé négatif D- : -${act.elevationLossM} m`);
   }
   if (act.avgPaceMinKm) {

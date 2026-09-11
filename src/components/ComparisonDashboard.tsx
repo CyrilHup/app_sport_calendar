@@ -3,7 +3,7 @@ import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/ga
 import { formatDateKey } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
-import { formatGarminActivityName } from '../services/activityClassifier';
+import { formatGarminActivityName, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import {
   Activity,
   AlertTriangle,
@@ -485,29 +485,49 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
 
                       {/* Dénivelé D+ & D- */}
                       <td>
-                        {comp.actualActivity?.elevationGainM !== undefined ? (
-                          <div>
-                            <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
-                              +{comp.actualActivity.elevationGainM} m
-                            </span>
-                            {comp.actualActivity.elevationLossM ? (
-                              <span style={{ fontSize: '0.7rem', color: 'var(--accent-blue)', marginLeft: 4, fontWeight: 600 }}>
-                                / -{comp.actualActivity.elevationLossM} m
-                              </span>
-                            ) : null}
-                            {comp.plannedEvent?.metadata?.targetElevationM && (
-                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                                Cible : +{comp.plannedEvent.metadata.targetElevationM} m
+                        {(() => {
+                          const isPlannedTrailOrRun = comp.plannedEvent && (
+                            comp.plannedEvent.sportType === 'TRAIL_INTENSE' ||
+                            comp.plannedEvent.sportType === 'TRAIL_LONG' ||
+                            comp.plannedEvent.sportType === 'RUN_EASY' ||
+                            isTrailOrRunning(comp.plannedEvent) ||
+                            Boolean(comp.plannedEvent.metadata?.targetElevationM && comp.plannedEvent.metadata.targetElevationM > 0)
+                          );
+                          const isStrength = !isPlannedTrailOrRun && (
+                            (comp.plannedEvent && isStrengthOrCalisthenics(comp.plannedEvent)) ||
+                            (comp.actualActivity && isStrengthOrCalisthenics(comp.actualActivity) && !isTrailOrRunning(comp.actualActivity))
+                          );
+                          if (isStrength) {
+                            return <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>-- (Force)</span>;
+                          }
+                          if (comp.actualActivity?.elevationGainM !== undefined) {
+                            return (
+                              <div>
+                                <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                                  +{comp.actualActivity.elevationGainM} m
+                                </span>
+                                {comp.actualActivity.elevationLossM ? (
+                                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-blue)', marginLeft: 4, fontWeight: 600 }}>
+                                    / -{comp.actualActivity.elevationLossM} m
+                                  </span>
+                                ) : null}
+                                {comp.plannedEvent?.metadata?.targetElevationM && (
+                                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                                    Cible : +{comp.plannedEvent.metadata.targetElevationM} m
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ) : comp.plannedEvent?.metadata?.targetElevationM ? (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            Cible : +{comp.plannedEvent.metadata.targetElevationM}m
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)' }}>--</span>
-                        )}
+                            );
+                          }
+                          if (comp.plannedEvent?.metadata?.targetElevationM) {
+                            return (
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                Cible : +{comp.plannedEvent.metadata.targetElevationM}m
+                              </span>
+                            );
+                          }
+                          return <span style={{ color: 'var(--text-muted)' }}>--</span>;
+                        })()}
                       </td>
 
                       {/* Charge TRIMP */}

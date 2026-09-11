@@ -127,6 +127,42 @@ describe('readinessEngine', () => {
     );
 
     expect(afternoonScore.score).toBeLessThan(morningScore.score);
-    expect(afternoonScore.summary).toContain('Activité préalable');
+    expect(afternoonScore.summary).toContain('activité(s) préalable(s)');
+  });
+
+  it('should accurately deplete readiness after 4 intraday activities while preserving morning score', () => {
+    const excellentWellness: GarminWellnessData = {
+      date: '2026-09-10',
+      sleep: { score: 90, totalMinutes: 654 }, // 10.9h
+      hrv: { status: 'BALANCED', lastNightAvg: 54, weeklyAvg: 52 },
+      restingHeartRate: 46,
+      trainingReadinessScore: 80,
+      syncedAt: new Date().toISOString()
+    };
+
+    // Morning check: 0 activities done yet
+    const morningEval = calculateReadinessScore(excellentWellness, 48, [], false);
+    expect(morningEval.morningScore).toBeGreaterThanOrEqual(80);
+    expect(morningEval.score).toBe(morningEval.morningScore);
+    expect(morningEval.status).toBe('OPTIMAL');
+
+    // Evening check: 4 activities logged today (Running 36m, Calisthenics 23m, Bonus 10m, Bonus 3m = 72m total)
+    const eveningActivities = [
+      { durationMinutes: 36, trainingLoad: 55, activityName: 'Running: Easy Aerobic' },
+      { durationMinutes: 23, trainingLoad: 25, activityName: 'Calisthenics 1' },
+      { durationMinutes: 10, trainingLoad: 12, activityName: 'Calisthénie / Renforcement' },
+      { durationMinutes: 3, trainingLoad: 4, activityName: 'Montreal - [QMT] Running' }
+    ];
+
+    const eveningEval = calculateReadinessScore(excellentWellness, 48, eveningActivities, true);
+    // Morning score is preserved
+    expect(eveningEval.morningScore).toBe(morningEval.morningScore);
+    // Residual score is depleted by fatigue
+    expect(eveningEval.score).toBeLessThan(60);
+    expect(eveningEval.score).toBeGreaterThanOrEqual(30);
+    expect(eveningEval.status).toBe('COMPLETED');
+    expect(eveningEval.statusLabel).toContain('Récupération');
+    expect(eveningEval.badgeEmoji).toBe('🏁');
   });
 });
+

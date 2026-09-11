@@ -39,10 +39,28 @@ export function getLatestWellnessData(): GarminWellnessData | null {
   return history[dates[dates.length - 1]];
 }
 
+/**
+ * Computes baseline resting heart rate from rolling historical wellness data.
+ * Falls back to 48 if no prior data exists.
+ */
+export function getBaselineRestingHeartRate(): number {
+  const history = loadWellnessHistory();
+  const validRhrs = Object.values(history)
+    .map(w => w.restingHeartRate)
+    .filter((r): r is number => typeof r === 'number' && r > 30 && r < 120);
+
+  if (validRhrs.length > 0) {
+    const sum = validRhrs.reduce((a, b) => a + b, 0);
+    return Math.round(sum / validRhrs.length);
+  }
+  return 48;
+}
+
 export type ReadinessStatus = 'OPTIMAL' | 'MODERATE' | 'LOW' | 'COMPLETED';
 
 export interface ReadinessEvaluation {
-  score: number; // 0 to 100
+  score: number; // 0 to 100 (Residual readiness score reflecting intraday state)
+  morningScore?: number; // 0 to 100 (Waking score based purely on sleep, HRV, and baseline RHR)
   status: ReadinessStatus;
   statusLabel: string;
   badgeEmoji: string;
@@ -53,13 +71,16 @@ export interface ReadinessEvaluation {
   isDefaultBaseline?: boolean;
   completedActivitiesCount?: number;
   intradayLoad?: number;
+  intradayDurationMinutes?: number;
   factors: {
+    morningScore?: number;
     sleepScore: number; // 0-100
     sleepDurationHours: number;
     hrvScore: number; // 0-100
     hrvStatus: string;
     rhrDeltaBpm: number;
     rhrBpm?: number;
+    baselineRhr?: number;
   };
 }
 
@@ -70,29 +91,48 @@ export interface ReadinessEvaluation {
  */
 export function calculateReadinessScore(
   wellness: GarminWellnessData | null,
-  baselineRhr: number = 48,
+  baselineRhr?: number,
   todayActivities: Array<{ durationMinutes?: number; trainingLoad?: number; activityName?: string }> = [],
   isTodaySessionCompleted: boolean = false
 ): ReadinessEvaluation {
+  const effectiveBaselineRhr = (typeof baselineRhr === 'number' && baselineRhr > 30)
+    ? baselineRhr
+    : getBaselineRestingHeartRate();
+
+  const todayTotalMins = todayActivities.reduce((acc, a) => acc + (a.durationMinutes || 0), 0);
+  const todayTotalLoad = todayActivities.reduce((acc, a) => acc + (a.trainingLoad || Math.round((a.durationMinutes || 0) * 0.8)), 0);
+
   if (!wellness) {
+    const morningScore = 80;
     if (isTodaySessionCompleted) {
+      const durationCost = todayTotalMins * 0.30;
+      const loadCost = todayTotalLoad * 0.12;
+      const multiSessionCost = todayActivities.length >= 2 ? (todayActivities.length - 1) * 2.5 : 0;
+      const baseCompletionCost = (isTodaySessionCompleted && todayTotalMins === 0) ? 25 : 0;
+      const fatiguePenalty = Math.max(20, Math.min(50, Math.round(durationCost + loadCost + multiSessionCost + baseCompletionCost)));
+      const residualScore = Math.max(15, morningScore - fatiguePenalty);
       return {
-        score: 85,
+        score: residualScore,
+        morningScore,
         status: 'COMPLETED',
-        statusLabel: 'Séance Réalisée (Récupération)',
+        statusLabel: 'Séance(s) Validée(s) : Récupération',
         badgeEmoji: '🏁',
         badgeColorHex: '#38bdf8',
         headline: 'Séance Validée : Assimilation en Cours',
-        summary: 'Entraînement du jour terminé et synchronisé. Fenêtre de récupération active.',
+        summary: `Entraînement du jour terminé et synchronisé (${todayTotalMins > 0 ? todayTotalMins + ' min' : 'validé sur Garmin'}). Fraîcheur résiduelle : ${residualScore}/100 (Score au réveil : ${morningScore}/100). Fenêtre de récupération active.`,
         isCompleted: true,
         completedActivitiesCount: Math.max(1, todayActivities.length),
+        intradayLoad: todayTotalLoad,
+        intradayDurationMinutes: todayTotalMins,
         factors: {
+          morningScore,
           sleepScore: 80,
           sleepDurationHours: 7.5,
           hrvScore: 80,
           hrvStatus: 'BALANCED',
           rhrDeltaBpm: 0,
-          rhrBpm: baselineRhr
+          rhrBpm: effectiveBaselineRhr,
+          baselineRhr: effectiveBaselineRhr
         }
       };
     }
@@ -100,6 +140,7 @@ export function calculateReadinessScore(
     // Default neutral healthy baseline when no sync has occurred today yet
     return {
       score: 78,
+      morningScore: 78,
       status: 'OPTIMAL',
       statusLabel: 'Forme Stable (Par défaut)',
       badgeEmoji: '🟢',
@@ -107,13 +148,16 @@ export function calculateReadinessScore(
       headline: 'Prêt pour l\'entraînement',
       summary: 'Synchronisez Garmin Connect pour afficher votre score précis basé sur le sommeil et la VFC nocturne.',
       isDefaultBaseline: true,
+      completedActivitiesCount: todayActivities.length,
       factors: {
+        morningScore: 78,
         sleepScore: 80,
         sleepDurationHours: 7.5,
         hrvScore: 80,
         hrvStatus: 'BALANCED',
         rhrDeltaBpm: 0,
-        rhrBpm: baselineRhr
+        rhrBpm: effectiveBaselineRhr,
+        baselineRhr: effectiveBaselineRhr
       }
     };
   }
@@ -162,68 +206,76 @@ export function calculateReadinessScore(
     }
   }
 
-  // 3. Resting HR Factor (Weight: 15%)
+  // 3. Resting HR Factor (Weight: 25%)
   let rhrScore = 80;
   let rhrDeltaBpm = 0;
   const currentRhr = wellness.restingHeartRate;
   if (currentRhr && currentRhr > 0) {
-    rhrDeltaBpm = currentRhr - baselineRhr;
+    rhrDeltaBpm = currentRhr - effectiveBaselineRhr;
     if (rhrDeltaBpm <= -2) rhrScore = 95; // Excellent low resting HR
     else if (rhrDeltaBpm <= 2) rhrScore = 85; // Normal baseline
     else if (rhrDeltaBpm <= 5) rhrScore = 60; // Mild fatigue or dehydration
     else rhrScore = 30; // Elevated RHR (+6 bpm): viral infection or acute overreaching!
   }
 
-  // Weighted composite score
-  let compositeScore = Math.round(sleepScore * 0.35 + hrvScore * 0.40 + rhrScore * 0.25);
+  // Weighted composite morning score
+  let morningScore = Math.round(sleepScore * 0.35 + hrvScore * 0.40 + rhrScore * 0.25);
 
   // If Garmin provides a direct Firstbeat trainingReadinessScore, fuse it 50/50
   if (typeof wellness.trainingReadinessScore === 'number' && wellness.trainingReadinessScore > 0) {
-    compositeScore = Math.round((compositeScore + wellness.trainingReadinessScore) / 2);
+    morningScore = Math.round((morningScore + wellness.trainingReadinessScore) / 2);
   }
 
-  // Bound to 1 - 100
-  compositeScore = Math.max(5, Math.min(100, compositeScore));
+  // Bound morning score to 1 - 100
+  morningScore = Math.max(5, Math.min(100, morningScore));
 
-  // 4. Intraday Activity Modulation
-  const todayTotalMins = todayActivities.reduce((acc, a) => acc + (a.durationMinutes || 0), 0);
-  const todayTotalLoad = todayActivities.reduce((acc, a) => acc + (a.trainingLoad || Math.round((a.durationMinutes || 0) * 0.8)), 0);
+  // 4. Intraday Activity Modulation & Dynamic Fatigue Depletion
+  let fatiguePenalty = 0;
+  if (isTodaySessionCompleted || todayActivities.length > 0) {
+    const durationCost = todayTotalMins * 0.30;
+    const loadCost = todayTotalLoad * 0.12;
+    const multiSessionCost = todayActivities.length >= 2 ? (todayActivities.length - 1) * 2.5 : 0;
+    const baseCompletionCost = (isTodaySessionCompleted && todayTotalMins === 0) ? 25 : 0;
+
+    fatiguePenalty = Math.round(durationCost + loadCost + multiSessionCost + baseCompletionCost);
+    if (isTodaySessionCompleted) {
+      fatiguePenalty = Math.max(20, Math.min(50, fatiguePenalty));
+    } else if (todayTotalMins >= 20) {
+      fatiguePenalty = Math.min(45, fatiguePenalty);
+    }
+  }
+
+  const residualScore = Math.max(15, morningScore - fatiguePenalty);
 
   // Case A: The prescribed workout is already completed today!
   if (isTodaySessionCompleted) {
     return {
-      score: compositeScore,
+      score: residualScore,
+      morningScore,
       status: 'COMPLETED',
-      statusLabel: 'Séance Réalisée (Récupération)',
+      statusLabel: 'Séance(s) Validée(s) : Récupération',
       badgeEmoji: '🏁',
       badgeColorHex: '#38bdf8',
-      headline: 'Séance Validée : Assimilation en Cours',
-      summary: `Entraînement complété aujourd'hui (${todayTotalMins > 0 ? todayTotalMins + ' min' : 'validé sur Garmin'}). Fenêtre de récupération active : reconstituez les réserves hydriques et glycogéniques.`,
+      headline: 'Stimulus Validé : Assimilation en Cours',
+      summary: `${todayActivities.length > 1 ? `${todayActivities.length} activités réalisées aujourd'hui` : 'Entraînement complété aujourd\'hui'} (${todayTotalMins > 0 ? todayTotalMins + ' min' : 'validé sur Garmin'}). Fraîcheur résiduelle : ${residualScore}/100 (Score au réveil : ${morningScore}/100). Fenêtre de récupération active : reconstituez les réserves hydriques et glycogéniques.`,
       isCompleted: true,
       completedActivitiesCount: Math.max(1, todayActivities.length),
       intradayLoad: todayTotalLoad,
+      intradayDurationMinutes: todayTotalMins,
       factors: {
+        morningScore,
         sleepScore,
         sleepDurationHours: Math.round(sleepDurationHours * 10) / 10,
         hrvScore,
         hrvStatus,
         rhrDeltaBpm,
-        rhrBpm: currentRhr
+        rhrBpm: currentRhr,
+        baselineRhr: effectiveBaselineRhr
       }
     };
   }
 
   // Case B: Activities performed earlier today without yet completing the main prescribed workout
-  if (todayActivities.length > 0 && todayTotalMins >= 20) {
-    let fatiguePenalty = 10;
-    if (todayTotalMins >= 60 || todayTotalLoad >= 100) {
-      fatiguePenalty = 25;
-    } else if (todayTotalMins >= 40 || todayTotalLoad >= 60) {
-      fatiguePenalty = 18;
-    }
-    compositeScore = Math.max(15, compositeScore - fatiguePenalty);
-  }
-
   let status: ReadinessStatus = 'OPTIMAL';
   let statusLabel = 'Prêt pour l\'intensité';
   let badgeEmoji = '🟢';
@@ -231,29 +283,30 @@ export function calculateReadinessScore(
   let headline = 'Feu Vert : Entraînement Cible Optimal';
   let summary = `Excellente récupération : Sommeil de ${Math.floor(sleepDurationHours)}h${Math.round((sleepDurationHours % 1) * 60)} et statut VFC équilibré. Vos capacités cardiorespiratoires sont au maximum pour les séances de puissance ou de côte.`;
 
-  if (compositeScore < 50) {
+  if (residualScore < 50) {
     status = 'LOW';
     statusLabel = 'Alerte Récupération';
     badgeEmoji = '🔴';
     badgeColorHex = '#ef4444';
     headline = 'Vigilance : Système Nerveux Sous Tension';
-    summary = `Fatigue accumulée détectée (Score ${compositeScore}/100) : VFC ${hrvStatus.toLowerCase()} et sommeil insuffisant (${sleepDurationHours.toFixed(1)}h). Recommandation : Alléger la séance du jour ou reporter les intensités.`;
-  } else if (compositeScore < 75) {
+    summary = `Fatigue accumulée détectée (Score actuel : ${residualScore}/100, Réveil : ${morningScore}/100) : VFC ${hrvStatus.toLowerCase()} et sommeil insuffisant (${sleepDurationHours.toFixed(1)}h). Recommandation : Alléger la séance du jour ou reporter les intensités.`;
+  } else if (residualScore < 75) {
     status = 'MODERATE';
     statusLabel = 'Récupération Modérée';
     badgeEmoji = '🟡';
     badgeColorHex = '#f59e0b';
     headline = 'Forme Moyenne : Privilégier l\'Endurance Z2';
-    summary = `Niveau de fraîcheur intermédiaire (${compositeScore}/100). Vous pouvez vous entraîner, mais évitez de pousser dans les zones maximales (Z5). Privilégiez l'endurance fondamentale ou le renforcement sans échec musculaire.`;
+    summary = `Niveau de fraîcheur intermédiaire (${residualScore}/100, Réveil : ${morningScore}/100). Vous pouvez vous entraîner, mais évitez de pousser dans les zones maximales (Z5). Privilégiez l'endurance fondamentale ou le renforcement sans échec musculaire.`;
   }
 
   // If activities were already performed earlier today, mention it clearly in the summary
   if (todayActivities.length > 0 && todayTotalMins >= 20) {
-    summary += ` ⚠️ Activité préalable enregistrée ce matin (${todayTotalMins} min) : réserves partiellement entamées pour la séance du soir.`;
+    summary += ` ⚠️ ${todayActivities.length} activité(s) préalable(s) enregistrée(s) (${todayTotalMins} min) : fraîcheur résiduelle ajustée de ${morningScore}/100 à ${residualScore}/100.`;
   }
 
   return {
-    score: compositeScore,
+    score: residualScore,
+    morningScore,
     status,
     statusLabel,
     badgeEmoji,
@@ -263,13 +316,16 @@ export function calculateReadinessScore(
     isCompleted: false,
     completedActivitiesCount: todayActivities.length,
     intradayLoad: todayTotalLoad,
+    intradayDurationMinutes: todayTotalMins,
     factors: {
+      morningScore,
       sleepScore,
       sleepDurationHours: Math.round(sleepDurationHours * 10) / 10,
       hrvScore,
       hrvStatus,
       rhrDeltaBpm,
-      rhrBpm: currentRhr
+      rhrBpm: currentRhr,
+      baselineRhr: effectiveBaselineRhr
     }
   };
 }

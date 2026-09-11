@@ -1,9 +1,26 @@
 import { describe, it, expect } from 'vitest';
+
+const testStorage: Record<string, string> = {};
+const mockLocalStorage = {
+  getItem: (key: string) => testStorage[key] ?? null,
+  setItem: (key: string, value: string) => { testStorage[key] = String(value); },
+  removeItem: (key: string) => { delete testStorage[key]; },
+  clear: () => { Object.keys(testStorage).forEach(k => delete testStorage[k]); }
+};
+Object.defineProperty(globalThis, 'localStorage', {
+  value: mockLocalStorage,
+  writable: true,
+  configurable: true
+});
+
 import {
   evaluateAdaptivePlanStatus,
   applyAdaptiveModifications,
-  buildOverridesFromActions
+  buildOverridesFromActions,
+  isAutoAdaptEnabled,
+  setAutoAdaptEnabled
 } from './adaptivePlanEngine';
+import { buildWorkoutPayloadFromEvent } from './garminService';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
@@ -215,5 +232,84 @@ describe('Adaptive Plan Engine', () => {
     );
     expect(revertedSchedules[0].events[0].title).toBe('⚡ Trail: Hill Repeats D+ (Mont-Royal)');
     expect(revertedSchedules[0].events[0].durationMinutes).toBe(80);
+  });
+
+  it('handles Under-training (trail ACWR < 0.8) with Gabbett safe progressive consolidation', () => {
+    const underloadTrainingLoad: TrainingLoadStats = {
+      currentCtl: 35,
+      currentAtl: 20,
+      currentTsb: 15,
+      formStatus: 'TRANSITION_FRESH',
+      formLabel: 'Très frais',
+      acwrRatio: 0.55,
+      acwrStatus: 'UNDERLOAD',
+      acwrLabel: 'Sous-charge',
+      acuteLoad7d: 70,
+      chronicLoad28dWeeklyAvg: 130,
+      fitnessTrend: [],
+      trailAcwrRatio: 0.55,
+      trailAcuteLoad7d: 70,
+      trailChronicLoad28dWeeklyAvg: 130,
+      trailAcwrStatus: 'UNDERLOAD',
+      calisthenicsAcuteLoad7d: 120,
+      calisthenicsSessionsCount7d: 3,
+      totalSystemicAcuteLoad7d: 190,
+      totalTrailChronicLoad28d: 520,
+      recentSessions7d: []
+    };
+
+    const status = evaluateAdaptivePlanStatus(underloadTrainingLoad, mockBaseReadiness, mockWeeklySportEvents);
+
+    expect(status.headline).toContain('Sous-charge');
+    expect(status.explanation).toContain('0.8');
+    // For ACWR < 0.6, heavy hill repeats are proactively smoothed to 1 set to prevent a sudden spike
+    const tueAction = status.recommendedActions.find(a => a.eventId === 'SPORT_TUE');
+    expect(tueAction).toBeDefined();
+    expect(tueAction?.adaptedDurationMinutes).toBe(40);
+    expect(tueAction?.adaptedTitle).toContain('Anti-pic');
+  });
+
+  it('manages Auto-Adapt toggle state in storage', () => {
+    setAutoAdaptEnabled(true);
+    expect(isAutoAdaptEnabled()).toBe(true);
+
+    setAutoAdaptEnabled(false);
+    expect(isAutoAdaptEnabled()).toBe(false);
+
+    setAutoAdaptEnabled(true);
+  });
+
+  it('generates TRAIL_LONG Garmin workout payload with aligned 155 bpm upper ceiling and Rando-Course instructions', () => {
+    const trailLongEvent: CalendarEvent = {
+      id: 'SPORT_SAT_LONG',
+      category: 'sport',
+      sportType: 'TRAIL_LONG',
+      title: '🏔️ Trail: Rando-Course D+ (1h35)',
+      startDate: '2026-09-12T10:40:00.000Z',
+      endDate: '2026-09-12T12:15:00.000Z',
+      location: 'Mont Royal',
+      description: 'Rando-Course D+',
+      durationMinutes: 95,
+      emoji: '🏔️',
+      colorId: '6',
+      colorHex: '#ff6b35',
+      metadata: {
+        targetElevationM: 400,
+        targetHeartRateRange: [135, 155]
+      }
+    };
+
+    const payload = buildWorkoutPayloadFromEvent(trailLongEvent, '2026-09-12', 'FORERUNNER_55');
+
+    expect(payload.sportType).toBe('RUNNING');
+    expect(payload.steps.length).toBe(3);
+
+    // Warmup step: capped at 155 bpm
+    expect(payload.steps[0].targetHrHigh).toBe(155);
+
+    // Interval step: capped at 155 bpm with explicit Rando-Course cue
+    expect(payload.steps[1].targetHrHigh).toBe(155);
+    expect(payload.steps[1].stepNotes || '').toContain('Rando-Course');
+    expect((payload.steps[1].stepNotes || '').toLowerCase()).toContain('power-hike');
   });
 });

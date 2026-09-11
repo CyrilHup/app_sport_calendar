@@ -12,9 +12,23 @@ export const GLOBAL_APP_CONFIG = {
   SPORT_START_DATE: getEnvVal('VITE_SPORT_START_DATE', '2026-09-01'),
   PLAN_START_DATE: getEnvVal('VITE_PLAN_START_DATE', '2027-01-11'),
   RACE_DATE: getEnvVal('VITE_TARGET_RACE_DATE', '2027-07-03'),
-  TARGET_RACE_NAME: getEnvVal('VITE_TARGET_RACE_NAME', 'Québec Mega Trail 80 km'),
-  ATHLETE_FC_MAX: parseInt(getEnvVal('VITE_ATHLETE_FC_MAX', '203'), 10) || 203,
-  TIMEZONE: "America/Toronto",
+  ATHLETE_FC_MAX: (() => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const cachedFc = localStorage.getItem('athlete_fc_max');
+        if (cachedFc) {
+          const parsed = parseInt(cachedFc, 10);
+          if (parsed > 140 && parsed < 240) return parsed;
+        }
+        const cachedProfile = localStorage.getItem('athlete_profile');
+        if (cachedProfile) {
+          const parsedProf = JSON.parse(cachedProfile);
+          if (parsedProf.fcMax && parsedProf.fcMax > 140 && parsedProf.fcMax < 240) return parsedProf.fcMax;
+        }
+      }
+    } catch {}
+    return parseInt(getEnvVal('VITE_ATHLETE_FC_MAX', '204'), 10) || 204;
+  })(),
   TARGET_HOME_RETURN_HOUR: 13,
   TARGET_HOME_RETURN_MIN: 0,
   BUFFER_BEFORE_CLASS_MIN: 10,
@@ -223,28 +237,37 @@ export function getDailyWorkoutPlan(
     durationSaturdayLong = 75;  // 1h15
     durationSunday = 0;         // Full rest on W1
   } else if (ctx.phase === "FONDATION_RAMP_2") {
+    durationTuesday = 45;       // Montée de charge lissée (+15-20% max vs S1)
+    durationThursday = 35;
+    durationSaturdayLong = 85;  // 1h25
+    durationSunday = 30;        // Reprise douce du dimanche (recup active)
+  } else if (ctx.phase === "FONDATION_RAMP_3") {
     durationTuesday = 50;
     durationThursday = 40;
-    durationSaturdayLong = 95;  // 1h35
-    durationSunday = 40;
-  } else if (ctx.phase === "FONDATION_RAMP_3") {
+    durationSaturdayLong = 100; // 1h40
+    durationSunday = 35;
+  } else if (ctx.phase === "FONDATION") {
     durationTuesday = 55;
     durationThursday = 45;
-    durationSaturdayLong = 110; // 1h50
-    durationSunday = 50;
-  } else if (ctx.phase === "FONDATION") {
-    durationTuesday = 60;
-    durationThursday = 50;
-    durationSaturdayLong = 120; // 2h00
-    durationSunday = 65;
+    durationSaturdayLong = 115; // 1h55
+    durationSunday = 45;
   }
 
+  // Ratio vertical progressif : D+ modéré en reprise et dense en phase spécifique
+  let elevationFactor = 5.0;
+  if (ctx.phase === "FONDATION_RAMP_1") elevationFactor = 4.0;
+  else if (ctx.phase === "FONDATION_RAMP_2") elevationFactor = 4.2;
+  else if (ctx.phase === "FONDATION_RAMP_3") elevationFactor = 4.5;
+  else if (ctx.phase === "FONDATION") elevationFactor = 4.8;
+  else if (ctx.phase === "VOLUME_WEC_1" || ctx.phase === "SPECIFIQUE_PIC") elevationFactor = 5.5;
+
+  const targetElevationSaturday = Math.round(durationSaturdayLong * elevationFactor);
   const renfoTuesdayMin = ctx.phase === "FONDATION_RAMP_1" ? 15 : 20;
 
   switch (dayOfWeek) {
     case 0: // Monday
       return {
-        title: "Calisthenics 1 (Push & Core)",
+        title: "Entraînement Calisthénie",
         duration: isDeload ? 45 : 65,
         locName: "ÉTS Gym",
         address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
@@ -253,8 +276,8 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.CALISTHENICS.emoji,
         colorHex: COLOR_MAP.CALISTHENICS.colorHex,
         colorId: COLOR_MAP.CALISTHENICS.colorId,
-        description: `• Dips: ${isDeload ? '2x6' : '4x6-8'}\n• Pike Push-ups / HSPU prog: ${isDeload ? '2x6' : '4x6'}\n• Gymnastic rings push-ups: ${isDeload ? '2x10' : '3x12'}\n• Core: Hollow body hold (3x45s), Hanging leg raises.\n\n📌 ${setsNote}`,
-        targetHeartRate: "Zone 1-2 (Neuromuscular recovery)"
+        description: "Séance libre au poids du corps et renforcement musculaire.",
+        targetHeartRate: "Zone 1-2 (Récupération neuromusculaire)"
       };
 
     case 1: // Tuesday (Hills D+ & Leg Strengthening)
@@ -293,7 +316,7 @@ export function getDailyWorkoutPlan(
 
     case 2: // Wednesday
       return {
-        title: "Calisthenics 2 (Pull & Core - Zero Leg Impact)",
+        title: "Entraînement Calisthénie",
         duration: isDeload ? 45 : 65,
         locName: "ÉTS Gym",
         address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
@@ -302,8 +325,8 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.GYM_FORCE.emoji,
         colorHex: COLOR_MAP.GYM_FORCE.colorHex,
         colorId: COLOR_MAP.GYM_FORCE.colorId,
-        description: `• Strict pull-ups: ${isDeload ? '2x6' : '4x6-8'}\n• Muscle-up / progression: ${isDeload ? '2x3' : '4x3-5'}\n• Horizontal rows / Front lever prog: ${isDeload ? '2x8' : '3x10'}\n• L-sit hold: 4x20s\n\n🛡️ Zero leg impact (Post-hill recovery).`,
-        targetHeartRate: "Zone 1 (Pure strength)"
+        description: "Séance libre au poids du corps et renforcement musculaire.",
+        targetHeartRate: "Zone 1-2 (Force & Gainage)"
       };
 
     case 3: // Thursday (Easy Aerobic Base Run)
@@ -326,7 +349,7 @@ export function getDailyWorkoutPlan(
     case 4: // Friday
       if (hasChainedClass) {
         return {
-          title: "Calisthenics 3: Skills & Mobility (Direct ÉTS Gym)",
+          title: "Entraînement Calisthénie",
           duration: 45,
           locName: "ÉTS Gym",
           address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
@@ -335,13 +358,13 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.CALISTHENICS.emoji,
           colorHex: COLOR_MAP.CALISTHENICS.colorHex,
           colorId: COLOR_MAP.CALISTHENICS.colorId,
-          description: "• Straight to gym post-class.\n• Handstand hold, shoulder mobility and core stability.",
-          targetHeartRate: "Zone 1-2 (Mobility & Technique)"
+          description: "Séance libre au poids du corps et renforcement musculaire.",
+          targetHeartRate: "Zone 1-2 (Mobilité & Technique)"
         };
       }
       const isHomeFriday = Boolean(options?.hasOnlineClass && !options?.hasPresentialClass);
       return {
-        title: isHomeFriday ? "Calisthenics 3 (Handstand & Skills - Home)" : "Calisthenics 3 (Handstand & Skills)",
+        title: "Entraînement Calisthénie",
         duration: isDeload ? 40 : 60,
         locName: isHomeFriday ? "Home" : "ÉTS Gym",
         address: isHomeFriday ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.ETS_ADDRESS,
@@ -350,8 +373,8 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.CALISTHENICS.emoji,
         colorHex: COLOR_MAP.CALISTHENICS.colorHex,
         colorId: COLOR_MAP.CALISTHENICS.colorId,
-        description: `• Handstand hold & free balance (${isDeload ? '15 min' : '25 min'})\n• L-sit / V-sit: ${isDeload ? '2x15s' : '4x20s'}`,
-        targetHeartRate: "Zone 1-2 (Balance & Core)"
+        description: "Séance libre au poids du corps et renforcement musculaire.",
+        targetHeartRate: "Zone 1-2 (Équilibre & Core)"
       };
 
     case 5: // Saturday (Long Run D+)
@@ -386,7 +409,7 @@ export function getDailyWorkoutPlan(
         };
       }
       return {
-        title: `Trail: Long Run D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
+        title: `Trail: Rando-Course D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
         duration: durationSaturdayLong,
         locName: isWinter ? "Maisonneuve Park / Plowed Trails" : "Mont Royal",
         address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
@@ -395,11 +418,11 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.TRAIL_LONG.emoji,
         colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
         colorId: COLOR_MAP.TRAIL_LONG.colorId,
-        description: `• Core pillar workout for QMT-80.\n• Cardio Target: HR < 155 bpm (Zone 2 Endurance).\n• Cue: Run-hike technique (power hike as soon as slope exceeds 8-10% to protect cardio).\n• Fueling: 50-60g carbs/h + 500 mL water with electrolytes/h.`,
-        targetHeartRate: "< 155 bpm (Zone 2 Endurance)",
+        description: `• Rando-Course Ultra-Trail QMT-80 : alternance marche active en côte et foulée souple.\n• Règle d'or : Dès que la pente raidit (> 7-8%), passer impérativement en marche active (power-hike avec mains sur les cuisses ou bâtons) pour brider les pulsations sous 155 bpm (Zone 2).\n• Relance immédiate en course souple sur le plat, faux-plat et descentes.\n• Cible Cardio : < 155 bpm (Zone 2 Endurance douce).\n• Nutrition : 40-50g glucides/h + 500 mL eau avec électrolytes/h.`,
+        targetHeartRate: "< 155 bpm (Zone 2 Rando-Course)",
         targetHeartRateRange: [135, 155],
-        targetElevationM: Math.round(durationSaturdayLong * 5.5),
-        nutritionAdvice: "50-60g carbs/h + 500 mL water with electrolytes/h"
+        targetElevationM: targetElevationSaturday,
+        nutritionAdvice: "40-50g glucides/h + 500 mL water with electrolytes/h"
       };
 
     case 6: // Sunday (Back-to-Back or Rest W1)
@@ -420,7 +443,7 @@ export function getDailyWorkoutPlan(
       }
       if (saturdayHasIntensiveClass) {
         return {
-          title: `Trail: Long Run D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
+          title: `Trail: Rando-Course D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
           duration: durationSaturdayLong,
           locName: isWinter ? "Maisonneuve Park / Plowed Paths" : "Mont Royal",
           address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
@@ -429,11 +452,11 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.TRAIL_LONG.emoji,
           colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
           colorId: COLOR_MAP.TRAIL_LONG.colorId,
-          description: `• Long run shifted to Sunday following Saturday's intensive class (home return by 1:00 PM).\n• Target: HR < 155 bpm + nutrition 50-60g carbs/h.`,
-          targetHeartRate: "< 155 bpm (Zone 2 Endurance)",
+          description: `• Rando-Course décalée au dimanche suite aux cours intensifs du samedi.\n• Règle d'or : Power-hike actif en montée dès > 7% de pente pour bloquer les pulses sous 155 bpm.\n• Cible Cardio : < 155 bpm (Zone 2) + nutrition 40-50g glucides/h.`,
+          targetHeartRate: "< 155 bpm (Zone 2 Rando-Course)",
           targetHeartRateRange: [135, 155],
-          targetElevationM: Math.round(durationSaturdayLong * 5.5),
-          nutritionAdvice: "50-60g carbs/h + 500 mL electrolytes/h"
+          targetElevationM: targetElevationSaturday,
+          nutritionAdvice: "40-50g glucides/h + 500 mL electrolytes/h"
         };
       }
       return {
