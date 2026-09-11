@@ -5,6 +5,7 @@ import { CalendarEvent } from '../types/calendar';
 import {
   clearGarminCredentials,
   loadGarminCredentials,
+  loadGarminCredentialsAsync,
   parseGPXString,
   saveGarminCredentials,
   syncWithGarminAPI,
@@ -12,7 +13,8 @@ import {
 } from '../services/garminService';
 import {
   isGarminAutoSyncEnabled,
-  setGarminAutoSyncEnabled
+  setGarminAutoSyncEnabled,
+  syncCurrentWeekWorkoutsToGarmin
 } from '../services/garminAutoSyncService';
 import {
   downloadICSFile,
@@ -130,10 +132,10 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const cloudGarminEmail = user?.user_metadata?.garmin_email;
   const cloudGarminPassword = user?.user_metadata?.garmin_password;
 
-  const [garminEmail, setGarminEmail] = useState(
+  const [garminEmail, setGarminEmail] = useState<string>(
     storedGarminCreds?.email || cloudGarminEmail || garminState.accountEmail || ''
   );
-  const [garminPassword, setGarminPassword] = useState(
+  const [garminPassword, setGarminPassword] = useState<string>(
     storedGarminCreds?.password || cloudGarminPassword || ''
   );
   const [garminSyncMsg, setGarminSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
@@ -152,6 +154,19 @@ export const AccountModal: React.FC<AccountModalProps> = ({
       setShowGarminCredsEdit(false);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadGarminCredentialsAsync().then(creds => {
+        if (creds?.email) {
+          setGarminEmail(prev => prev || creds.email || '');
+          if (creds.password) {
+            setGarminPassword(prev => prev || creds.password || '');
+          }
+        }
+      });
+    }
+  }, [isOpen]);
 
   // Google Calendar state
   const [gcalCopied, setGcalCopied] = useState(false);
@@ -247,10 +262,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     setIsGarminProcessing(true);
     setGarminSyncMsg({ text: 'Connexion à Garmin Connect et extraction des activités...', isError: false });
 
-    const creds = garminEmail && garminPassword ? { email: garminEmail, password: garminPassword } : undefined;
+    const creds = (garminEmail && garminPassword)
+      ? { email: garminEmail, password: garminPassword }
+      : (await loadGarminCredentialsAsync() || undefined);
+
     const result = await syncWithGarminAPI(creds);
 
-    setIsGarminProcessing(false);
     if (result.success) {
       if (garminEmail && garminPassword) {
         saveGarminCredentials({ email: garminEmail, password: garminPassword });
@@ -270,16 +287,36 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         setProfFcMax(result.athleteMaxHr);
         updateProfile({ fcMax: result.athleteMaxHr }).catch(() => {});
       }
+
+      // Also ensure current week workouts are pushed / updated on Garmin Forerunner 55
+      let pushFeedback = '';
+      try {
+        if (calendarEvents && calendarEvents.length > 0) {
+          const pushRes = await syncCurrentWeekWorkoutsToGarmin(calendarEvents, new Date(), { force: true });
+          if (pushRes.pushedCount > 0) {
+            pushFeedback = ` • ${pushRes.pushedCount} séance${pushRes.pushedCount > 1 ? 's' : ''} envoyée${pushRes.pushedCount > 1 ? 's' : ''} sur votre montre`;
+          } else if (pushRes.alreadyUpToDate) {
+            pushFeedback = ` • Séances de la semaine déjà à jour sur votre montre`;
+          }
+        }
+      } catch (pushErr) {
+        console.warn('Could not auto-push week workouts to Garmin:', pushErr);
+      }
+
       setGarminSyncMsg({
-        text: `✅ ${result.count} activité(s) Garmin synchronisées et liées à votre Compte Google !${result.athleteMaxHr ? ` (FCmax Garmin détectée : ${result.athleteMaxHr} bpm)` : ''}`,
+        text: `✅ ${result.count} activité(s) Garmin synchronisées${pushFeedback} !${result.athleteMaxHr ? ` (FCmax détectée : ${result.athleteMaxHr} bpm)` : ''}`,
         isError: false
       });
+
+      // Refresh calendar & comparisons
+      onRefreshAll();
     } else {
       setGarminSyncMsg({
         text: `❌ ${result.error}`,
         isError: true
       });
     }
+    setIsGarminProcessing(false);
   };
 
   const handleGarminDisconnect = () => {

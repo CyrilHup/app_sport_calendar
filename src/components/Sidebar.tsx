@@ -20,6 +20,9 @@ import { WeeklyStatsSummary } from '../services/comparisonEngine';
 import { AccountModalTab } from './AccountModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { getWellnessForDate, calculateReadinessScore } from '../services/readinessEngine';
+import { formatDateKey, getGarminLocalDateKey } from '../services/dateUtils';
+import { loadStoredGarminActivities } from '../services/garminService';
+import { GarminActivity } from '../types/garmin';
 
 export type MainNavTab = 'calendar' | 'compare' | 'stats' | 'periodization';
 
@@ -30,6 +33,9 @@ interface SidebarProps {
   garminState: GarminSyncState;
   weeklyStats: WeeklyStatsSummary;
   comparisons?: ActivityComparison[];
+  garminActivities?: GarminActivity[];
+  referenceDate?: Date;
+  referenceDateStr?: string;
   onOpenAccountModal: (tab?: AccountModalTab) => void;
   onRefreshAll: () => void;
   isRecharging: boolean;
@@ -46,6 +52,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   garminState,
   weeklyStats,
   comparisons = [],
+  garminActivities,
+  referenceDate,
+  referenceDateStr,
   onOpenAccountModal,
   onRefreshAll,
   isRecharging,
@@ -58,15 +67,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
     ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
     : 'Direct';
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = referenceDateStr || (referenceDate ? formatDateKey(referenceDate) : formatDateKey(new Date()));
   const todayWellness = getWellnessForDate(todayStr);
   const todayComparisons = comparisons.filter(c => c.date === todayStr);
   const isTodaySessionCompleted = todayComparisons.some(
     c => (c.status === 'COMPLIANT' || c.status === 'PARTIAL') && c.plannedEvent?.category === 'sport'
   );
-  const todayActs = todayComparisons
-    .filter(c => Boolean(c.actualActivity))
-    .map(c => c.actualActivity!);
+
+  const allStoredActs = (garminActivities && garminActivities.length > 0)
+    ? garminActivities
+    : loadStoredGarminActivities();
+  const todayGarminActs = allStoredActs.filter(a => getGarminLocalDateKey(a) === todayStr);
+  const todayActs = todayGarminActs.length > 0
+    ? todayGarminActs
+    : todayComparisons.filter(c => Boolean(c.actualActivity)).map(c => c.actualActivity!);
+
   const readiness = calculateReadinessScore(todayWellness, undefined, todayActs, isTodaySessionCompleted);
 
   const formatHoursMin = (mins: number) => {
@@ -184,7 +199,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
           <div className="sidebar-readiness-sub">
-            <span><Moon size={11} /> {readiness.factors.sleepDurationHours}h</span>
+            {readiness.morningScore && readiness.morningScore !== readiness.score ? (
+              <span>Réveil {readiness.morningScore}/100</span>
+            ) : (
+              <span><Moon size={11} /> {readiness.factors.sleepDurationHours}h</span>
+            )}
             <span><Heart size={11} /> VFC {readiness.factors.hrvStatus}</span>
           </div>
         </div>

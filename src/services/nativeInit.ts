@@ -2,6 +2,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { isNative } from './apiConfig';
 import { initializeNotificationChannels } from './mobileAlarmService';
+import { loadGarminCredentialsAsync } from './garminService';
 
 /**
  * Initializes mobile native plugins (Status bar, Splash screen, Notification channels).
@@ -26,7 +27,14 @@ export async function initializeNativeMobile(): Promise<void> {
   }
 
   try {
-    // 3. Hide native splash screen once DOM is ready
+    // 3. Restore native Garmin credentials to localStorage if needed
+    await loadGarminCredentialsAsync();
+  } catch (e) {
+    console.warn('Native credentials restoration failed:', e);
+  }
+
+  try {
+    // 4. Hide native splash screen once DOM is ready
     await SplashScreen.hide();
   } catch (e) {
     console.warn('Splash screen hide unavailable:', e);

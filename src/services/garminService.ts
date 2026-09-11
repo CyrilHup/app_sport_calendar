@@ -12,6 +12,7 @@ import { classifyGarminActivityType } from './activityClassifier';
 import { getApiUrl } from './apiConfig';
 import { saveWellnessData } from './readinessEngine';
 import { setAppConfigOverrides } from './periodizationEngine';
+import { formatDateKey } from './dateUtils';
 
 
 import { Preferences } from '@capacitor/preferences';
@@ -175,12 +176,15 @@ export async function syncWithGarminAPI(credentials?: {
   try {
     const credsToUse = (credentials?.email && credentials?.password)
       ? credentials
-      : (loadGarminCredentials() || credentials);
+      : (loadGarminCredentials() || await loadGarminCredentialsAsync() || credentials);
 
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credsToUse || {})
+      body: JSON.stringify({
+        ...(credsToUse || {}),
+        clientDate: formatDateKey(new Date())
+      })
     });
 
     let data: any;
@@ -551,13 +555,14 @@ export function buildWorkoutPayloadFromEvent(
     sportType = 'RUNNING';
     const mainDurSec = Math.max(20 * 60, (durMin - 20) * 60);
     const isAdapted = Boolean(event.metadata?.isAdapted);
+    const targetHrHigh = event.metadata?.targetHeartRateRange?.[1] || 155;
     steps = [
       {
         stepType: 'WARMUP',
         durationSeconds: 15 * 60,
         targetType: 'HR_RANGE',
         targetHrLow: 135,
-        targetHrHigh: 150,
+        targetHrHigh: targetHrHigh,
         stepNotes: 'Échauffement progressif sur sentier (Zone 1/2)'
       },
       {
@@ -565,10 +570,10 @@ export function buildWorkoutPayloadFromEvent(
         durationSeconds: mainDurSec,
         targetType: 'HR_RANGE',
         targetHrLow: 135,
-        targetHrHigh: 150,
+        targetHrHigh: targetHrHigh,
         stepNotes: isAdapted
-          ? 'Endurance Z2 modérée (< 150 bpm). Marche active dès 8% de pente.'
-          : 'Allure Ultra-Trail Z2 régulière. Gestion d\'effort constante.'
+          ? 'Rando-Course allégée : Power-hike dès 7%'
+          : 'Rando-Course Z2 : Power-hike dès 7%'
       },
       {
         stepType: 'COOLDOWN',
@@ -580,73 +585,11 @@ export function buildWorkoutPayloadFromEvent(
   } else if (event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.sportType === 'MOBILITY') {
     // Forerunner 55 optimized: uses CARDIO so FR55 watch can run it natively with intervals & vibration
     sportType = isFR55 ? 'CARDIO' : 'STRENGTH';
-    const isPush = event.title.toLowerCase().includes('push') || event.sportType === 'CALISTHENICS';
-
     steps = [
       {
-        stepType: 'WARMUP',
-        durationSeconds: 300,
-        stepNotes: 'Échauffement poignets, épaules et activation articulaire'
-      },
-      {
         stepType: 'INTERVAL',
-        durationSeconds: 45,
-        stepNotes: isPush ? 'Série 1 : Dips aux barres (4x6-8 reps)' : 'Série 1 : Tractions strictes (4x6-8 reps)'
-      },
-      {
-        stepType: 'REST',
-        durationSeconds: 90,
-        stepNotes: 'Repos récupération passive'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 45,
-        stepNotes: isPush ? 'Série 2 : Dips aux barres' : 'Série 2 : Tractions strictes'
-      },
-      {
-        stepType: 'REST',
-        durationSeconds: 90,
-        stepNotes: 'Repos'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 45,
-        stepNotes: isPush ? 'Série 3 : Pompes aux anneaux (3x12 reps)' : 'Série 3 : Tirages horizontaux / Rows (3x10 reps)'
-      },
-      {
-        stepType: 'REST',
-        durationSeconds: 75,
-        stepNotes: 'Repos'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 45,
-        stepNotes: isPush ? 'Série 4 : Pompes aux anneaux' : 'Série 4 : Tirages horizontaux'
-      },
-      {
-        stepType: 'REST',
-        durationSeconds: 75,
-        stepNotes: 'Repos'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 60,
-        stepNotes: 'Core : Gainage Hollow body hold (3x45s)'
-      },
-      {
-        stepType: 'REST',
-        durationSeconds: 60,
-        stepNotes: 'Repos'
-      },
-      {
-        stepType: 'INTERVAL',
-        durationSeconds: 60,
-        stepNotes: 'Core : Suspension / Hanging leg raises'
-      },
-      {
-        stepType: 'COOLDOWN',
-        durationSeconds: 300,
-        stepNotes: 'Mobilité active & retour au calme'
+        durationSeconds: durMin * 60,
+        stepNotes: 'Entraînement Calisthénie libre au poids du corps'
       }
     ];
   } else {
@@ -700,7 +643,7 @@ export async function pushWorkoutToGarmin(
   targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
 ): Promise<WorkoutPushResult> {
   try {
-    const creds = loadGarminCredentials();
+    const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
     const payload = buildWorkoutPayloadFromEvent(event, targetDateStr, targetWatch);
 
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
@@ -782,14 +725,15 @@ export async function pushWeekWorkoutsToGarmin(
  */
 export async function fetchGarminWellness(): Promise<{ success: boolean; wellness?: GarminWellnessData; error?: string }> {
   try {
-    const creds = loadGarminCredentials();
+    const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email: creds?.email,
         password: creds?.password,
-        action: 'get-wellness'
+        action: 'get-wellness',
+        clientDate: formatDateKey(new Date())
       })
     });
 
@@ -835,7 +779,7 @@ export async function cleanDuplicateGarminWorkouts(): Promise<{
   error?: string;
 }> {
   try {
-    const creds = loadGarminCredentials();
+    const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

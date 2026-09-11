@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile, clearPermanentAuthBackup } from '../services/supabaseClient';
-import { saveGarminCredentials, loadGarminCredentials } from '../services/garminService';
+import { saveGarminCredentials, loadGarminCredentials, loadGarminCredentialsAsync } from '../services/garminService';
 import { App as CapacitorApp } from '@capacitor/app';
 
 interface AuthContextType {
@@ -31,13 +31,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isConfigured = isSupabaseConfigured();
 
   const loadProfileForUser = async (u: User) => {
-    // 1. Auto-link Garmin email if stored in cloud Google account
+    // 1. Auto-link Garmin credentials if stored in cloud Google account
     if (u.user_metadata?.garmin_email) {
-      const existing = loadGarminCredentials();
-      if (!existing?.email || existing.email !== u.user_metadata.garmin_email) {
+      const existing = await loadGarminCredentialsAsync();
+      const cloudEmail = u.user_metadata.garmin_email;
+      const cloudPassword = u.user_metadata.garmin_password || existing?.password;
+      if (!existing?.email || existing.email !== cloudEmail || (!existing.password && cloudPassword)) {
         saveGarminCredentials({
-          email: u.user_metadata.garmin_email,
-          password: existing?.password
+          email: cloudEmail,
+          password: cloudPassword
         });
       }
     }
@@ -188,22 +190,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return ok;
   };
 
-  const saveCloudGarminCredentials = async (email: string, _pass?: string): Promise<boolean> => {
+  const saveCloudGarminCredentials = async (email: string, pass?: string): Promise<boolean> => {
     if (!isConfigured || !user) return false;
     try {
-      // Security: Only persist the account email to cloud metadata, never the plaintext password!
+      const updateData: Record<string, any> = {
+        garmin_email: email
+      };
+      if (pass) {
+        updateData.garmin_password = pass;
+      }
       const { data, error } = await supabase.auth.updateUser({
-        data: {
-          garmin_email: email,
-          garmin_password: null
-        }
+        data: updateData
       });
       if (!error && data.user) {
         setUser(data.user);
         return true;
       }
     } catch (e) {
-      console.warn('Failed to save Garmin email to cloud:', e);
+      console.warn('Failed to save Garmin credentials to cloud:', e);
     }
     return false;
   };

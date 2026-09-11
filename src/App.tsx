@@ -12,7 +12,8 @@ import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
 import { formatDateKey, getMondayOfWeek } from './services/dateUtils';
 import { getPeriodizationContext, GLOBAL_APP_CONFIG, setAppConfigOverrides } from './services/periodizationEngine';
-import { loadGarminCredentials, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
+import { loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
+import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
@@ -90,22 +91,23 @@ export const App: React.FC = () => {
   // Bidirectional sync for activities, credentials, and manual pairs when user logs in with Google / Supabase
   useEffect(() => {
     if (user?.id) {
-      // Auto-link cloud Garmin credentials if present in user Google account
-      const cloudGarminEmail = user.user_metadata?.garmin_email;
-      const cloudGarminPassword = user.user_metadata?.garmin_password;
-      const localCreds = loadGarminCredentials();
+      (async () => {
+        // Auto-link cloud Garmin credentials if present in user Google account
+        const cloudGarminEmail = user.user_metadata?.garmin_email;
+        const cloudGarminPassword = user.user_metadata?.garmin_password;
+        const localCreds = await loadGarminCredentialsAsync();
 
-      if (cloudGarminEmail && cloudGarminPassword) {
-        if (!localCreds?.email || localCreds.email !== cloudGarminEmail) {
-          saveGarminCredentials({ email: cloudGarminEmail, password: cloudGarminPassword });
+        if (cloudGarminEmail && cloudGarminPassword) {
+          if (!localCreds?.email || !localCreds?.password || localCreds.email !== cloudGarminEmail) {
+            saveGarminCredentials({ email: cloudGarminEmail, password: cloudGarminPassword });
+          }
+        } else if (localCreds?.email && localCreds?.password) {
+          // Automatically save existing local credentials to user's Google cloud account
+          saveCloudGarminCredentials(localCreds.email, localCreds.password);
         }
-      } else if (localCreds?.email && localCreds?.password) {
-        // Automatically save existing local credentials to user's Google cloud account
-        saveCloudGarminCredentials(localCreds.email, localCreds.password);
-      }
 
-      const localActs = loadStoredGarminActivities();
-      fetchActivitiesFromCloud(user.id).then(async cloudActs => {
+        const localActs = loadStoredGarminActivities();
+        const cloudActs = await fetchActivitiesFromCloud(user.id);
         if (cloudActs && cloudActs.length > 0) {
           setGarminActivities(cloudActs);
           saveGarminActivities(cloudActs);
@@ -113,20 +115,19 @@ export const App: React.FC = () => {
           // Push existing local activities to the newly logged-in user cloud account!
           await syncActivitiesToCloud(user.id, localActs);
         }
-      });
 
-      const localPairs = loadManualPairs();
-      fetchPairsFromCloud(user.id).then(async cloudPairs => {
+        const localPairs = loadManualPairs();
+        const cloudPairs = await fetchPairsFromCloud(user.id);
         if (cloudPairs && Object.keys(cloudPairs).length > 0) {
           setManualPairs(cloudPairs);
           saveManualPairs(cloudPairs);
         } else if (localPairs && Object.keys(localPairs).length > 0) {
           await syncPairsToCloud(user.id, localPairs);
         }
-      });
 
-      // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
-      autoRechargeAll();
+        // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
+        await autoRechargeAll();
+      })();
     }
   }, [user?.id]);
 
@@ -197,7 +198,8 @@ export const App: React.FC = () => {
 
     // 2. Load stored real Garmin activities and attempt sync for latest activities
     let loadedActivities = loadStoredGarminActivities();
-    const creds = loadGarminCredentials() || (
+    const asyncLocalCreds = await loadGarminCredentialsAsync();
+    const creds = asyncLocalCreds || (
       user?.user_metadata?.garmin_email && user?.user_metadata?.garmin_password
         ? { email: user.user_metadata.garmin_email, password: user.user_metadata.garmin_password }
         : null
@@ -230,6 +232,11 @@ export const App: React.FC = () => {
       }
     } catch {
       // Offline, dev server not running, or credentials prompt needed
+    }
+
+    // Preserve existing activities if sync failed to avoid clearing calendar
+    if (loadedActivities.length === 0 && garminActivities.length > 0) {
+      loadedActivities = garminActivities;
     }
 
     setGarminActivities(loadedActivities);
@@ -266,6 +273,56 @@ export const App: React.FC = () => {
   useEffect(() => {
     autoRechargeAll();
   }, [profile?.icalUrl]);
+
+  // Automatic sync on mobile app resume, tab visibility change, focus, and periodic interval
+  useEffect(() => {
+    let lastAutoSyncAt = Date.now();
+
+    const triggerThrottledSync = () => {
+      const now = Date.now();
+      // Throttle: don't sync if last sync was less than 2 minutes ago
+      if (now - lastAutoSyncAt < 120_000) {
+        return;
+      }
+      lastAutoSyncAt = now;
+      autoRechargeAll();
+    };
+
+    // 1. Mobile native resume listener (Capacitor App state)
+    let appStateListener: any = null;
+    try {
+      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          triggerThrottledSync();
+        }
+      }).then(l => { appStateListener = l; }).catch(() => {});
+    } catch {}
+
+    // 2. Web visibility change listener (browser tab returned to foreground)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        triggerThrottledSync();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // 3. Web window focus listener
+    window.addEventListener('focus', triggerThrottledSync);
+
+    // 4. Periodic background refresh every 15 minutes when app is active
+    const periodicInterval = setInterval(() => {
+      triggerThrottledSync();
+    }, 15 * 60 * 1000);
+
+    return () => {
+      if (appStateListener && typeof appStateListener.remove === 'function') {
+        appStateListener.remove();
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', triggerThrottledSync);
+      clearInterval(periodicInterval);
+    };
+  }, []);
 
 
   const handleUpdateGarminState = (newState: GarminSyncState) => {
@@ -418,6 +475,8 @@ export const App: React.FC = () => {
         garminState={garminState}
         weeklyStats={weeklyStats}
         comparisons={comparisons}
+        garminActivities={garminActivities}
+        referenceDate={referenceDate}
         onOpenAccountModal={handleOpenAccountModal}
         onRefreshAll={autoRechargeAll}
         isRecharging={isRecharging}

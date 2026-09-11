@@ -452,8 +452,10 @@ export default async function handler(req: any, res: any) {
     // WELLNESS DATA EXTRACTION (Sleep, HRV, Resting HR, Readiness)
     // ----------------------------------------------------
     let wellness: any = null;
-    const today = new Date();
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = (req.body?.clientDate && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clientDate))
+      ? req.body.clientDate
+      : new Date().toISOString().slice(0, 10);
+    const today = new Date(todayStr + 'T12:00:00');
 
     try {
       let sleepSummary: any = null;
