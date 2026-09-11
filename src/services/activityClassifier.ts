@@ -39,46 +39,8 @@ function normalizePredicateTokens(
 }
 
 /**
- * Détecte si une activité ou un plan correspond à de la calisthénie, musculation ou renforcement.
- */
-export function isStrengthOrCalisthenics(
-  inputOrType?: string | ActivityPredicateInput | null,
-  nameOrTitle?: string,
-  rawKey?: string
-): boolean {
-  const { typeKey, text } = normalizePredicateTokens(inputOrType, nameOrTitle, rawKey);
-
-  if (
-    typeKey === 'strength_training' ||
-    typeKey === 'fitness_equipment' ||
-    typeKey === 'calisthenics' ||
-    typeKey === 'gym_force'
-  ) {
-    return true;
-  }
-
-  return (
-    text.includes('calisth') ||
-    text.includes('poids du corps') ||
-    text.includes('muscu') ||
-    text.includes('force') ||
-    text.includes('renfo') ||
-    text.includes('gainage') ||
-    text.includes('pompe') ||
-    text.includes('traction') ||
-    text.includes('dips') ||
-    text.includes('strength') ||
-    text.includes('weight') ||
-    text.includes('gym') ||
-    text.includes('crossfit') ||
-    text.includes('fitness') ||
-    text.includes('cardio') ||
-    text.includes('hiit')
-  );
-}
-
-/**
  * Détecte si une activité ou un plan correspond à de la course à pied ou du trail.
+ * RÈGLE D'OR : Priorité absolue sur le renforcement/calisthénie.
  */
 export function isTrailOrRunning(
   inputOrType?: string | ActivityPredicateInput | null,
@@ -87,28 +49,49 @@ export function isTrailOrRunning(
 ): boolean {
   const { typeKey, text } = normalizePredicateTokens(inputOrType, nameOrTitle, rawKey);
 
+  // 1. Types explicites de running et trail
   if (
     typeKey === 'trail_running' ||
     typeKey === 'trail_intense' ||
     typeKey === 'trail_long' ||
     typeKey === 'running' ||
     typeKey === 'run_easy' ||
-    typeKey === 'run_tempo'
+    typeKey === 'run_tempo' ||
+    typeKey === 'trail'
   ) {
     return true;
   }
 
+  // 2. Mots-clés de trail, côtes, rando-course et dénivelé
   if (
     text.includes('trail') ||
+    text.includes('hill repeats') ||
+    text.includes('hill repeat') ||
+    text.includes('côte') ||
     text.includes('côtes') ||
+    text.includes('cote ') ||
+    text.includes('cotes') ||
     text.includes('footing') ||
     text.includes('jog') ||
-    text.includes('fartlek')
+    text.includes('fartlek') ||
+    text.includes('rando-course') ||
+    text.includes('rando course') ||
+    text.includes('ultra-trail') ||
+    text.includes('ultra trail') ||
+    text.includes('qmt') ||
+    text.includes('running') ||
+    text.includes('run ') ||
+    text.includes('run:') ||
+    text.includes('d+') ||
+    text.includes('dénivelé') ||
+    text.includes('denivele') ||
+    text.includes('mont-royal') ||
+    text.includes('mont royal')
   ) {
     return true;
   }
 
-  // "course" mais pas "cours" scolaire / étudiant ni "calisthénie"
+  // 3. "course" mais pas "cours" scolaire / étudiant ni "calisthénie"
   if (
     text.includes('course') &&
     !text.includes('cours ') &&
@@ -119,6 +102,69 @@ export function isTrailOrRunning(
   }
 
   return false;
+}
+
+/**
+ * Détecte si une activité ou un plan correspond à de la calisthénie, musculation ou renforcement.
+ * STRICTEMENT EXCLUSIF : Ne s'applique JAMAIS si l'activité est du Trail ou de la Course à pied.
+ */
+export function isStrengthOrCalisthenics(
+  inputOrType?: string | ActivityPredicateInput | null,
+  nameOrTitle?: string,
+  rawKey?: string
+): boolean {
+  // 1. RÈGLE D'OR DE SÉPARATION : Si c'est du Trail ou de la Course à pied, ce n'est JAMAIS de la calisthénie
+  if (isTrailOrRunning(inputOrType, nameOrTitle, rawKey)) {
+    return false;
+  }
+
+  const { typeKey, text } = normalizePredicateTokens(inputOrType, nameOrTitle, rawKey);
+
+  // 2. Double garde de sécurité textuelle et de types pour le Trail/Running
+  if (
+    typeKey.includes('trail') ||
+    typeKey.includes('run') ||
+    text.includes('trail') ||
+    text.includes('hill repeats') ||
+    text.includes('côte') ||
+    text.includes('cotes') ||
+    text.includes('footing') ||
+    text.includes('rando-course') ||
+    text.includes('mont-royal') ||
+    text.includes('mont royal')
+  ) {
+    return false;
+  }
+
+  // 3. Types spécifiques Garmin / Application
+  if (
+    typeKey === 'strength_training' ||
+    typeKey === 'fitness_equipment' ||
+    typeKey === 'calisthenics' ||
+    typeKey === 'gym_force'
+  ) {
+    return true;
+  }
+
+  // 4. Mots-clés purs de renforcement / calisthénie
+  return (
+    text.includes('calisth') ||
+    text.includes('poids du corps') ||
+    text.includes('muscu') ||
+    text.includes('gainage') ||
+    text.includes('pompe') ||
+    text.includes('traction') ||
+    text.includes('dips') ||
+    text.includes('strength') ||
+    text.includes('weight') ||
+    text.includes('gym') ||
+    text.includes('crossfit') ||
+    text.includes('fitness') ||
+    text.includes('cardio') ||
+    text.includes('hiit') ||
+    text.includes('renfo') ||
+    text.includes('force')
+  );
 }
 
 /**
@@ -306,23 +352,19 @@ export function getGarminExecutionBadge(
     title: plannedEvent?.title
   };
 
-  if (isStrengthOrCalisthenics(merged)) {
-    return {
-      label: 'Calisthénie Réalisée (Garmin)',
-      icon: '💪'
-    };
-  }
-
   const rawKey = String(act?.garminTypeKey || '').toLowerCase();
   const actName = String(act?.activityName || '').toLowerCase();
   const planTitle = String(plannedEvent?.title || '').toLowerCase();
   const planSportType = String(plannedEvent?.sportType || '').toLowerCase();
 
+  // 1. Trail running en priorité absolue
   const isTrail =
     act?.activityType === 'TRAIL_RUNNING' ||
     actName.includes('trail') ||
     rawKey.includes('trail') ||
     planTitle.includes('trail') ||
+    planTitle.includes('hill repeats') ||
+    planTitle.includes('côte') ||
     planSportType.includes('trail');
 
   if (isTrail) {
@@ -332,6 +374,15 @@ export function getGarminExecutionBadge(
     };
   }
 
+  // 2. Course à pied
+  if (isTrailOrRunning(merged)) {
+    return {
+      label: 'Course Réalisée (Garmin)',
+      icon: '🏃'
+    };
+  }
+
+  // 3. Disciplines spécifiques d'extérieur
   if (isCycling(merged)) {
     return {
       label: 'Sortie Vélo Réalisée (Garmin)',
@@ -353,10 +404,11 @@ export function getGarminExecutionBadge(
     };
   }
 
-  if (isTrailOrRunning(merged)) {
+  // 4. Calisthénie / Musculation (uniquement si aucune composante de course/trail)
+  if (isStrengthOrCalisthenics(merged)) {
     return {
-      label: 'Course Réalisée (Garmin)',
-      icon: '🏃'
+      label: 'Calisthénie Réalisée (Garmin)',
+      icon: '💪'
     };
   }
 

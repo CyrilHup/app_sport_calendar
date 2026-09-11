@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CalendarEvent } from '../types/calendar';
 import {
   Bell,
@@ -23,12 +23,15 @@ import { buildWorkoutPayloadFromEvent } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { useAuth } from '../contexts/AuthContext';
 import { ActivityComparison } from '../types/garmin';
-import { formatTime } from '../services/dateUtils';
+import { formatTime, formatDateKey } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
+import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
+import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
   comparison?: ActivityComparison | null;
+  unifiedGroup?: UnifiedDayWorkoutGroup | null;
   onClose: () => void;
   onPostpone?: (
     eventId: string,
@@ -44,20 +47,62 @@ interface WorkoutDetailModalProps {
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   event,
   comparison,
+  unifiedGroup,
   onClose,
   onPostpone,
   onCancelPostpone,
   onOpenGarminSync
 }) => {
-  if (!event) return null;
+  if (!event && !unifiedGroup) return null;
+
+  const isMultiMerged = Boolean(unifiedGroup && unifiedGroup.isMerged);
+  const [activeItemIndex, setActiveItemIndex] = useState<'global' | number>(isMultiMerged ? 'global' : 0);
+
+  useEffect(() => {
+    setActiveItemIndex(isMultiMerged ? 'global' : 0);
+  }, [unifiedGroup?.id, isMultiMerged]);
+
+  const activeItem: SportActivityItem | null =
+    (isMultiMerged && typeof activeItemIndex === 'number')
+      ? unifiedGroup!.items[activeItemIndex]
+      : null;
+
+  const effectiveEvent: CalendarEvent = activeItem?.plannedEvent || (activeItem ? {
+    id: activeItem.id,
+    title: activeItem.title,
+    description: 'Activité enregistrée sur Garmin Connect.',
+    startDate: activeItem.startTime ? activeItem.startTime.toISOString() : `${unifiedGroup!.date}T12:00:00`,
+    endDate: activeItem.endTime ? activeItem.endTime.toISOString() : `${unifiedGroup!.date}T13:00:00`,
+    category: 'sport',
+    colorId: 'sport',
+    colorHex: activeItem.discipline === 'RUNNING' ? '#ff5722' : '#10b981',
+    durationMinutes: activeItem.durationMinutes,
+    emoji: activeItem.emoji,
+    location: 'Garmin Connect'
+  } : (event || {
+    id: unifiedGroup!.id,
+    title: unifiedGroup!.title,
+    description: 'Activité combinée',
+    startDate: `${unifiedGroup!.date}T12:00:00`,
+    endDate: `${unifiedGroup!.date}T13:00:00`,
+    category: 'sport',
+    colorId: 'sport',
+    colorHex: '#ff5722',
+    durationMinutes: unifiedGroup!.totalDurationMinutes,
+    emoji: unifiedGroup!.emoji,
+    location: 'Garmin Connect'
+  }));
+
+  const effectiveComparison: ActivityComparison | null | undefined =
+    activeItem ? (activeItem.comparison || null) : comparison;
 
   const { profile } = useAuth();
   const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
 
   const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
 
-  const originalDateKey = event.metadata?.originalDate || event.startDate.slice(0, 10);
-  const currentEventDateKey = event.startDate.slice(0, 10);
+  const originalDateKey = effectiveEvent.metadata?.originalDate || effectiveEvent.startDate.slice(0, 10);
+  const currentEventDateKey = effectiveEvent.startDate.slice(0, 10);
 
   // Date de demain par défaut pour le report rapide
   const baseDate = new Date(currentEventDateKey + 'T12:00:00');
@@ -65,17 +110,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   defaultTomorrow.setDate(defaultTomorrow.getDate() + 1);
   const defaultTomorrowStr = defaultTomorrow.toISOString().slice(0, 10);
 
-  const defaultHours = String(new Date(event.startDate).getHours()).padStart(2, '0');
-  const defaultMins = String(new Date(event.startDate).getMinutes()).padStart(2, '0');
+  const defaultHours = String(new Date(effectiveEvent.startDate).getHours()).padStart(2, '0');
+  const defaultMins = String(new Date(effectiveEvent.startDate).getMinutes()).padStart(2, '0');
 
   const [targetDateInput, setTargetDateInput] = useState<string>(defaultTomorrowStr);
   const [targetTimeInput, setTargetTimeInput] = useState<string>(`${defaultHours}:${defaultMins}`);
-  const [reasonInput, setReasonInput] = useState<string>(event.metadata?.postponedReason || 'Déplacée / Reportée');
-  const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(event.metadata?.isPostponed));
+  const [reasonInput, setReasonInput] = useState<string>(effectiveEvent.metadata?.postponedReason || 'Déplacée / Reportée');
+  const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(effectiveEvent.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
 
   const selectedWatch = 'FORERUNNER_55';
-  const workoutPreview = event.category === 'sport' ? buildWorkoutPayloadFromEvent(event, event.startDate.slice(0, 10), selectedWatch) : null;
+  const workoutPreview = effectiveEvent.category === 'sport' ? buildWorkoutPayloadFromEvent(effectiveEvent, effectiveEvent.startDate.slice(0, 10), selectedWatch) : null;
 
   const handleQuickPostpone = (daysOffset: number) => {
     const d = new Date(currentEventDateKey + 'T12:00:00');
@@ -87,7 +132,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const handleConfirmPostpone = () => {
     if (!onPostpone) return;
     onPostpone(
-      event.id,
+      effectiveEvent.id,
       originalDateKey,
       targetDateInput,
       reasonInput,
@@ -101,59 +146,91 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const handleRevertPostpone = () => {
     if (!onCancelPostpone) return;
-    onCancelPostpone(event.id);
+    onCancelPostpone(effectiveEvent.id);
     setPostponeSuccessMsg(`Séance rétablie à sa date initiale (${originalDateKey}) !`);
     setTimeout(() => {
       onClose();
     }, 1000);
   };
 
-  const startDate = new Date(event.startDate);
-  const endDate = new Date(event.endDate);
+  const startDate = new Date(effectiveEvent.startDate);
+  const endDate = new Date(effectiveEvent.endDate);
 
   const formatDate = (d: Date) =>
     d.toLocaleDateString('fr-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
-  const isSport = event.category === 'sport';
-  const isAdapted = Boolean(event.metadata?.isAdapted);
+  const isSport = effectiveEvent.category === 'sport';
+  const isAdapted = Boolean(effectiveEvent.metadata?.isAdapted);
 
-  const titleLower = event.title.toLowerCase();
-  const isRecoveryFooting = isSport && (
-    event.sportType === 'RUN_EASY' ||
+  const titleLower = effectiveEvent.title.toLowerCase();
+
+  // 1. PRIORITÉ ABSOLUE AU TRAIL ET À LA COURSE À PIED
+  const isTrailOrRun = isSport && (
+    effectiveEvent.sportType === 'TRAIL_INTENSE' ||
+    effectiveEvent.sportType === 'TRAIL_LONG' ||
+    effectiveEvent.sportType === 'RUN_EASY' ||
+    isTrailOrRunning(effectiveEvent) ||
+    titleLower.includes('trail') ||
+    titleLower.includes('hill repeats') ||
+    titleLower.includes('côte') ||
+    titleLower.includes('cotes') ||
     titleLower.includes('footing') ||
-    titleLower.includes('récupération') ||
-    titleLower.includes('aérobie doux')
+    titleLower.includes('running') ||
+    titleLower.includes('course') ||
+    titleLower.includes('rando-course') ||
+    titleLower.includes('mont-royal') ||
+    titleLower.includes('mont royal') ||
+    Boolean(effectiveEvent.metadata?.targetElevationM && effectiveEvent.metadata.targetElevationM > 0)
   );
 
-  const effectiveElevationM = isRecoveryFooting ? 0 : (event.metadata?.targetElevationM ?? 0);
-  const effectiveLocation = (isRecoveryFooting && event.location.toLowerCase().includes('mont royal'))
+  // 2. Calisthénie / Musculation STRICTEMENT exclusive au trail/running
+  const isCalisthenics = isSport && !isTrailOrRun && (
+    effectiveEvent.sportType === 'CALISTHENICS' ||
+    effectiveEvent.sportType === 'GYM_FORCE' ||
+    effectiveEvent.sportType === 'MOBILITY' ||
+    titleLower.includes('calisth') ||
+    isStrengthOrCalisthenics(effectiveEvent)
+  );
+
+  const actualStartDate = effectiveComparison?.actualActivity?.startTimeLocal ? new Date(effectiveComparison.actualActivity.startTimeLocal) : null;
+  const actualDurationMinutes = effectiveComparison?.actualActivity?.durationMinutes;
+  const actualEndDate = (actualStartDate && actualDurationMinutes) ? new Date(actualStartDate.getTime() + actualDurationMinutes * 60000) : null;
+  const isDifferentDayExecution = Boolean(actualStartDate && formatDateKey(actualStartDate) !== formatDateKey(startDate));
+
+  const isRecoveryFooting = isSport && !isCalisthenics && !titleLower.includes('trail') && !titleLower.includes('côte') && !titleLower.includes('hill') && (
+    (effectiveEvent.sportType === 'RUN_EASY' && (titleLower.includes('footing') || titleLower.includes('récupération') || titleLower.includes('doux'))) ||
+    Boolean(effectiveEvent.metadata?.isAdapted)
+  );
+
+  const effectiveElevationM = isCalisthenics ? 0 : (isRecoveryFooting ? 0 : (effectiveEvent.metadata?.targetElevationM ?? 0));
+  const effectiveLocation = (isRecoveryFooting && effectiveEvent.location?.toLowerCase().includes('mont royal'))
     ? 'Terrain plat / Parc (évite le D+)'
-    : event.location;
+    : (effectiveEvent.location || 'Garmin Connect');
 
   const plannedTrimpInfo = isSport ? calculateSessionTrimp(
-    event.durationMinutes,
-    isRecoveryFooting ? 'RUN_EASY' : event.sportType,
-    event.title,
+    effectiveEvent.durationMinutes,
+    isRecoveryFooting ? 'RUN_EASY' : effectiveEvent.sportType,
+    effectiveEvent.title,
     null
   ) : null;
 
   const originalTrimpInfo = isSport && isAdapted ? calculateSessionTrimp(
-    event.metadata?.originalDurationMinutes || event.durationMinutes,
-    (event.metadata as any)?.originalSportType || event.sportType,
-    event.metadata?.originalTitle || event.title,
+    effectiveEvent.metadata?.originalDurationMinutes || effectiveEvent.durationMinutes,
+    (effectiveEvent.metadata as any)?.originalSportType || effectiveEvent.sportType,
+    effectiveEvent.metadata?.originalTitle || effectiveEvent.title,
     null
   ) : null;
 
-  const actualTrimpInfo = (isSport && comparison?.actualActivity) ? calculateSessionTrimp(
-    comparison.actualActivity.durationMinutes,
-    comparison.actualActivity.activityType,
-    comparison.actualActivity.activityName,
-    comparison.actualActivity.trainingLoad,
+  const actualTrimpInfo = (isSport && effectiveComparison?.actualActivity) ? calculateSessionTrimp(
+    effectiveComparison.actualActivity.durationMinutes,
+    effectiveComparison.actualActivity.activityType,
+    effectiveComparison.actualActivity.activityName,
+    effectiveComparison.actualActivity.trainingLoad,
     {
-      avgHeartRate: comparison.actualActivity.avgHeartRate,
-      maxHeartRate: comparison.actualActivity.maxHeartRate,
-      elevationGainM: comparison.actualActivity.elevationGainM,
-      distanceKm: comparison.actualActivity.distanceKm,
+      avgHeartRate: effectiveComparison.actualActivity.avgHeartRate,
+      maxHeartRate: effectiveComparison.actualActivity.maxHeartRate,
+      elevationGainM: effectiveComparison.actualActivity.elevationGainM,
+      distanceKm: effectiveComparison.actualActivity.distanceKm,
       athleteFcMax
     }
   ) : null;
@@ -168,13 +245,26 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         {/* Header */}
         <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '26px' }}>{event.emoji}</span>
+            <span style={{ fontSize: '26px' }}>{isMultiMerged && activeItemIndex === 'global' ? unifiedGroup!.emoji : effectiveEvent.emoji}</span>
             <div>
               <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
-                {event.title}
+                {isMultiMerged && activeItemIndex === 'global'
+                  ? unifiedGroup!.title
+                  : (isCalisthenics ? 'Entraînement Calisthénie' : effectiveEvent.title)}
               </h2>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '3px 0 0 0' }}>
-                {formatDate(startDate)}
+                {isMultiMerged && activeItemIndex === 'global' ? (
+                  <span>{formatDate(startDate)} • <strong style={{ color: '#38bdf8' }}>{unifiedGroup!.items.length} sorties combinées</strong></span>
+                ) : (
+                  <>
+                    {actualStartDate ? formatDate(actualStartDate) : formatDate(startDate)}
+                    {isDifferentDayExecution && (
+                      <span style={{ color: '#38bdf8', display: 'block', fontSize: '0.72rem', marginTop: 2, fontWeight: 600 }}>
+                        🔄 Séance réalisée sur Garmin (prévue le {formatDate(startDate)})
+                      </span>
+                    )}
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -195,6 +285,266 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
         {/* Modal Body */}
         <div className="modal-body" style={{ padding: '16px 20px', gap: '14px', overflowY: 'auto', flex: 1 }}>
+          {/* Tab Navigation Multi-séances */}
+          {isMultiMerged && (
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, borderBottom: '1px solid var(--border-color)', marginBottom: 4 }}>
+              <button
+                type="button"
+                onClick={() => setActiveItemIndex('global')}
+                style={{
+                  background: activeItemIndex === 'global' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                  border: `1px solid ${activeItemIndex === 'global' ? '#38bdf8' : 'var(--border-color)'}`,
+                  color: activeItemIndex === 'global' ? '#38bdf8' : 'var(--text-secondary)',
+                  borderRadius: 6,
+                  padding: '5px 10px',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <span>📊</span>
+                <span>Vue Globale ({unifiedGroup!.totalDurationMinutes}m)</span>
+              </button>
+
+              {unifiedGroup!.items.map((it, idx) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => setActiveItemIndex(idx)}
+                  style={{
+                    background: activeItemIndex === idx ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.04)',
+                    border: `1px solid ${activeItemIndex === idx ? '#10b981' : 'var(--border-color)'}`,
+                    color: activeItemIndex === idx ? '#34d399' : 'var(--text-secondary)',
+                    borderRadius: 6,
+                    padding: '5px 10px',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <span>{it.emoji}</span>
+                  <span>{it.plannedEvent ? `Sortie ${idx + 1} (Plan)` : `Sortie ${idx + 1}`}</span>
+                  <span style={{ opacity: 0.75, fontSize: '0.68rem' }}>({it.durationMinutes}m{it.distanceKm ? ` • ${it.distanceKm}km` : ''})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isMultiMerged && activeItemIndex === 'global' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Synthèse Télémetrique Globale */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(16, 185, 129, 0.08))',
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <CheckCircle2 size={17} color="#38bdf8" />
+                    <span style={{ fontWeight: 800, fontSize: '0.94rem', color: '#ffffff' }}>
+                      Synthèse Consolidée des {unifiedGroup!.items.length} Activités du Jour
+                    </span>
+                  </div>
+                  <span
+                    style={{
+                      background: 'rgba(56, 189, 248, 0.2)',
+                      border: '1px solid #38bdf8',
+                      color: '#38bdf8',
+                      borderRadius: 9999,
+                      padding: '2px 8px',
+                      fontSize: '0.72rem',
+                      fontWeight: 800
+                    }}
+                  >
+                    🔗 Séances Fusionnées
+                  </span>
+                </div>
+
+                {/* 5 Tuiles de synthèse */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+                  <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⏱️ Durée Totale</div>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#ffffff' }}>
+                      {unifiedGroup!.totalDurationMinutes} min
+                    </div>
+                    <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)' }}>
+                      {unifiedGroup!.items.map(it => `${it.durationMinutes}m`).join(' + ')}
+                    </span>
+                  </div>
+
+                  {unifiedGroup!.totalDistanceKm > 0 && (
+                    <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>📍 Distance Totale</div>
+                      <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--primary)' }}>
+                        {unifiedGroup!.totalDistanceKm} km
+                      </div>
+                      <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)' }}>
+                        {unifiedGroup!.items.filter(it => it.distanceKm).map(it => `${it.distanceKm}km`).join(' + ')}
+                      </span>
+                    </div>
+                  )}
+
+                  {unifiedGroup!.totalElevationGainM > 0 && (
+                    <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⛰️ Dénivelé Cumulé</div>
+                      <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-green)' }}>
+                        +{unifiedGroup!.totalElevationGainM} m
+                      </div>
+                      <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)' }}>
+                        D- : -{unifiedGroup!.totalElevationLossM} m
+                      </span>
+                    </div>
+                  )}
+
+                  <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>❤️ Cardio Moyen</div>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-red)' }}>
+                      {unifiedGroup!.weightedAvgHeartRate ? `${unifiedGroup!.weightedAvgHeartRate} bpm` : '--'}
+                    </div>
+                    <span style={{ fontSize: '0.66rem', color: 'var(--text-secondary)' }}>
+                      {unifiedGroup!.maxHeartRate ? `Pic max ${unifiedGroup!.maxHeartRate} bpm` : 'Moyenne pondérée'}
+                    </span>
+                  </div>
+
+                  <div style={{ background: 'rgba(56, 189, 248, 0.12)', border: '1px solid rgba(56, 189, 248, 0.35)', padding: '8px', borderRadius: 4 }}>
+                    <div style={{ fontSize: '0.68rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                      <Zap size={11} color="#38bdf8" /> Charge Globale
+                    </div>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#38bdf8' }}>
+                      {unifiedGroup!.totalTrimp} TRIMP
+                    </div>
+                    <span style={{ fontSize: '0.66rem', color: 'var(--accent-green)' }}>
+                      Cumul physiologique ACWR
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Liste Chronologique des Sorties Individuelles */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Détail chronologique des activités ({unifiedGroup!.items.length})
+                </div>
+
+                {unifiedGroup!.items.map((it, idx) => {
+                  const itStart = it.startTime ? formatTime(it.startTime) : null;
+                  const itEnd = it.endTime ? formatTime(it.endTime) : null;
+
+                  return (
+                    <div
+                      key={it.id}
+                      onClick={() => setActiveItemIndex(idx)}
+                      style={{
+                        background: 'var(--bg-surface-elevated)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: 6,
+                        padding: '12px 14px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 6,
+                        transition: 'border-color 0.15s, background 0.15s'
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--primary)')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: '1.1rem' }}>{it.emoji}</span>
+                          <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#ffffff' }}>
+                            {it.title}
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '2px 7px',
+                            borderRadius: 4,
+                            background: it.itemType === 'PLANNED_COMPLETED' ? 'rgba(16, 185, 129, 0.15)' : (it.itemType === 'UNPLANNED_BONUS' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)'),
+                            color: it.itemType === 'PLANNED_COMPLETED' ? '#34d399' : (it.itemType === 'UNPLANNED_BONUS' ? '#fbbf24' : '#38bdf8'),
+                            border: `1px solid ${it.itemType === 'PLANNED_COMPLETED' ? '#10b981' : (it.itemType === 'UNPLANNED_BONUS' ? '#f59e0b' : '#38bdf8')}`
+                          }}
+                        >
+                          {it.itemType === 'PLANNED_COMPLETED' ? '✅ Validée Garmin' : (it.itemType === 'UNPLANNED_BONUS' ? 'Bonus Garmin' : '🔄 Reportée')}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                        {itStart && itEnd && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Clock size={11} /> {itStart} – {itEnd}
+                          </span>
+                        )}
+                        <span>•</span>
+                        <span style={{ fontWeight: 700, color: '#ffffff' }}>{it.durationMinutes}m réelles</span>
+                        {it.distanceKm && (
+                          <>
+                            <span>•</span>
+                            <span style={{ color: 'var(--primary)', fontWeight: 600 }}>📏 {it.distanceKm.toFixed(1)} km</span>
+                          </>
+                        )}
+                        {it.elevationGainM ? (
+                          <>
+                            <span>•</span>
+                            <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>⛰️ +{Math.round(it.elevationGainM)}m</span>
+                          </>
+                        ) : null}
+                        {it.avgHeartRate && (
+                          <>
+                            <span>•</span>
+                            <span style={{ color: 'var(--accent-red)', fontWeight: 600 }}>❤️ {it.avgHeartRate} bpm</span>
+                          </>
+                        )}
+                        <span>•</span>
+                        <span style={{ color: '#38bdf8', fontWeight: 600 }}>⚡ {it.trimp} TRIMP</span>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 2 }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--accent-blue)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          Voir la télémétrie complète de cette sortie ➔
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Fiche Pédagogique Cumul de Charge */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 6, padding: '10px 12px', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                💡 <strong>Comment ces séances cumulées alimentent votre entraînement ?</strong> Le modèle de Banister et le ratio ACWR (Sweet Spot Tim Gabbett) additionnent directement le volume et la charge physiologique de vos {unifiedGroup!.items.length} sorties de la journée (<strong>{unifiedGroup!.totalTrimp} TRIMP cumulés</strong>). La charge aiguë (ATL 7 jours) intègre cette fatigue globale pour calibrer précisément votre niveau de forme et votre risque de blessure.
+              </div>
+            </div>
+          ) : (
+            <>
+              {isMultiMerged && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: 6, padding: '6px 12px', fontSize: '0.74rem', marginBottom: 6 }}>
+                  <span style={{ color: '#38bdf8', fontWeight: 700 }}>
+                    Affichage de la sortie {(activeItemIndex as number) + 1} sur {unifiedGroup!.items.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveItemIndex('global')}
+                    style={{ background: 'transparent', border: 'none', color: '#38bdf8', fontWeight: 800, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                  >
+                    ← Revenir à la synthèse globale
+                  </button>
+                </div>
+              )}
           {/* 🛡️ Alerte Séance Adaptée Anti-blessure */}
           {isAdapted && (
             <div
@@ -222,7 +572,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 )}
               </div>
 
-              <div>{event.metadata?.adaptationReason}</div>
+              <div>{effectiveEvent.metadata?.adaptationReason}</div>
 
               {/* Comparaison détaillée de la charge */}
               {originalTrimpInfo && plannedTrimpInfo && (
@@ -230,13 +580,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Charge initiale prévue : </span>
                     <strong style={{ color: 'var(--accent-orange)' }}>{originalTrimpInfo.trimp} TRIMP</strong>
-                    <span style={{ color: 'var(--text-muted)' }}> ({event.metadata?.originalDurationMinutes} min)</span>
+                    <span style={{ color: 'var(--text-muted)' }}> ({effectiveEvent.metadata?.originalDurationMinutes} min)</span>
                   </div>
                   <span style={{ color: 'var(--text-muted)' }}>➔</span>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Charge modulée : </span>
                     <strong style={{ color: 'var(--accent-green)' }}>{plannedTrimpInfo.trimp} TRIMP</strong>
-                    <span style={{ color: 'var(--text-muted)' }}> ({event.durationMinutes} min)</span>
+                    <span style={{ color: 'var(--text-muted)' }}> ({effectiveEvent.durationMinutes} min)</span>
                   </div>
                 </div>
               )}
@@ -248,7 +598,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           )}
 
           {/* Télémétrie Réalisée Garmin Connect (Si séance complétée) */}
-          {comparison?.actualActivity && (
+          {effectiveComparison?.actualActivity && (
             <div
               style={{
                 background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(6, 182, 212, 0.1))',
@@ -267,19 +617,19 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     Télémétrie Réelle Garmin Connect
                   </span>
                 </div>
-                {comparison?.complianceScore !== undefined && (
+                {effectiveComparison?.complianceScore !== undefined && (
                   <span
                     style={{
-                      background: comparison.complianceScore >= 80 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
-                      color: comparison.complianceScore >= 80 ? '#34d399' : '#fbbf24',
-                      border: `1px solid ${comparison.complianceScore >= 80 ? '#10b981' : '#f59e0b'}`,
+                      background: effectiveComparison.complianceScore >= 80 ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                      color: effectiveComparison.complianceScore >= 80 ? '#34d399' : '#fbbf24',
+                      border: `1px solid ${effectiveComparison.complianceScore >= 80 ? '#10b981' : '#f59e0b'}`,
                       borderRadius: 9999,
                       padding: '2px 8px',
                       fontSize: '0.72rem',
                       fontWeight: 800
                     }}
                   >
-                    {comparison.complianceScore}% de conformité
+                    {effectiveComparison.complianceScore}% de conformité
                   </span>
                 )}
               </div>
@@ -289,46 +639,48 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⏱️ Durée Réelle</div>
                   <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#ffffff' }}>
-                    {comparison.actualActivity.durationMinutes} min
+                    {effectiveComparison.actualActivity.durationMinutes} min
                   </div>
                   <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-                    Prescrit : {event.durationMinutes}m ({comparison.actualActivity.durationMinutes >= event.durationMinutes ? '+' : ''}{comparison.actualActivity.durationMinutes - event.durationMinutes}m)
+                    Prescrit : {effectiveEvent.durationMinutes}m ({effectiveComparison.actualActivity.durationMinutes >= effectiveEvent.durationMinutes ? '+' : ''}{effectiveComparison.actualActivity.durationMinutes - effectiveEvent.durationMinutes}m)
                   </span>
                 </div>
 
-                {comparison.actualActivity.distanceKm && (
+                {!isCalisthenics && Boolean(effectiveComparison.actualActivity.distanceKm && effectiveComparison.actualActivity.distanceKm > 0) && (
                   <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
                     <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>📍 Distance</div>
                     <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--primary)' }}>
-                      {comparison.actualActivity.distanceKm} km
+                      {effectiveComparison.actualActivity.distanceKm} km
                     </div>
-                    {comparison.actualActivity.avgPaceMinKm && (
+                    {effectiveComparison.actualActivity.avgPaceMinKm && (
                       <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-                        Allure {comparison.actualActivity.avgPaceMinKm}
+                        Allure {effectiveComparison.actualActivity.avgPaceMinKm}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {!isCalisthenics && Boolean((effectiveComparison.actualActivity.elevationGainM && effectiveComparison.actualActivity.elevationGainM > 0) || (effectiveComparison.actualActivity.elevationLossM && effectiveComparison.actualActivity.elevationLossM > 0)) && (
+                  <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⛰️ Dénivelé D+/D-</div>
+                    <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-green)' }}>
+                      +{effectiveComparison.actualActivity.elevationGainM || 0} m
+                    </div>
+                    {Boolean(effectiveComparison.actualActivity.elevationLossM) && (
+                      <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                        -{effectiveComparison.actualActivity.elevationLossM} m
                       </span>
                     )}
                   </div>
                 )}
 
                 <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⛰️ Dénivelé D+/D-</div>
-                  <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-green)' }}>
-                    +{comparison.actualActivity.elevationGainM || 0} m
-                  </div>
-                  {Boolean(comparison.actualActivity.elevationLossM) && (
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-                      -{comparison.actualActivity.elevationLossM} m
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
                   <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>❤️ Cardiaque / EPOC</div>
                   <div style={{ fontWeight: 800, fontSize: '0.94rem', color: 'var(--accent-red)' }}>
-                    {comparison.actualActivity.avgHeartRate ? `${comparison.actualActivity.avgHeartRate} bpm` : '--'}
+                    {effectiveComparison.actualActivity.avgHeartRate ? `${effectiveComparison.actualActivity.avgHeartRate} bpm` : '--'}
                   </div>
                   <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-                    {comparison.actualActivity.trainingLoad ? `Charge EPOC ${comparison.actualActivity.trainingLoad}` : (comparison.actualActivity.maxHeartRate ? `Max ${comparison.actualActivity.maxHeartRate} bpm` : '')}
+                    {effectiveComparison.actualActivity.trainingLoad ? `Charge EPOC ${effectiveComparison.actualActivity.trainingLoad}` : (effectiveComparison.actualActivity.maxHeartRate ? `Max ${effectiveComparison.actualActivity.maxHeartRate} bpm` : '')}
                   </span>
                 </div>
 
@@ -350,9 +702,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               </div>
 
               {/* Feedback notes */}
-              {comparison.feedbackNotes && comparison.feedbackNotes.length > 0 && (
+              {effectiveComparison.feedbackNotes && effectiveComparison.feedbackNotes.length > 0 && (
                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 4, lineHeight: 1.4 }}>
-                  {comparison.feedbackNotes.join(' • ')}
+                  {effectiveComparison.feedbackNotes.join(' • ')}
                 </div>
               )}
             </div>
@@ -363,14 +715,21 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             {/* Horaires */}
             <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
               <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
-                <Clock size={11} /> Horaires
+                <Clock size={11} /> {actualStartDate ? 'Horaires Réels' : 'Horaires'}
               </span>
               <div style={{ fontWeight: 700, fontSize: '0.9rem', marginTop: 3 }}>
-                {formatTime(startDate)} – {formatTime(endDate)}
+                {actualStartDate && actualEndDate
+                  ? `${formatTime(actualStartDate)} – ${formatTime(actualEndDate)}`
+                  : `${formatTime(startDate)} – ${formatTime(endDate)}`}
               </div>
-              <span style={{ fontSize: '0.72rem', color: 'var(--accent-blue)', fontWeight: 600 }}>
-                {event.durationMinutes} minutes
+              <span style={{ fontSize: '0.72rem', color: actualDurationMinutes ? '#10b981' : 'var(--accent-blue)', fontWeight: 600 }}>
+                {actualDurationMinutes ? `${actualDurationMinutes} minutes (réalisées)` : `${effectiveEvent.durationMinutes} minutes`}
               </span>
+              {actualStartDate && (actualDurationMinutes !== effectiveEvent.durationMinutes || formatTime(actualStartDate) !== formatTime(startDate)) && (
+                <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  Prévu : {formatTime(startDate)} – {formatTime(endDate)} ({effectiveEvent.durationMinutes}m)
+                </div>
+              )}
             </div>
 
             {/* Lieu */}
@@ -381,19 +740,23 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ fontWeight: 700, fontSize: '0.88rem', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={effectiveLocation}>
                 {effectiveLocation}
               </div>
-              {event.metadata?.room ? (
+              {effectiveEvent.metadata?.room ? (
                 <span style={{ fontSize: '0.72rem', color: 'var(--primary)' }}>
-                  Local : {event.metadata.room}
+                  Local : {effectiveEvent.metadata.room}
                 </span>
               ) : isAdapted ? (
                 <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
                   {isRecoveryFooting ? 'Plat sans chocs' : 'Adapté anti-blessure'}
                 </span>
+              ) : isCalisthenics ? (
+                <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600 }}>
+                  Poids du corps / Salle
+                </span>
               ) : null}
             </div>
 
-            {/* Objectif D+ (si sport) */}
-            {isSport && (
+            {/* Objectif D+ (si sport de course/trail) */}
+            {isSport && !isCalisthenics && (
               <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
                   <Compass size={11} /> Dénivelé D+
@@ -407,14 +770,29 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               </div>
             )}
 
-            {/* Cible Cardiaque */}
-            {event.metadata?.targetHeartRate && (
+            {/* Discipline Calisthénie (remplace D+ qui n'a pas de sens) */}
+            {isSport && isCalisthenics && (
               <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
-                  <Heart size={11} color="var(--accent-red)" /> Cible Cardio
+                  <Activity size={11} color="var(--accent-purple)" /> Discipline
+                </span>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#c4b5fd', marginTop: 3 }}>
+                  Calisthénie
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                  Poids du corps • Zéro D+
+                </span>
+              </div>
+            )}
+
+            {/* Cible Cardiaque */}
+            {effectiveEvent.metadata?.targetHeartRate && (
+              <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                  <Heart size={11} color="var(--accent-red)" /> Cible Cardio / Intensité
                 </span>
                 <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--accent-red)', marginTop: 3 }}>
-                  {event.metadata.targetHeartRate}
+                  {effectiveEvent.metadata.targetHeartRate}
                 </div>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
                   FCmax = {athleteFcMax} bpm
@@ -474,14 +852,14 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
                       • <strong style={{ color: '#e2e8f0' }}>Fréquence cardiaque réelle :</strong> {sessionTrimpInfo.details}.
                     </div>
-                    {comparison?.actualActivity?.avgPaceMinKm && (
+                    {effectiveComparison?.actualActivity?.avgPaceMinKm && (
                       <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                        • <strong style={{ color: '#e2e8f0' }}>Allure soutenue ({comparison.actualActivity.avgPaceMinKm}) :</strong> Intensité aérobie plus élevée qu'une simple récupération, entraînant une dépense et une fatigue plus rapides par minute.
+                        • <strong style={{ color: '#e2e8f0' }}>Allure soutenue ({effectiveComparison.actualActivity.avgPaceMinKm}) :</strong> Intensité aérobie plus élevée qu'une simple récupération, entraînant une dépense et une fatigue plus rapides par minute.
                       </div>
                     )}
                     {plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp && (
                       <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '6px 8px', borderRadius: 4, color: '#93c5fd', marginTop: 4, lineHeight: 1.4 }}>
-                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {event.durationMinutes} min de {event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.title.toLowerCase().includes('calisth') ? 'calisthénie / renforcement' : 'footing doux'} ({plannedTrimpInfo.trimp} TRIMP). La séance réalisée ({comparison?.actualActivity?.durationMinutes} min) {event.sportType === 'CALISTHENICS' || event.sportType === 'GYM_FORCE' || event.title.toLowerCase().includes('calisth') ? 'a été réalisée' : 'a été courue'} à un rythme plus soutenu (FC moy. {comparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {comparison?.actualActivity?.maxHeartRate || '--'} bpm). La charge réelle enregistrée (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) est celle qui alimente votre charge aiguë (ATL) et votre ratio ACWR pour protéger fidèlement vos tendons.
+                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {effectiveEvent.durationMinutes} min de {isCalisthenics ? 'calisthénie / renforcement' : (titleLower.includes('trail') || titleLower.includes('côte') || titleLower.includes('hill') ? 'trail & côtes' : 'course à pied')} ({plannedTrimpInfo.trimp} TRIMP). La séance réalisée ({effectiveComparison?.actualActivity?.durationMinutes} min) {isCalisthenics ? 'a été réalisée' : 'a été courue'} à un rythme plus soutenu (FC moy. {effectiveComparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {effectiveComparison?.actualActivity?.maxHeartRate || '--'} bpm). La charge réelle enregistrée (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) est celle qui alimente votre charge aiguë (ATL) et votre ratio ACWR pour protéger fidèlement vos tendons.
                       </div>
                     )}
                   </>
@@ -503,19 +881,29 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 {sessionTrimpInfo.isMechanicalImpact ? (
                   <>
-                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance de <strong>{actualTrimpInfo ? (comparison?.actualActivity?.durationMinutes || event.durationMinutes) : event.durationMinutes} min</strong> applique des forces de freinage excentriques répétées. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> sont directement ajoutés à votre <strong>charge aiguë (7 jours)</strong> pour surveiller le risque de blessure tendineuse (ratio ACWR de Tim Gabbett) et alimentent votre fatigue ATL dans le modèle Banister.
+                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance de <strong>{actualTrimpInfo ? (effectiveComparison?.actualActivity?.durationMinutes || effectiveEvent.durationMinutes) : effectiveEvent.durationMinutes} min</strong> applique des forces de freinage excentriques répétées. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> sont directement ajoutés à votre <strong>charge aiguë (7 jours)</strong> pour surveiller le risque de blessure tendineuse (ratio ACWR de Tim Gabbett) et alimentent votre fatigue ATL dans le modèle Banister.
                   </>
                 ) : (
                   <>
-                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance de <strong>{actualTrimpInfo ? (comparison?.actualActivity?.durationMinutes || event.durationMinutes) : event.durationMinutes} min</strong> ne génère <strong>aucune onde de choc au sol</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre fitness CTL général, mais sont <strong>totalement isolés du ratio ACWR de blessure tendineuse</strong> pour vous éviter de fausses alertes.
+                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance de <strong>{actualTrimpInfo ? (effectiveComparison?.actualActivity?.durationMinutes || effectiveEvent.durationMinutes) : effectiveEvent.durationMinutes} min</strong> ne génère <strong>aucune onde de choc au sol</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre fitness CTL général, mais sont <strong>totalement isolés du ratio ACWR de blessure tendineuse</strong> pour vous éviter de fausses alertes.
                   </>
                 )}
               </div>
             </div>
           )}
 
-          {/* DÉROULÉ CONCRET DE LA SÉANCE : Ce que je dois faire */}
-          {isSport && workoutPreview && workoutPreview.steps && workoutPreview.steps.length > 0 ? (
+          {/* SÉANCE CALISTHÉNIE : Entraînement libre au poids du corps sans déroulé rigide */}
+          {isSport && isCalisthenics ? (
+            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff', marginBottom: 4 }}>
+                <Activity size={14} color="var(--primary)" />
+                <span>Entraînement Calisthénie</span>
+              </div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                Séance libre au poids du corps ({actualDurationMinutes || effectiveEvent.durationMinutes} min) : pratique autonome selon vos sensations (tractions, dips, gainage, pompes), sans programme ni déroulé imposé.
+              </div>
+            </div>
+          ) : isSport && workoutPreview && workoutPreview.steps && workoutPreview.steps.length > 0 ? (
             <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff' }}>
@@ -523,7 +911,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span>DÉROULÉ CONCRET DE LA SÉANCE</span>
                 </div>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {event.durationMinutes} min au total
+                  {effectiveEvent.durationMinutes} min au total
                 </span>
               </div>
 
@@ -594,6 +982,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     <span>• <strong>Course 100% sur terrain plat ou herbeux souple</strong> : aucun dénivelé, aucune côte pour reposer tendons et genoux.</span>
                     <span>• <strong>Allure de récupération douce</strong> : rester strictement sous 142 bpm (Zone 1/2) en aisance respiratoire totale.</span>
                   </>
+                ) : effectiveEvent?.sportType === 'TRAIL_LONG' || effectiveElevationM >= 200 ? (
+                  <>
+                    <span>• ⛰️ <strong>Stratégie Rando-Course Ultra-Trail QMT-80</strong> : pour accumuler +{effectiveElevationM} m D+ tout en restant sous 155 bpm (Zone 2), alternez marche et course.</span>
+                    <span>• <strong>Power-Hike obligatoire en côte</strong> : dès que la pente dépasse 7 à 8 % (ou dès que la FC approche 150 bpm), passez en marche rapide active (mains en appui sur les cuisses ou bâtons) pour brider les pulsations en Zone 2.</span>
+                    <span>• <strong>Relance fluide sur le plat & descentes</strong> : courez souplement dès que le terrain s'adoucit pour travailler la foulée d'endurance sans exploser le cardio.</span>
+                    <span>• <strong>Filière lipidique</strong> : respecter la Zone 2 permet d'optimiser la combustion des graisses indispensable pour boucler 80 km sans panne de glycogène.</span>
+                  </>
                 ) : (
                   <>
                     <span>• <strong>Marche active (power-hike)</strong> dès que la pente dépasse 8% pour économiser les tendons et mollets.</span>
@@ -618,19 +1013,19 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   lineHeight: 1.55
                 }}
               >
-                {event.description}
+                {effectiveEvent.description}
               </div>
             </div>
           )}
 
           {/* Section Reporter / Déplacer la séance (repliable discrète) */}
-          {isSport && !event.metadata?.isPostponedPlaceholder && onPostpone && !comparison?.actualActivity && (
+          {isSport && !effectiveEvent.metadata?.isPostponedPlaceholder && onPostpone && !effectiveComparison?.actualActivity && (
             <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '8px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <CalendarClock size={14} color="var(--text-muted)" />
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                    {event.metadata?.isPostponed ? `Séance reportée depuis le ${event.metadata.originalDate}` : 'Déplacer ou reporter cette séance'}
+                    {effectiveEvent.metadata?.isPostponed ? `Séance reportée depuis le ${effectiveEvent.metadata.originalDate}` : 'Déplacer ou reporter cette séance'}
                   </span>
                 </div>
                 <button
@@ -710,7 +1105,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       <span>Valider pour le {targetDateInput}</span>
                     </button>
 
-                    {event.metadata?.isPostponed && onCancelPostpone && (
+                    {effectiveEvent.metadata?.isPostponed && onCancelPostpone && (
                       <button
                         type="button"
                         className="btn-secondary"
@@ -725,8 +1120,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               )}
             </div>
           )}
-
-
+          </>
+        )}
         </div>
 
         {/* Footer avec Actions Principales directes : Garmin, Alarme, Fermer */}
@@ -781,10 +1176,10 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         isOpen={isAlarmModalOpen}
         onClose={() => setIsAlarmModalOpen(false)}
         workout={{
-          id: event.id,
-          title: event.title,
-          date: event.startDate,
-          activityType: event.sportType || 'SPORT'
+          id: effectiveEvent.id,
+          title: effectiveEvent.title,
+          date: effectiveEvent.startDate,
+          activityType: effectiveEvent.sportType || 'SPORT'
         }}
       />
     </div>

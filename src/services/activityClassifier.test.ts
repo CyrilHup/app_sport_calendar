@@ -157,11 +157,17 @@ END:VCALENDAR`;
     expect(isStrengthOrCalisthenics(undefined, 'Séance Dips & Pompes')).toBe(true);
     expect(isStrengthOrCalisthenics({ activityType: 'OTHER', activityName: 'Cardio training' })).toBe(true);
     expect(isStrengthOrCalisthenics('RUNNING', 'Footing endurance')).toBe(false);
+    // CRUCIAL: Trail sessions with "strength" or "renfo" in title MUST NEVER be classified as strength
+    expect(isStrengthOrCalisthenics('TRAIL_INTENSE', 'Trail: Hill Repeats D+ (Mont-Royal) + Leg Strength')).toBe(false);
+    expect(isStrengthOrCalisthenics(undefined, 'Trail: Hill Repeats D+ (Mont-Royal) + Leg Strength')).toBe(false);
+    expect(isStrengthOrCalisthenics('TRAIL_LONG', 'Sortie longue Trail D+ et renfo')).toBe(false);
 
     // Trail & Running
     expect(isTrailOrRunning('TRAIL_RUNNING', 'Mont-Royal D+')).toBe(true);
     expect(isTrailOrRunning('RUN_EASY', 'Footing 45 min')).toBe(true);
     expect(isTrailOrRunning(undefined, 'Côtes et fartlek')).toBe(true);
+    expect(isTrailOrRunning('TRAIL_INTENSE', 'Trail: Hill Repeats D+ (Mont-Royal) + Leg Strength')).toBe(true);
+    expect(isTrailOrRunning(undefined, 'Trail: Hill Repeats D+ (Mont-Royal) + Leg Strength')).toBe(true);
     expect(isTrailOrRunning('CLIMBING', 'Bloc')).toBe(false);
     expect(isTrailOrRunning(undefined, 'Cours magistral LOG792')).toBe(false);
 
