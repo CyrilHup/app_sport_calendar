@@ -22,6 +22,7 @@ import {
 import { GarminActivity, GarminWellnessData } from '../types/garmin';
 import { TrainingLoadStats, formatMinutes, PLAN_START_DATE } from '../services/statsEngine';
 import { formatDateKey, parseLocalDate, addDays, getMondayWeekKey, getGarminLocalDateKey } from '../services/dateUtils';
+import { isTrailOrRunning } from '../services/activityClassifier';
 
 export type EvolutionMetricType =
   | 'volume'
@@ -142,14 +143,17 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
 
     switch (metric) {
       case 'volume': {
-        t = "Évolution du Volume d'Entraînement";
+        t = "Évolution du Volume Course & Trail";
         sub = scope === 'week'
-          ? "Volume journalier et cumul de la semaine en cours"
-          : "Volume cumulé hebdomadaire et régularité des microcycles";
+          ? "Volume journalier de course et cumul de la semaine en cours"
+          : "Volume cumulé hebdomadaire de course et régularité des microcycles";
         ic = <Clock size={20} color="var(--primary)" />;
         u = "min";
         invBetter = false;
-        adv = "Pour l'ultra-trail QMT-80, la régularité du volume hebdomadaire prévaut sur les pics isolés. Veillez à ne pas augmenter votre volume de plus de 10% d'une semaine à l'autre.";
+        adv = "Pour l'ultra-trail QMT-80, la régularité du volume de course hebdomadaire prévaut sur les pics isolés. Veillez à ne pas augmenter votre volume de plus de 10% d'une semaine à l'autre.";
+
+        // Strictly evaluate running/trail activities for volume evolution
+        const runOnlyActivities = filteredActivities.filter(a => isTrailOrRunning(a));
 
         if (scope === 'week') {
           // Affichage jour par jour pour le microcycle de la semaine en cours
@@ -159,12 +163,12 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
             dayMap.set(dStr, { minutes: 0, count: 0, date: dStr, title: '' });
           }
 
-          for (const act of filteredActivities) {
+          for (const act of runOnlyActivities) {
             const actDate = getGarminLocalDateKey(act);
             const cur = dayMap.get(actDate) || { minutes: 0, count: 0, date: actDate, title: '' };
             cur.minutes += act.durationMinutes || 0;
             cur.count += 1;
-            cur.title = cur.title ? `${cur.title}, ${act.activityName}` : (act.activityName || 'Séance');
+            cur.title = cur.title ? `${cur.title}, ${act.activityName}` : (act.activityName || 'Sortie');
             dayMap.set(actDate, cur);
           }
 
@@ -178,14 +182,14 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
               label: dayName,
               value: dData.minutes,
               displayValue: formatMinutes(dData.minutes),
-              subValue: dData.count > 0 ? `${dData.count} séance${dData.count > 1 ? 's' : ''}` : 'Repos',
-              title: dData.title || (dData.count > 0 ? 'Entraînement' : 'Jour de repos')
+              subValue: dData.count > 0 ? `${dData.count} sortie${dData.count > 1 ? 's' : ''}` : 'Repos',
+              title: dData.title || (dData.count > 0 ? 'Course à pied' : 'Jour de repos')
             });
           }
         } else {
           // Regrouper strictement par début de semaine (Lundi) via dateUtils
           const weekMap = new Map<string, { minutes: number; count: number; date: string }>();
-          for (const act of filteredActivities) {
+          for (const act of runOnlyActivities) {
             const actDate = getGarminLocalDateKey(act);
             const monday = getMondayWeekKey(actDate);
             const cur = weekMap.get(monday) || { minutes: 0, count: 0, date: monday };
@@ -202,8 +206,8 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
               label: `Sem. du ${formatDateFr(wData.date)}`,
               value: wData.minutes,
               displayValue: formatMinutes(wData.minutes),
-              subValue: `${wData.count} séance${wData.count > 1 ? 's' : ''}`,
-              title: `Volume hebdomadaire`
+              subValue: `${wData.count} sortie${wData.count > 1 ? 's' : ''}`,
+              title: `Volume hebdomadaire de course`
             });
           }
         }

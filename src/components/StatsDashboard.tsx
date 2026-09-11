@@ -149,12 +149,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           </h2>
           <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
             {scope === 'week'
-              ? `Sur la semaine en cours : ${global.totalSessionsCount} séance${global.totalSessionsCount > 1 ? 's' : ''} réalisée${global.totalSessionsCount > 1 ? 's' : ''} (${formatMinutes(global.totalDurationMinutes)})`
+              ? `Sur la semaine en cours : ${global.totalSessionsCount} sortie${global.totalSessionsCount > 1 ? 's' : ''} de course réalisée${global.totalSessionsCount > 1 ? 's' : ''} (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
               : (scope === 'plan'
-                ? `Sur le plan QMT : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
+                ? `Sur le plan QMT : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
                 : (scope === '4w'
-                  ? `Sur les 28 derniers jours : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
-                  : `Cumul historique complet : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`))}
+                  ? `Sur les 28 derniers jours : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
+                  : `Cumul historique complet : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`))}
           </p>
         </div>
 
@@ -163,11 +163,10 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           style={{
             display: 'inline-flex',
             background: 'rgba(255, 255, 255, 0.04)',
-            borderRadius: 'var(--radius-sm, 6px)',
-            padding: '3px',
             border: '1px solid var(--border-color)',
-            gap: '3px',
-            flexWrap: 'wrap'
+            borderRadius: '6px',
+            padding: '3px',
+            gap: '2px'
           }}
         >
           <button
@@ -183,9 +182,9 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               color: scope === 'week' ? '#ffffff' : 'var(--text-secondary)',
               transition: 'all 0.15s ease'
             }}
-            title="Microcycle de la semaine en cours (du lundi au dimanche)"
+            title="Focalisé sur le microcycle de la semaine en cours (Lundi à Dimanche)"
           >
-            📅 Cette semaine
+            📅 Cette sem.
           </button>
           <button
             onClick={() => setScope('plan')}
@@ -249,16 +248,16 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           gap: '14px'
         }}
       >
-        {/* CARTE 1: Volume Global & Répartition des Disciplines */}
+        {/* CARTE 1: Volume Course & Trail (Plan d'Entraînement) */}
         <div
           className="stats-kpi-card"
           onClick={() => setEvolutionMetric('volume')}
           style={{ borderLeft: '3px solid var(--primary)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-          title="Cliquer pour voir la courbe d'évolution du volume d'entraînement"
+          title="Cliquer pour voir la courbe d'évolution du volume de course"
         >
           <div className="kpi-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">Volume d'Entraînement</span>
+              <span className="kpi-title">Volume Course & Trail</span>
               <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
                 {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique'))}
               </span>
@@ -279,55 +278,38 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
           <div className="kpi-sub-row">
             <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
-              {global.totalSessionsCount} séances
+              {global.totalSessionsCount} sorties de course
             </span>
             <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
               Moy. {formatMinutes(global.weeklyAverageMinutes)}/sem
             </span>
           </div>
 
-          {/* Barre de répartition tricolore Course / Force / Cross */}
-          <div
-            style={{
-              marginTop: '10px',
-              height: '7px',
-              borderRadius: '9999px',
-              background: 'rgba(255,255,255,0.06)',
-              display: 'flex',
-              overflow: 'hidden',
-              gap: '1px'
-            }}
-          >
+          {/* Pastille Renforcement Indicatif */}
+          {global.indicativeStrengthMinutes > 0 && (
             <div
-              title={`Course : ${formatMinutes(global.sportBreakdown.running.minutes)} (${global.sportBreakdown.running.pct}%)`}
-              style={{ width: `${global.sportBreakdown.running.pct}%`, background: 'var(--primary)' }}
-            />
-            <div
-              title={`Force : ${formatMinutes(global.sportBreakdown.strength.minutes)} (${global.sportBreakdown.strength.pct}%)`}
-              style={{ width: `${global.sportBreakdown.strength.pct}%`, background: 'var(--accent-purple)' }}
-            />
-            <div
-              title={`Cross : ${formatMinutes(global.sportBreakdown.crossTraining.minutes + global.sportBreakdown.other.minutes)} (${global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%)`}
-              style={{ width: `${global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%`, background: 'var(--accent-cyan)' }}
-            />
-          </div>
-
-          {/* Détails compacts de répartition */}
-          <div
-            style={{
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              marginTop: '8px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: '4px',
-              flexWrap: 'wrap'
-            }}
-          >
-            <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Course : {formatMinutes(global.sportBreakdown.running.minutes)} ({global.sportBreakdown.running.pct}%)</span>
-            <span style={{ color: 'var(--accent-purple)', fontWeight: 600 }}>Force : {formatMinutes(global.sportBreakdown.strength.minutes)} ({global.sportBreakdown.strength.pct}%)</span>
-            <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>Cross : {formatMinutes(global.sportBreakdown.crossTraining.minutes + global.sportBreakdown.other.minutes)} ({global.sportBreakdown.crossTraining.pct + global.sportBreakdown.other.pct}%)</span>
-          </div>
+              style={{
+                marginTop: '10px',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                background: 'rgba(168, 85, 247, 0.10)',
+                border: '1px solid rgba(168, 85, 247, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '0.72rem',
+                color: '#c084fc'
+              }}
+              title="Séances de renforcement enregistrées à titre indicatif (exclues du plan de course)"
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                <span>💪</span> Renfort indicatif :
+              </span>
+              <span style={{ fontWeight: 700 }}>
+                {formatMinutes(global.indicativeStrengthMinutes)} ({global.indicativeStrengthCount} séance{global.indicativeStrengthCount > 1 ? 's' : ''})
+              </span>
+            </div>
+          )}
         </div>
 
         {/* CARTE 2: Course à Pied & Spécificité Montagne */}
@@ -789,21 +771,21 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           <div>
             <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <BarChart3 size={17} color="var(--primary)" />
-              Volume Hebdomadaire & Répartition des Disciplines
+              Volume Hebdomadaire Course & Trail
             </h3>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
-              {global.activeWeeksCount} semaines actives • Moyenne de {(global.totalSessionsCount / Math.max(1, global.activeWeeksCount)).toFixed(1)} séances / sem
+              {global.activeWeeksCount} semaines actives • Moyenne de {(global.totalSessionsCount / Math.max(1, global.activeWeeksCount)).toFixed(1)} sorties de course / sem
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.74rem' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--primary)' }} />
-              Course / Trail
+              Course / Trail (Volume plan)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-purple)' }} />
-              Renforcement / Calisthénie
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'rgba(168, 85, 247, 0.55)' }} />
+              Renfort (Indicatif)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
               <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-cyan)' }} />
@@ -890,7 +872,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                     }}
                   >
                     <div style={{ height: `${runHeight}px`, background: 'var(--primary)' }} />
-                    <div style={{ height: `${strengthHeight}px`, background: 'var(--accent-purple)' }} />
+                    <div style={{ height: `${strengthHeight}px`, background: 'rgba(168, 85, 247, 0.45)', borderTop: strengthHeight > 0 ? '1px dashed #a78bfa' : 'none' }} />
                     <div style={{ height: `${otherHeight}px`, background: 'var(--accent-cyan)' }} />
                   </div>
 
@@ -940,18 +922,18 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               <div style={{ fontWeight: 800, color: '#ffffff', marginBottom: '3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span>📅 {hoveredWeek.weekLabel}</span>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  ({hoveredWeek.sessionCount} séance{hoveredWeek.sessionCount > 1 ? 's' : ''})
+                  ({hoveredWeek.sessionCount} sortie{hoveredWeek.sessionCount > 1 ? 's' : ''} de course)
                 </span>
               </div>
-              <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: '3px' }}>
-                ⏱️ Total : {formatMinutes(hoveredWeek.totalMinutes)}
+              <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: '3px' }}>
+                🏃 Course : {formatMinutes(hoveredWeek.totalMinutes)}
               </div>
-              <div style={{ color: 'var(--primary)', fontWeight: 600 }}>
-                🏃 {hoveredWeek.distanceKm.toFixed(1)} km • +{hoveredWeek.elevationGainM}m D+ ({formatMinutes(hoveredWeek.runningMinutes)})
+              <div style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+                📏 {hoveredWeek.distanceKm.toFixed(1)} km • +{hoveredWeek.elevationGainM}m D+
               </div>
               {hoveredWeek.strengthMinutes > 0 && (
-                <div style={{ color: '#a78bfa', fontWeight: 600 }}>
-                  🏋️ {hoveredWeek.strengthMinutes} min de renforcement
+                <div style={{ color: '#c084fc', fontWeight: 600, marginTop: '2px' }}>
+                  💪 {hoveredWeek.strengthMinutes} min renfort indicatif
                 </div>
               )}
               {hoveredWeek.otherMinutes > 0 && (

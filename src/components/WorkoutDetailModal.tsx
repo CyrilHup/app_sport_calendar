@@ -295,7 +295,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
                 {isMultiMerged && activeItemIndex === 'global'
                   ? unifiedGroup!.title
-                  : (isCalisthenics ? 'Entraînement Calisthénie' : effectiveEvent.title)}
+                  : (isCalisthenics ? 'Entraînement Renfort (Indicatif)' : effectiveEvent.title)}
               </h2>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '3px 0 0 0' }}>
                 {isMultiMerged && activeItemIndex === 'global' ? (
@@ -590,6 +590,28 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   </button>
                 </div>
               )}
+          {/* ℹ️ Bandeau Séance de Renfort Indicative */}
+          {isCalisthenics && (
+            <div
+              style={{
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(14, 20, 36, 0.95))',
+                border: '1px solid rgba(168, 85, 247, 0.35)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '10px 14px',
+                fontSize: '0.78rem',
+                color: '#e9d5ff',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <span style={{ fontSize: '1.2rem' }}>💪</span>
+              <div>
+                <strong>Séance de renforcement indicative :</strong> Maintenue dans votre calendrier pour organiser vos semaines, mais non comptabilisée dans le volume de course ni dans les métriques de charge Banister.
+              </div>
+            </div>
+          )}
+
           {/* 🛡️ Alerte Séance Adaptée Anti-blessure */}
           {isAdapted && (
             <div

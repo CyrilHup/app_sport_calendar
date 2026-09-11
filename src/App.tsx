@@ -18,6 +18,7 @@ import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/co
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
 import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
 import { DEFAULT_WEEKLY_TARGETS, computeFullStatsReport } from './services/statsEngine';
+import { isTrailOrRunning } from './services/activityClassifier';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
@@ -468,8 +469,8 @@ export const App: React.FC = () => {
   const todayIdx = schedules.findIndex(s => s.date === refDateKey);
   const currentWeekStartIdx = todayIdx >= 0 ? Math.floor(todayIdx / 7) * 7 : 0;
   const currentWeekSchedules = schedules.slice(currentWeekStartIdx, currentWeekStartIdx + 7);
-  const plannedDurationMin = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession?.durationMinutes || 0), 0);
-  const plannedElevationM = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession?.metadata?.targetElevationM || 0), 0);
+  const plannedDurationMin = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession && isTrailOrRunning(s.sportSession) ? (s.sportSession.durationMinutes || 0) : 0), 0);
+  const plannedElevationM = currentWeekSchedules.reduce((acc, s) => acc + (s.sportSession && isTrailOrRunning(s.sportSession) ? (s.sportSession.metadata?.targetElevationM || 0) : 0), 0);
   const weeklyStats = computeWeeklyTelemetry(
     comparisons,
     { start: weekStartStr, end: weekEndStr },

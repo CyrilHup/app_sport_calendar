@@ -258,6 +258,25 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
               🛡️ Adapté
             </span>
           )}
+
+          {/* Badge Indicatif pour renforcement / musculation */}
+          {isStrength && (
+            <span
+              style={{
+                fontSize: '0.66rem',
+                fontWeight: 700,
+                background: 'rgba(168, 85, 247, 0.15)',
+                color: '#c084fc',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                borderRadius: '4px',
+                padding: '1px 5px',
+                flexShrink: 0
+              }}
+              title="Séance de renforcement indicative (non comptabilisée dans le plan de course)"
+            >
+              💪 Indicatif
+            </span>
+          )}
         </div>
 
         {/* Boutons d'action à droite (+1j ou Accordéon) */}

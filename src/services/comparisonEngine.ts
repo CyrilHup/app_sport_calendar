@@ -459,21 +459,35 @@ export function computeWeeklyTelemetry(
 
   for (const c of currentDays) {
     if (c.status === 'PENDING') {
-      pendingCount++;
+      if (c.plannedEvent && isTrailOrRunning(c.plannedEvent)) {
+        pendingCount++;
+      }
       continue;
     }
 
-    if (!fullWeekTarget && c.plannedEvent) {
+    const isPlannedRun = c.plannedEvent ? isTrailOrRunning(c.plannedEvent) : false;
+    const isActualRun = c.actualActivity ? isTrailOrRunning(c.actualActivity) : false;
+
+    // Prescribed plan volume and elevation targets strictly count trail/running
+    if (!fullWeekTarget && c.plannedEvent && isPlannedRun) {
       plannedDurationMin += c.plannedEvent.durationMinutes;
       plannedElevationM += c.plannedEvent.metadata?.targetElevationM || 0;
     }
 
-    if (c.plannedEvent) {
+    // Only prescribed running workouts contribute to the plan compliance score and status counts
+    if (c.plannedEvent && isPlannedRun) {
       scoreSum += c.complianceScore;
       scoreCount++;
+
+      if (c.status === 'COMPLIANT') compliantCount++;
+      else if (c.status === 'PARTIAL') partialCount++;
+      else if (c.status === 'MISSED') missedCount++;
+    } else if (c.status === 'UNPLANNED' && isActualRun) {
+      unplannedCount++;
     }
 
-    if (c.actualActivity) {
+    // Actual volume strictly counts running/trail
+    if (c.actualActivity && isActualRun) {
       const act = c.actualActivity;
       actualDurationMin += act.durationMinutes;
       actualElevationM += act.elevationGainM || 0;
@@ -503,11 +517,6 @@ export function computeWeeklyTelemetry(
       );
       totalTrimpLoad += trimpRes.trimp;
     }
-
-    if (c.status === 'COMPLIANT') compliantCount++;
-    else if (c.status === 'PARTIAL') partialCount++;
-    else if (c.status === 'MISSED') missedCount++;
-    else if (c.status === 'UNPLANNED') unplannedCount++;
   }
 
   const durationCompliancePct =

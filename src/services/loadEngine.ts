@@ -245,11 +245,9 @@ export function computeTrainingLoadStats(
     });
     const load = sessionInfo.trimp;
 
-    // Systemic whole-body load (CTL, ATL, TSB)
-    dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
-
-    // Musculoskeletal mechanical impact load (Trail & Running exclusively)
-    if (sessionInfo.isMechanicalImpact) {
+    // Moteur de charge centré exclusivement sur la Course & le Trail (renforcement exclu)
+    if (sessionInfo.isMechanicalImpact || isTrailOrRunning(act)) {
+      dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
       dailyTrailLoads[dKey] = (dailyTrailLoads[dKey] || 0) + load;
     } else {
       dailyCalisthenicsLoads[dKey] = (dailyCalisthenicsLoads[dKey] || 0) + load;

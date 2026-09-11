@@ -31,7 +31,7 @@ export const PLAN_START_DATE = GLOBAL_APP_CONFIG.SPORT_START_DATE || '2026-09-01
  * Standard default weekly targets when no planned session is scheduled.
  */
 export const DEFAULT_WEEKLY_TARGETS = {
-  plannedDurationMin: 285,
+  plannedDurationMin: 225,
   plannedElevationM: 780
 };
 
@@ -73,6 +73,8 @@ export interface GlobalStats {
   excludedBonusCount: number;
   excludedBonusMinutes: number;
   isFilteringBonuses: boolean;
+  indicativeStrengthMinutes: number;
+  indicativeStrengthCount: number;
 }
 
 export interface RunningStats {
@@ -326,9 +328,10 @@ export function computeFullStatsReport(
   }
 
   // Build a map of planned target minutes & D+ by Monday week key
+  // Strictly counts running/trail workouts for prescribed plan targets
   const plannedWeekMap = new Map<string, { minutes: number; elevationM: number; count: number }>();
   for (const ev of _plannedEvents) {
-    if (ev.category === 'sport' && !ev.metadata?.isPostponedPlaceholder) {
+    if (ev.category === 'sport' && !ev.metadata?.isPostponedPlaceholder && isTrailOrRunning(ev)) {
       const dKey = toLocalDateKey(ev.startDate);
       const mKey = getMondayWeekKey(dKey);
       const existing = plannedWeekMap.get(mKey) || { minutes: 0, elevationM: 0, count: 0 };
@@ -353,7 +356,6 @@ export function computeFullStatsReport(
 
   const weeklyTrend: WeeklyTrendPoint[] = sortedWeekKeys.map(wKey => {
     const acts = weekMap.get(wKey)!;
-    let totalMin = 0;
     let runMin = 0;
     let strengthMin = 0;
     let otherMin = 0;
@@ -362,9 +364,12 @@ export function computeFullStatsReport(
     let dMinus = 0;
     let hrSum = 0;
     let hrCount = 0;
+    let runningSessionsCount = 0;
 
     for (const a of acts) {
-      totalMin += a.durationMinutes;
+      const isRun = isTrailOrRunning(a.type, a.name);
+      const isStr = !isRun && isStrengthOrCalisthenics(a.type, a.name);
+
       dPlus += a.elevationGainM;
       dMinus += a.elevationLossM;
       distKm += a.distanceKm;
@@ -374,9 +379,10 @@ export function computeFullStatsReport(
         hrCount += a.durationMinutes;
       }
 
-      if (a.type === 'RUNNING' || a.type === 'TRAIL_RUNNING') {
+      if (isRun) {
         runMin += a.durationMinutes;
-      } else if (a.type === 'STRENGTH_TRAINING' || a.type === 'FITNESS_EQUIPMENT') {
+        runningSessionsCount += 1;
+      } else if (isStr) {
         strengthMin += a.durationMinutes;
       } else {
         otherMin += a.durationMinutes;
@@ -394,25 +400,31 @@ export function computeFullStatsReport(
     return {
       weekKey: wKey,
       weekLabel,
-      totalMinutes: totalMin,
+      totalMinutes: runMin, // Training plan volume is strictly course/trail
       plannedMinutes: planTarget?.minutes || 0,
       runningMinutes: runMin,
-      strengthMinutes: strengthMin,
+      strengthMinutes: strengthMin, // Retained purely for indicative tooltips
       otherMinutes: otherMin,
       distanceKm: Math.round(distKm * 10) / 10,
       elevationGainM: dPlus,
       plannedElevationGainM: planTarget?.elevationM || 0,
       elevationLossM: dMinus,
       avgHeartRate: hrCount > 0 ? Math.round(hrSum / hrCount) : null,
-      sessionCount: acts.length,
+      sessionCount: runningSessionsCount, // Count of prescribed plan running sessions
       plannedSessionCount: planTarget?.count || 0,
       bonusSessionCount: bonusWeekMap.get(wKey) || 0
     };
   });
 
-  // Global aggregates
-  const totalDurationMinutes = activeActivities.reduce((acc, a) => acc + a.durationMinutes, 0);
-  const totalSessionsCount = activeActivities.length;
+  // Global aggregates - strictly centered on course à pied / trail
+  const runningActivities = activeActivities.filter(a => isTrailOrRunning(a.type, a.name));
+  const indicativeStrengthActs = activeActivities.filter(a => !isTrailOrRunning(a.type, a.name) && isStrengthOrCalisthenics(a.type, a.name));
+
+  const totalDurationMinutes = runningActivities.reduce((acc, a) => acc + a.durationMinutes, 0);
+  const totalSessionsCount = runningActivities.length;
+  const indicativeStrengthMinutes = indicativeStrengthActs.reduce((acc, a) => acc + a.durationMinutes, 0);
+  const indicativeStrengthCount = indicativeStrengthActs.length;
+
   const activeWeeksCount = Math.max(1, weeklyTrend.length);
   const weeklyAverageMinutes = Math.round(totalDurationMinutes / activeWeeksCount);
 
@@ -532,7 +544,7 @@ export function computeFullStatsReport(
     }
   }
 
-  const denom = totalDurationMinutes || 1;
+  const denom = (totalRunMin + totalStrengthMin + totalCrossMin + totalOtherMin) || 1;
   const sportBreakdown = {
     running: {
       minutes: totalRunMin,
@@ -568,7 +580,9 @@ export function computeFullStatsReport(
     weeklyTrend,
     excludedBonusCount,
     excludedBonusMinutes,
-    isFilteringBonuses: !includeBonusActivities
+    isFilteringBonuses: !includeBonusActivities,
+    indicativeStrengthMinutes,
+    indicativeStrengthCount
   };
 
   // Running Deep-Dive

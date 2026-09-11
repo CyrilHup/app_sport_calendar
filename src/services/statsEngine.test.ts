@@ -66,8 +66,10 @@ describe('statsEngine unit tests', () => {
 
     const report = computeFullStatsReport(mockActivities, [], [], 'all', new Date('2026-09-07T12:00:00'));
 
-    expect(report.global.totalDurationMinutes).toBe(200); // 90 + 60 + 50
-    expect(report.global.totalSessionsCount).toBe(3);
+    expect(report.global.totalDurationMinutes).toBe(140); // Strictly running volume: 90 + 50
+    expect(report.global.totalSessionsCount).toBe(2); // 2 running sessions
+    expect(report.global.indicativeStrengthMinutes).toBe(60); // 60 min renfort indicatif
+    expect(report.global.indicativeStrengthCount).toBe(1);
     expect(report.global.sportBreakdown.running.minutes).toBe(140);
     expect(report.global.sportBreakdown.strength.minutes).toBe(60);
     expect(report.global.sportBreakdown.running.pct).toBe(70);
@@ -227,6 +229,8 @@ describe('statsEngine unit tests', () => {
         excludedBonusCount: 0,
         excludedBonusMinutes: 0,
         isFilteringBonuses: true,
+        indicativeStrengthMinutes: 0,
+        indicativeStrengthCount: 0,
         sportBreakdown: {
           running: { minutes: 240, pct: 100, count: 4 },
           strength: { minutes: 0, pct: 0, count: 0 },
@@ -290,6 +294,8 @@ describe('statsEngine unit tests', () => {
         excludedBonusCount: 0,
         excludedBonusMinutes: 0,
         isFilteringBonuses: true,
+        indicativeStrengthMinutes: 180,
+        indicativeStrengthCount: 4,
         sportBreakdown: {
           running: { minutes: 240, pct: 57, count: 4 },
           strength: { minutes: 180, pct: 43, count: 4 },
@@ -536,9 +542,17 @@ describe('statsEngine unit tests', () => {
     expect(reportWithCalis.trainingLoad.calisthenicsAcuteLoad7d).toBe(320); // 110 + 115 + 95
     expect(reportWithCalis.trainingLoad.calisthenicsSessionsCount7d).toBe(3);
 
-    // Whole-body systemic load (CTL/ATL) DOES include calisthenics
-    expect(reportWithCalis.trainingLoad.totalSystemicAcuteLoad7d).toBeGreaterThan(reportRunOnly.trainingLoad.totalSystemicAcuteLoad7d);
-    expect(reportWithCalis.trainingLoad.currentAtl).toBeGreaterThan(reportRunOnly.trainingLoad.currentAtl);
+    // Training load & CTL/ATL strictly evaluate running/trail; calisthenics is purely indicative and does NOT inflate training load
+    expect(reportWithCalis.trainingLoad.totalSystemicAcuteLoad7d).toBe(reportRunOnly.trainingLoad.totalSystemicAcuteLoad7d);
+    expect(reportWithCalis.trainingLoad.currentAtl).toBe(reportRunOnly.trainingLoad.currentAtl);
+
+    // Global volume and session counts strictly center on running workouts
+    expect(reportWithCalis.global.totalDurationMinutes).toBe(reportRunOnly.global.totalDurationMinutes);
+    expect(reportWithCalis.global.totalSessionsCount).toBe(reportRunOnly.global.totalSessionsCount);
+
+    // Indicative strength fields capture the calisthenics volume
+    expect(reportWithCalis.global.indicativeStrengthCount).toBe(3);
+    expect(reportWithCalis.global.indicativeStrengthMinutes).toBe(185); // 65 + 65 + 55
   });
 
   it('calculates accurate Banister TRIMP with real cardio telemetry vs theoretical planned workouts', () => {
@@ -745,8 +759,9 @@ describe('statsEngine unit tests', () => {
     const report = computeFullStatsReport(activities, [], [], 'week', new Date('2026-09-10T18:00:00'));
     expect(report.global.weeklyTrend.length).toBe(1);
     expect(report.global.weeklyTrend[0].weekKey).toBe('2026-09-07');
-    expect(report.global.weeklyTrend[0].totalMinutes).toBe(155); // 45 + 60 + 50
-    expect(report.global.weeklyTrend[0].sessionCount).toBe(3);
+    expect(report.global.weeklyTrend[0].totalMinutes).toBe(95); // 45 + 50 (course/trail uniquement)
+    expect(report.global.weeklyTrend[0].sessionCount).toBe(2); // 2 sorties de course
+    expect(report.global.weeklyTrend[0].strengthMinutes).toBe(60); // 60 min renfort indicatif
   });
 });
 
