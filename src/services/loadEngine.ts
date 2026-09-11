@@ -1,6 +1,7 @@
 import { formatDateKey, getGarminLocalDateKey } from './dateUtils';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
+import { getBaselineRestingHeartRate } from './readinessEngine';
 
 export interface SessionTrimpOptions {
   avgHeartRate?: number | null;
@@ -62,6 +63,7 @@ export interface TrainingLoadStats {
   chronicLoad28dWeeklyAvg: number;
   totalTrailChronicLoad28d: number;
   fitnessTrend: FitnessDayPoint[];
+  fitnessHistory?: FitnessDayPoint[];
   trailAcwrRatio: number;
   trailAcuteLoad7d: number;
   trailChronicLoad28dWeeklyAvg: number;
@@ -162,7 +164,7 @@ export function calculateSessionTrimp(
   // 3. Calcul Banister physiologique si cardiofréquencemètre réel disponible
   if (typeof options?.avgHeartRate === 'number' && options.avgHeartRate > 55 && dur > 0) {
     const fcMax = options.athleteFcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
-    const fcRest = options.athleteFcRest || 48;
+    const fcRest = options.athleteFcRest || getBaselineRestingHeartRate();
     const avgHr = options.avgHeartRate;
 
     // Fraction de réserve cardiaque (Heart Rate Reserve ratio)
@@ -432,6 +434,7 @@ export function computeTrainingLoadStats(
     chronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,
     totalTrailChronicLoad28d: trailChronicSum,
     fitnessTrend,
+    fitnessHistory: fitnessTrend,
     trailAcwrRatio,
     trailAcuteLoad7d: trailAcuteSum,
     trailChronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,

@@ -1,6 +1,7 @@
 import { CalendarEvent } from '../types/calendar';
 import { GarminWellnessData } from '../types/garmin';
 import { storageGet, storageSet, STORAGE_KEYS } from './storageService';
+import { isTrailOrRunning, isStrengthOrCalisthenics } from './activityClassifier';
 
 const WELLNESS_STORAGE_KEY = STORAGE_KEYS.WELLNESS_HISTORY;
 
@@ -92,7 +93,14 @@ export interface ReadinessEvaluation {
 export function calculateReadinessScore(
   wellness: GarminWellnessData | null,
   baselineRhr?: number,
-  todayActivities: Array<{ durationMinutes?: number; trainingLoad?: number; activityName?: string }> = [],
+  todayActivities: Array<{
+    durationMinutes?: number;
+    trainingLoad?: number;
+    activityName?: string;
+    activityType?: string;
+    garminTypeKey?: string;
+    sportType?: string;
+  }> = [],
   isTodaySessionCompleted: boolean = false
 ): ReadinessEvaluation {
   const effectiveBaselineRhr = (typeof baselineRhr === 'number' && baselineRhr > 30)
@@ -100,7 +108,32 @@ export function calculateReadinessScore(
     : getBaselineRestingHeartRate();
 
   const todayTotalMins = todayActivities.reduce((acc, a) => acc + (a.durationMinutes || 0), 0);
-  const todayTotalLoad = todayActivities.reduce((acc, a) => acc + (a.trainingLoad || Math.round((a.durationMinutes || 0) * 0.8)), 0);
+  const todayTotalLoad = todayActivities.reduce((acc, a) => {
+    if (typeof a.trainingLoad === 'number' && a.trainingLoad > 0) {
+      return acc + a.trainingLoad;
+    }
+    const dur = a.durationMinutes || 0;
+    if (dur <= 0) return acc;
+
+    const actName = (a.activityName || '').toLowerCase();
+    const actType = (a.activityType || a.garminTypeKey || '').toLowerCase();
+    const isTrail = actType.includes('trail') || actName.includes('trail') || actName.includes('côte') || actName.includes('qmt') || actName.includes('mont-royal');
+    const isRun = isTrail || isTrailOrRunning(a);
+    const isStrength = isStrengthOrCalisthenics(a);
+
+    let factor = 1.0;
+    if (isTrail) {
+      factor = 1.35;
+    } else if (isRun) {
+      factor = 1.15;
+    } else if (isStrength) {
+      factor = 0.85;
+    } else {
+      factor = 0.75;
+    }
+
+    return acc + Math.round(dur * 0.8 * factor);
+  }, 0);
 
   if (!wellness) {
     const morningScore = 80;

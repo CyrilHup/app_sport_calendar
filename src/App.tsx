@@ -20,7 +20,8 @@ import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOve
 import { DEFAULT_WEEKLY_TARGETS, computeFullStatsReport } from './services/statsEngine';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
+import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
+import { saveWellnessData, loadWellnessHistory } from './services/readinessEngine';
 import { getApiUrl } from './services/apiConfig';
 import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncService';
 import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } from './services/storageService';
@@ -108,13 +109,31 @@ export const App: React.FC = () => {
 
         const localActs = loadStoredGarminActivities();
         const cloudActs = await fetchActivitiesFromCloud(user.id);
-        if (cloudActs && cloudActs.length > 0) {
-          setGarminActivities(cloudActs);
-          saveGarminActivities(cloudActs);
-        } else if (localActs && localActs.length > 0) {
-          // Push existing local activities to the newly logged-in user cloud account!
-          await syncActivitiesToCloud(user.id, localActs);
+        const actMap = new Map<string, GarminActivity>();
+        for (const a of (cloudActs || [])) actMap.set(a.activityId, a);
+        for (const a of (localActs || [])) actMap.set(a.activityId, a);
+        const mergedActs = Array.from(actMap.values()).sort(
+          (a, b) => new Date(b.startTimeLocal).getTime() - new Date(a.startTimeLocal).getTime()
+        );
+
+        if (mergedActs.length > 0) {
+          setGarminActivities(mergedActs);
+          saveGarminActivities(mergedActs);
+          // Push any merged activities that weren't yet on cloud
+          await syncActivitiesToCloud(user.id, mergedActs);
         }
+
+        // Synchronize wellness history (resting HR, HRV, sleep)
+        try {
+          const cloudWellness = await fetchWellnessFromCloud(user.id);
+          if (cloudWellness && cloudWellness.length > 0) {
+            for (const cw of cloudWellness) saveWellnessData(cw);
+          }
+          const localWellness = Object.values(loadWellnessHistory());
+          if (localWellness.length > 0) {
+            syncWellnessToCloud(user.id, localWellness);
+          }
+        } catch {}
 
         const localPairs = loadManualPairs();
         const cloudPairs = await fetchPairsFromCloud(user.id);
@@ -241,9 +260,15 @@ export const App: React.FC = () => {
 
     setGarminActivities(loadedActivities);
 
-    // Automatically persist fresh activities to Supabase cloud if authenticated
+    // Automatically persist fresh activities and wellness to Supabase cloud if authenticated
     if (user?.id && loadedActivities.length > 0) {
       syncActivitiesToCloud(user.id, loadedActivities);
+      try {
+        const localWellness = Object.values(loadWellnessHistory());
+        if (localWellness.length > 0) {
+          syncWellnessToCloud(user.id, localWellness);
+        }
+      } catch {}
     }
 
     const compResults = compareWorkoutsWithGarmin(transformedEvents, loadedActivities, manualPairs, referenceDate);

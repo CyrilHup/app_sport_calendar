@@ -272,20 +272,28 @@ export function saveGarminSyncState(state: GarminSyncState): void {
  * Calls the backend /api/garmin-sync endpoint to authenticate with Garmin Connect
  * and retrieve actual logged activities via the Garmin API.
  */
-export async function syncWithGarminAPI(credentials?: {
-  email?: string;
-  password?: string;
-}): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string }> {
+export async function syncWithGarminAPI(
+  credentials?: {
+    email?: string;
+    password?: string;
+  },
+  options?: {
+    mode?: 'full' | 'incremental';
+  }
+): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string; syncMode?: string }> {
   try {
     const credsToUse = (credentials?.email && credentials?.password)
       ? credentials
       : (loadGarminCredentials() || await loadGarminCredentialsAsync() || credentials);
+
+    const syncMode = options?.mode || 'incremental';
 
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ...(credsToUse || {}),
+        syncMode,
         clientDate: formatDateKey(new Date())
       })
     });
@@ -313,8 +321,22 @@ export async function syncWithGarminAPI(credentials?: {
     }
 
     const rawActivities: GarminActivity[] = data.activities || [];
-    const activities: GarminActivity[] = rawActivities.map(normalizeGarminActivity);
-    saveGarminActivities(activities);
+    const freshActivities: GarminActivity[] = rawActivities.map(normalizeGarminActivity);
+
+    // Merge incoming activities with existing stored activities so past history is preserved
+    const existingActivities = loadStoredGarminActivities();
+    const activityMap = new Map<string, GarminActivity>();
+    for (const act of existingActivities) {
+      activityMap.set(act.activityId, act);
+    }
+    for (const act of freshActivities) {
+      activityMap.set(act.activityId, act);
+    }
+    const combinedActivities = Array.from(activityMap.values()).sort(
+      (a, b) => new Date(b.startTimeLocal).getTime() - new Date(a.startTimeLocal).getTime()
+    );
+
+    saveGarminActivities(combinedActivities);
 
     // If wellness data is returned, persist it immediately
     if (data.wellness) {
@@ -338,16 +360,17 @@ export async function syncWithGarminAPI(credentials?: {
       connected: true,
       lastSyncTime: new Date().toISOString(),
       accountEmail: credsToUse?.email || "Compte Garmin",
-      activitiesCount: activities.length,
+      activitiesCount: combinedActivities.length,
       isSyncing: false
     };
     saveGarminSyncState(newState);
 
     return {
       success: true,
-      activities,
-      count: activities.length,
-      athleteMaxHr: data.athleteMaxHr
+      activities: combinedActivities,
+      count: combinedActivities.length,
+      athleteMaxHr: data.athleteMaxHr,
+      syncMode: data.syncMode || syncMode
     };
   } catch (err: any) {
     return {

@@ -93,7 +93,30 @@ CREATE POLICY "Users manage own settings"
   ON public.user_settings FOR ALL 
   USING (auth.uid() = user_id);
 
--- 4. Trigger automatique pour créer un profil dès qu'un utilisateur s'inscrit
+-- 4. Table des Données Wellness (FC repos quotidienne, VRC, Sommeil)
+CREATE TABLE IF NOT EXISTS public.wellness (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  date DATE NOT NULL,
+  resting_hr INT,
+  sleep_score INT,
+  sleep_minutes INT,
+  hrv_last_night INT,
+  hrv_status TEXT,
+  readiness_score INT,
+  raw_payload JSONB,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT user_wellness_date_unique UNIQUE (user_id, date)
+);
+
+-- Activation RLS sur wellness
+ALTER TABLE public.wellness ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users manage own wellness" 
+  ON public.wellness FOR ALL 
+  USING (auth.uid() = user_id);
+
+-- 5. Trigger automatique pour créer un profil dès qu'un utilisateur s'inscrit
 CREATE OR REPLACE FUNCTION public.handle_new_user() 
 RETURNS TRIGGER AS $$
 BEGIN

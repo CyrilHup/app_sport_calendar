@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Preferences } from '@capacitor/preferences';
-import { GarminActivity } from '../types/garmin';
+import { GarminActivity, GarminWellnessData } from '../types/garmin';
 
 const getEnv = (key: string): string => {
   return (import.meta as any).env?.[key] || (globalThis as any).process?.env?.[key] || '';
@@ -268,7 +268,7 @@ export async function upsertUserProfile(profile: Partial<UserProfile> & { id: st
 }
 
 /**
- * Sync user Garmin activities to Supabase
+ * Sync user Garmin activities to Supabase (in chunks of 100 to handle large history safely)
  */
 export async function syncActivitiesToCloud(userId: string, activities: GarminActivity[]): Promise<boolean> {
   if (!isSupabaseConfigured() || !userId || activities.length === 0) return false;
@@ -290,11 +290,20 @@ export async function syncActivitiesToCloud(userId: string, activities: GarminAc
       updated_at: new Date().toISOString()
     }));
 
-    const { error } = await supabase
-      .from('activities')
-      .upsert(rows, { onConflict: 'user_id,activity_id' });
+    // Chunk upserts into batches of 100 for network efficiency and resilience
+    let allSuccessful = true;
+    for (let i = 0; i < rows.length; i += 100) {
+      const chunk = rows.slice(i, i + 100);
+      const { error } = await supabase
+        .from('activities')
+        .upsert(chunk, { onConflict: 'user_id,activity_id' });
+      if (error) {
+        console.warn('Error syncing activity chunk to Supabase:', error);
+        allSuccessful = false;
+      }
+    }
 
-    return !error;
+    return allSuccessful;
   } catch (err) {
     console.warn('Error syncing activities to Supabase:', err);
     return false;
@@ -302,7 +311,7 @@ export async function syncActivitiesToCloud(userId: string, activities: GarminAc
 }
 
 /**
- * Fetch activities from Supabase for current user
+ * Fetch activities from Supabase for current user (up to 2500 activities)
  */
 export async function fetchActivitiesFromCloud(userId: string): Promise<GarminActivity[]> {
   if (!isSupabaseConfigured() || !userId) return [];
@@ -311,12 +320,71 @@ export async function fetchActivitiesFromCloud(userId: string): Promise<GarminAc
       .from('activities')
       .select('raw_payload')
       .eq('user_id', userId)
-      .order('start_time', { ascending: false });
+      .order('start_time', { ascending: false })
+      .limit(2500);
 
     if (error || !data) return [];
     return data.map(d => d.raw_payload as GarminActivity).filter(Boolean);
   } catch (err) {
     console.warn('Error fetching activities from Supabase:', err);
+    return [];
+  }
+}
+
+/**
+ * Sync daily wellness data (resting HR, HRV, sleep) to Supabase
+ */
+export async function syncWellnessToCloud(userId: string, wellnessList: GarminWellnessData[]): Promise<boolean> {
+  if (!isSupabaseConfigured() || !userId || wellnessList.length === 0) return false;
+  try {
+    const rows = wellnessList.map(w => ({
+      user_id: userId,
+      date: w.date,
+      resting_hr: w.restingHeartRate,
+      sleep_score: w.sleep?.score,
+      sleep_minutes: w.sleep?.totalMinutes,
+      hrv_last_night: w.hrv?.lastNightAvg,
+      hrv_status: w.hrv?.status,
+      readiness_score: w.trainingReadinessScore,
+      raw_payload: w,
+      updated_at: new Date().toISOString()
+    }));
+
+    for (let i = 0; i < rows.length; i += 100) {
+      const chunk = rows.slice(i, i + 100);
+      const { error } = await supabase
+        .from('wellness')
+        .upsert(chunk, { onConflict: 'user_id,date' });
+      if (error) {
+        // Table might not exist yet if user hasn't run the updated SQL schema
+        console.warn('Note: wellness table upsert in Supabase:', error.message);
+        return false;
+      }
+    }
+    return true;
+  } catch (err) {
+    console.warn('Could not sync wellness to Supabase (run supabase_schema.sql if needed):', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch daily wellness history from Supabase for current user
+ */
+export async function fetchWellnessFromCloud(userId: string): Promise<GarminWellnessData[]> {
+  if (!isSupabaseConfigured() || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('wellness')
+      .select('raw_payload')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(1000);
+
+    if (error || !data) return [];
+    return data.map(d => d.raw_payload as GarminWellnessData).filter(Boolean);
+  } catch (err) {
+    console.warn('Could not fetch wellness from Supabase:', err);
     return [];
   }
 }

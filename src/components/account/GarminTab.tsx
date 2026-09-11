@@ -91,16 +91,21 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     });
   }, []);
 
-  const handleGarminAPISync = async (e?: React.FormEvent) => {
+  const handleGarminAPISync = async (e?: React.FormEvent, mode: 'incremental' | 'full' = 'incremental') => {
     if (e) e.preventDefault();
     setIsGarminProcessing(true);
-    setGarminSyncMsg({ text: 'Connexion à Garmin Connect et extraction des activités...', isError: false });
+    setGarminSyncMsg({
+      text: mode === 'full'
+        ? 'Connexion à Garmin Connect et récupération de tout votre historique complet...'
+        : 'Connexion à Garmin Connect et synchronisation incrémentielle rapide...',
+      isError: false
+    });
 
     const creds = (garminEmail && garminPassword)
       ? { email: garminEmail, password: garminPassword }
       : (await loadGarminCredentialsAsync() || undefined);
 
-    const result = await syncWithGarminAPI(creds);
+    const result = await syncWithGarminAPI(creds, { mode });
 
     if (result.success) {
       if (garminEmail && garminPassword) {
@@ -138,7 +143,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       }
 
       setGarminSyncMsg({
-        text: `✅ ${result.count} activité(s) synchronisée(s)${pushFeedback} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
+        text: `✅ ${result.count} activité(s) dans votre historique${mode === 'full' ? ' complet (archivées sur Supabase)' : ''}${pushFeedback} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
         isError: false
       });
 
@@ -361,26 +366,53 @@ export const GarminTab: React.FC<GarminTabProps> = ({
           </form>
         )}
 
-        {/* Sync Now Action */}
-        <button
-          type="button"
-          onClick={() => handleGarminAPISync()}
-          className="btn-primary"
-          disabled={isGarminProcessing}
-          style={{
-            justifyContent: 'center',
-            padding: '10px 14px',
-            fontSize: '0.82rem',
-            background: '#0077c8',
-            borderColor: '#0077c8',
-            fontWeight: 700
-          }}
-        >
-          <RefreshCw size={14} className={isGarminProcessing ? 'spin-animation' : ''} />
-          <span>
-            {isGarminProcessing ? 'Synchronisation en cours...' : 'Synchroniser les activités et séances'}
-          </span>
-        </button>
+        {/* Sync Actions: Incremental (Fast) & Full History */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={() => handleGarminAPISync(undefined, 'incremental')}
+            className="btn-primary"
+            disabled={isGarminProcessing}
+            style={{
+              justifyContent: 'center',
+              padding: '10px 14px',
+              fontSize: '0.82rem',
+              background: '#0077c8',
+              borderColor: '#0077c8',
+              fontWeight: 700
+            }}
+            title="Synchronise uniquement les dernières séances récentes et les éventuelles modifications"
+          >
+            <RefreshCw size={14} className={isGarminProcessing ? 'spin-animation' : ''} />
+            <span>
+              {isGarminProcessing ? 'Synchronisation en cours...' : '⚡ Synchronisation Rapide (Incrémentielle)'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleGarminAPISync(undefined, 'full')}
+            className="btn-secondary"
+            disabled={isGarminProcessing}
+            style={{
+              justifyContent: 'center',
+              padding: '8px 12px',
+              fontSize: '0.76rem',
+              borderColor: 'rgba(56, 189, 248, 0.35)',
+              color: '#38bdf8',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+            title="Télécharge l'intégralité de vos activités Garmin depuis l'achat de la montre et les sauvegarde sur votre cloud Supabase"
+          >
+            <Activity size={14} />
+            <span>
+              🌐 Synchronisation Complète (Tout l'historique de la montre)
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Synchronisation Automatique de la Semaine (Toggle Row) */}

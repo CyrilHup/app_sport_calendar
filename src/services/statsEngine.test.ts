@@ -642,6 +642,56 @@ describe('statsEngine unit tests', () => {
     expect(stats1.trailAcwrRatio).toBe(stats2.trailAcwrRatio);
     expect(stats1.trailAcuteLoad7d).toBe(40); // Only the Sept 7 run (40 TRIMP)
   });
+
+  it('computes dynamic athlete base pace and filters out steep hill climbs', async () => {
+    const { computeDynamicAthleteBasePace } = await import('./garminService');
+
+    const flatRuns: GarminActivity[] = [
+      {
+        activityId: 'run-flat-1',
+        activityName: 'Footing plat',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-02T10:00:00',
+        durationMinutes: 30,
+        distanceKm: 5.0,
+        elevationGainM: 20, // 4 m/km < 35 m/km threshold
+        avgPaceMinKm: '6:00',
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'run-steep-hill',
+        activityName: 'Répétitions de côtes raides',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-03T10:00:00',
+        durationMinutes: 45,
+        distanceKm: 4.0,
+        elevationGainM: 320, // 80 m/km > 35 m/km -> excluded from flat base pace
+        avgPaceMinKm: '8:30',
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const pace = computeDynamicAthleteBasePace(flatRuns);
+    expect(pace).toBe('6:00');
+  });
+
+  it('computes resting heart rate baseline from wellness records', async () => {
+    const { getBaselineRestingHeartRate, saveWellnessData } = await import('./readinessEngine');
+
+    saveWellnessData({
+      date: '2026-09-01',
+      restingHeartRate: 46,
+      syncedAt: new Date().toISOString()
+    });
+    saveWellnessData({
+      date: '2026-09-02',
+      restingHeartRate: 50,
+      syncedAt: new Date().toISOString()
+    });
+
+    const baseline = getBaselineRestingHeartRate();
+    expect(baseline).toBe(48); // Math.round((46 + 50) / 2)
+  });
 });
 
 

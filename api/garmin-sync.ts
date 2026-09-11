@@ -64,7 +64,17 @@ function classifyGarminActivityType(rawTypeKey?: string, activityName?: string):
     return 'CLIMBING';
   }
 
-  if (key.includes('trail')) {
+  if (
+    key.includes('trail') ||
+    name.includes('trail') ||
+    name.includes('côte') ||
+    name.includes('cotes') ||
+    name.includes('mont-royal') ||
+    name.includes('mont royal') ||
+    name.includes('qmt') ||
+    name.includes('rando-course') ||
+    name.includes('d+')
+  ) {
     return 'TRAIL_RUNNING';
   }
 
@@ -442,9 +452,21 @@ export default async function handler(req: any, res: any) {
     // WELLNESS DATA EXTRACTION (Sleep, HRV, Resting HR, Readiness)
     // ----------------------------------------------------
     let wellness: any = null;
+    const getLocalFallbackDate = () => {
+      try {
+        return new Intl.DateTimeFormat('fr-CA', {
+          timeZone: 'America/Montreal',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(new Date());
+      } catch {
+        return new Date().toISOString().slice(0, 10);
+      }
+    };
     const todayStr = (req.body?.clientDate && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clientDate))
       ? req.body.clientDate
-      : new Date().toISOString().slice(0, 10);
+      : getLocalFallbackDate();
     const today = new Date(todayStr + 'T12:00:00');
 
     try {
@@ -524,9 +546,36 @@ export default async function handler(req: any, res: any) {
     }
 
     // ----------------------------------------------------
-    // ACTION: SYNC ACTIVITIES
+    // ACTION: SYNC ACTIVITIES (Full History or Incremental)
     // ----------------------------------------------------
-    const rawActivities = await gc.getActivities(0, 100);
+    const syncMode = body.syncMode || body.mode || 'incremental';
+    let rawActivities: any[] = [];
+
+    if (syncMode === 'full') {
+      const pageSize = 100;
+      const maxActivities = 1500;
+      let offset = 0;
+      while (offset < maxActivities) {
+        try {
+          const page: any[] = await gc.getActivities(offset, pageSize);
+          if (!Array.isArray(page) || page.length === 0) {
+            break;
+          }
+          rawActivities.push(...page);
+          if (page.length < pageSize) {
+            break;
+          }
+          offset += page.length;
+        } catch (pageErr) {
+          console.warn(`[Garmin Full Sync] Error fetching activities at offset ${offset}:`, pageErr);
+          break;
+        }
+      }
+    } else {
+      // Incremental mode: fetch recent activities (up to 50 or requested limit)
+      const limit = Math.min(100, Math.max(20, body.limit || 50));
+      rawActivities = (await gc.getActivities(0, limit)) || [];
+    }
 
     const activities = (rawActivities || []).map((a: any) => {
       const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');
@@ -626,7 +675,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    res.status(200).json({ success: true, count: activities.length, activities, wellness, athleteMaxHr });
+    res.status(200).json({ success: true, count: activities.length, activities, wellness, athleteMaxHr, syncMode });
   } catch (err: any) {
     res.status(500).json({
       success: false,

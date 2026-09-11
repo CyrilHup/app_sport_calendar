@@ -27,7 +27,7 @@ export const GLOBAL_APP_CONFIG = {
         }
       }
     } catch {}
-    return parseInt(getEnvVal('VITE_ATHLETE_FC_MAX', '204'), 10) || 204;
+    return parseInt(getEnvVal('VITE_ATHLETE_FC_MAX', '203'), 10) || 203;
   })(),
   TARGET_HOME_RETURN_HOUR: 13,
   TARGET_HOME_RETURN_MIN: 0,

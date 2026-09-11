@@ -266,10 +266,8 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                const currD = mainEv.startDate.slice(0, 10);
-                const nextD = new Date(currD + 'T12:00:00');
-                nextD.setDate(nextD.getDate() + 1);
-                const targetD = nextD.toISOString().slice(0, 10);
+                const currD = toLocalDateKey(mainEv.startDate);
+                const targetD = formatDateKey(addDays(parseLocalDate(currD), 1));
                 const origD = mainEv.metadata?.originalDate || currD;
                 onPostponeWorkout(mainEv.id, origD, targetD);
               }}

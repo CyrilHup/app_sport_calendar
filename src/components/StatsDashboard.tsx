@@ -9,6 +9,11 @@ import {
   TimeRangeScope
 } from '../services/statsEngine';
 import { StatsMetricModal, StatsMetricTopic } from './StatsMetricModal';
+import { StatsEvolutionModal, EvolutionMetricType } from './StatsEvolutionModal';
+import { useAuth } from '../contexts/AuthContext';
+import { getBaselineRestingHeartRate, getLatestWellnessData, loadWellnessHistory } from '../services/readinessEngine';
+import { computeDynamicAthleteBasePace } from '../services/garminService';
+import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import {
   Activity,
   Award,
@@ -53,7 +58,16 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const [hoveredFitnessDay, setHoveredFitnessDay] = useState<FitnessDayPoint | null>(null);
   const [infoTopic, setInfoTopic] = useState<StatsMetricTopic>(null);
+  const [evolutionMetric, setEvolutionMetric] = useState<EvolutionMetricType | null>(null);
   const weeklyChartCardRef = useRef<HTMLDivElement>(null);
+
+  const { profile } = useAuth();
+  const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+  const latestWellness = getLatestWellnessData();
+  const baselineRhr = getBaselineRestingHeartRate();
+  const restingHrValue = latestWellness?.restingHeartRate || baselineRhr;
+  const dynamicBasePace = computeDynamicAthleteBasePace(garminActivities);
+  const wellnessHistory = loadWellnessHistory();
 
   // Computes report for selected timeline scope.
   // NOTE: Physiological Banister CTL/ATL/TSB & ACWR always evaluate on full 90-day history.
@@ -205,7 +219,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         }}
       >
         {/* CARTE 1: Volume Global & Répartition des Disciplines */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--primary)' }}>
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('volume')}
+          style={{ borderLeft: '3px solid var(--primary)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+          title="Cliquer pour voir la courbe d'évolution du volume d'entraînement"
+        >
           <div className="kpi-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Volume d'Entraînement</span>
@@ -213,8 +232,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                 {scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique')}
               </span>
             </div>
-            <div className="kpi-icon" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)' }}>
-              <Clock size={16} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)' }}>
+                <Clock size={16} />
+              </div>
             </div>
           </div>
 
@@ -276,7 +300,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         </div>
 
         {/* CARTE 2: Course à Pied & Spécificité Montagne */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-cyan)' }}>
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('running')}
+          style={{ borderLeft: '3px solid var(--accent-cyan)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+          title="Cliquer pour voir la courbe d'évolution course à pied et sentiers"
+        >
           <div className="kpi-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Course à Pied & Sentiers</span>
@@ -284,8 +313,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                 {scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique')}
               </span>
             </div>
-            <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
-              <Footprints size={16} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
+                <Footprints size={16} />
+              </div>
             </div>
           </div>
 
@@ -337,12 +371,17 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         </div>
 
         {/* CARTE 3: Forme Physiologique, Charge & Santé (Banister + Cardio) */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-purple)' }}>
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('banister')}
+          style={{ borderLeft: '3px solid var(--accent-purple)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+          title="Cliquer pour voir la courbe d'évolution CTL / ATL / TSB"
+        >
           <div className="kpi-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Forme & Charge (Banister)</span>
               <button
-                onClick={() => setInfoTopic('banister')}
+                onClick={(e) => { e.stopPropagation(); setInfoTopic('banister'); }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -356,12 +395,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               >
                 <HelpCircle size={14} />
               </button>
-              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)', fontWeight: 700 }} title="Calculé sur l'historique complet (90 jours) pour préserver la décroissance CTL et la tolérance chronique ACWR">
-                90j continu
-              </span>
             </div>
-            <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
-              <Gauge size={16} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--accent-purple)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
+                <Gauge size={16} />
+              </div>
             </div>
           </div>
 
@@ -374,7 +415,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               TSB : <strong>{trainingLoad.currentTsb > 0 ? `+${trainingLoad.currentTsb}` : trainingLoad.currentTsb}</strong> ({trainingLoad.formLabel})
             </span>
             <span
-              onClick={() => setInfoTopic('acwr')}
+              onClick={(e) => { e.stopPropagation(); setInfoTopic('acwr'); }}
               style={{
                 fontSize: '0.72rem',
                 padding: '2px 7px',
@@ -404,8 +445,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: 'var(--accent-red)' }}>
-                FC moy. {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm
+              <span
+                onClick={(e) => { e.stopPropagation(); setEvolutionMetric('avg_hr'); }}
+                style={{ color: 'var(--accent-red)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                title="Cliquer pour voir la courbe de FC moyenne"
+              >
+                FC moy. {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm 📈
               </span>
               <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
                 {running.intensityDistribution.zone2Pct}% en Zone 2
@@ -420,12 +465,17 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         </div>
 
         {/* CARTE 4: Profil Cardiaque & Efficacité Aérobie (AEI) */}
-        <div className="stats-kpi-card" style={{ borderLeft: '3px solid var(--accent-green)' }}>
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('aei')}
+          style={{ borderLeft: '3px solid var(--accent-green)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
+          title="Cliquer pour voir la courbe d'efficacité aérobie AEI"
+        >
           <div className="kpi-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Efficacité Aérobie (AEI)</span>
               <button
-                onClick={() => setInfoTopic('aei')}
+                onClick={(e) => { e.stopPropagation(); setInfoTopic('aei'); }}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -440,8 +490,13 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                 <HelpCircle size={14} />
               </button>
             </div>
-            <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)' }}>
-              <Heart size={16} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--accent-green)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)' }}>
+                <Heart size={16} />
+              </div>
             </div>
           </div>
 
@@ -450,8 +505,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           </div>
 
           <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              FC moy : {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm
+            <span
+              onClick={(e) => { e.stopPropagation(); setEvolutionMetric('avg_hr'); }}
+              style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
+              title="Cliquer pour voir la courbe de FC moyenne"
+            >
+              FC moy : {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm 📈
             </span>
             <span
               style={{
@@ -488,6 +547,195 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <span style={{ color: 'var(--text-muted)' }}>
               Cible Z2 &lt; 155 bpm
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2b. Repères Physiologiques Athlétiques (Informations informatives en lecture seule) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: '14px'
+        }}
+      >
+        {/* CARTE PHYSIO 1: FC MAX */}
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('fc_max')}
+          style={{
+            borderLeft: '3px solid var(--accent-amber)',
+            cursor: 'pointer',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.04), rgba(17, 24, 39, 0.95))'
+          }}
+          title="Cliquer pour voir l'historique des pics de fréquence cardiaque maximale"
+        >
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">FC Max Athlète</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-amber)', fontWeight: 700 }}>
+                Info calibrée
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--accent-amber)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-amber)' }}>
+                <Zap size={16} />
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-main-value" style={{ color: 'var(--accent-amber)' }}>
+            {athleteFcMax} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>bpm</span>
+          </div>
+
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Plafond d'effort • Borne Z5
+            </span>
+            <span style={{ fontSize: '0.74rem', color: 'var(--accent-green)', fontWeight: 600 }}>
+              Cible Z2 &lt; {Math.round(athleteFcMax * 0.76)} bpm
+            </span>
+          </div>
+
+          <div
+            style={{
+              marginTop: '8px',
+              background: 'rgba(255,255,255,0.03)',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <span>Donnée informative non modifiable</span>
+            <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>📈 Voir les pics</span>
+          </div>
+        </div>
+
+        {/* CARTE PHYSIO 2: FC REPOS */}
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('resting_hr')}
+          style={{
+            borderLeft: '3px solid var(--accent-purple)',
+            cursor: 'pointer',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.04), rgba(17, 24, 39, 0.95))'
+          }}
+          title="Cliquer pour voir l'évolution de la FC au repos jour par jour"
+        >
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">FC Repos</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)', fontWeight: 700 }}>
+                Garmin Wellness
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--accent-purple)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
+                <Heart size={16} />
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-main-value" style={{ color: 'var(--accent-purple)' }}>
+            {restingHrValue} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>bpm</span>
+          </div>
+
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Moyenne basale : {baselineRhr} bpm
+            </span>
+            <span style={{ fontSize: '0.74rem', color: latestWellness?.hrv?.status === 'BALANCED' ? 'var(--accent-green)' : 'var(--text-muted)', fontWeight: 600 }}>
+              {latestWellness?.hrv?.lastNightAvg ? `VRC ${latestWellness.hrv.lastNightAvg} ms` : 'Fraîcheur autonome'}
+            </span>
+          </div>
+
+          <div
+            style={{
+              marginTop: '8px',
+              background: 'rgba(255,255,255,0.03)',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <span>Donnée informative au réveil</span>
+            <span style={{ color: 'var(--accent-purple)', fontWeight: 600 }}>📈 Voir l'historique</span>
+          </div>
+        </div>
+
+        {/* CARTE PHYSIO 3: ALLURE ENDURANCE */}
+        <div
+          className="stats-kpi-card"
+          onClick={() => setEvolutionMetric('endurance_pace')}
+          style={{
+            borderLeft: '3px solid var(--accent-green)',
+            cursor: 'pointer',
+            transition: 'transform 0.15s, box-shadow 0.15s',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04), rgba(17, 24, 39, 0.95))'
+          }}
+          title="Cliquer pour voir l'évolution de l'allure en endurance fondamentale (Zone 2)"
+        >
+          <div className="kpi-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="kpi-title">Allure Endurance Z2</span>
+              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)', fontWeight: 700 }}>
+                Aérobie Fondamentale
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.68rem', color: 'var(--accent-green)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                <TrendingUp size={12} /> Évolution
+              </span>
+              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)' }}>
+                <Footprints size={16} />
+              </div>
+            </div>
+          </div>
+
+          <div className="kpi-main-value" style={{ color: 'var(--accent-green)' }}>
+            {dynamicBasePace} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>/km</span>
+          </div>
+
+          <div className="kpi-sub-row">
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Aisance respiratoire stricte
+            </span>
+            <span style={{ fontSize: '0.74rem', color: 'var(--accent-green)', fontWeight: 600 }}>
+              Filière lipidique QMT
+            </span>
+          </div>
+
+          <div
+            style={{
+              marginTop: '8px',
+              background: 'rgba(255,255,255,0.03)',
+              padding: '6px 8px',
+              borderRadius: '4px',
+              fontSize: '0.72rem',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}
+          >
+            <span>Donnée informative calculée</span>
+            <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>📈 Voir la progression</span>
           </div>
         </div>
       </div>
@@ -1284,6 +1532,19 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         trainingLoad={trainingLoad}
         onClose={() => setInfoTopic(null)}
       />
+
+      {/* Modale d'évolution interactive au clic sur n'importe quelle carte */}
+      {evolutionMetric && (
+        <StatsEvolutionModal
+          metric={evolutionMetric}
+          onClose={() => setEvolutionMetric(null)}
+          garminActivities={garminActivities}
+          wellnessHistory={wellnessHistory}
+          trainingLoad={trainingLoad}
+          athleteFcMax={athleteFcMax}
+          baselineRestingHr={baselineRhr}
+        />
+      )}
     </div>
   );
 };

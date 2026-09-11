@@ -3,6 +3,7 @@ import { ActivityComparison, ComparisonStatus, GarminActivity } from '../types/g
 import { classifyGarminActivityType, inferOtherProfileCategory, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay } from './dateUtils';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
+import { calculateSessionTrimp } from './loadEngine';
 
 export { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay };
 
@@ -444,6 +445,7 @@ export function computeWeeklyTelemetry(
   let actualElevationLossM = 0;
   let totalGarminTrainingLoad = 0;
   let hasNativeGarminLoadCount = 0;
+  let totalTrimpLoad = 0;
   let hrSum = 0;
   let hrCount = 0;
   let scoreSum = 0;
@@ -472,17 +474,34 @@ export function computeWeeklyTelemetry(
     }
 
     if (c.actualActivity) {
-      actualDurationMin += c.actualActivity.durationMinutes;
-      actualElevationM += c.actualActivity.elevationGainM || 0;
-      actualElevationLossM += c.actualActivity.elevationLossM || 0;
-      if (c.actualActivity.trainingLoad) {
-        totalGarminTrainingLoad += c.actualActivity.trainingLoad;
+      const act = c.actualActivity;
+      actualDurationMin += act.durationMinutes;
+      actualElevationM += act.elevationGainM || 0;
+      actualElevationLossM += act.elevationLossM || 0;
+      if (act.trainingLoad) {
+        totalGarminTrainingLoad += act.trainingLoad;
         hasNativeGarminLoadCount++;
       }
-      if (c.actualActivity.avgHeartRate) {
-        hrSum += c.actualActivity.avgHeartRate;
+      if (act.avgHeartRate) {
+        hrSum += act.avgHeartRate;
         hrCount++;
       }
+
+      // Calcul unifié de la charge d'entraînement (Firstbeat direct ou Banister TRIMP)
+      const trimpRes = calculateSessionTrimp(
+        act.durationMinutes,
+        act.activityType,
+        act.activityName,
+        act.trainingLoad,
+        {
+          avgHeartRate: act.avgHeartRate,
+          maxHeartRate: act.maxHeartRate,
+          elevationGainM: act.elevationGainM,
+          distanceKm: act.distanceKm,
+          athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX
+        }
+      );
+      totalTrimpLoad += trimpRes.trimp;
     }
 
     if (c.status === 'COMPLIANT') compliantCount++;
@@ -498,15 +517,9 @@ export function computeWeeklyTelemetry(
   const overallComplianceScore = scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 100;
   const avgHeartRate = hrCount > 0 ? Math.round(hrSum / hrCount) : 0;
 
-  // Calcul du score de charge :
-  // 1. Si des séances contiennent la vraie charge Firstbeat EPOC de Garmin, on l'utilise directement !
-  // 2. Sinon, calcul synthétique basé sur le cardio si présent, ou sur le volume d'effort.
+  // Charge hebdomadaire unifiée avec le reste de l'application
   const hasNativeGarminLoad = hasNativeGarminLoadCount > 0;
-  const estimatedTss = hasNativeGarminLoad
-    ? Math.round(totalGarminTrainingLoad)
-    : (avgHeartRate > 0
-        ? Math.round((actualDurationMin / 60) * ((avgHeartRate / GLOBAL_APP_CONFIG.ATHLETE_FC_MAX) ** 2) * 100)
-        : Math.round((actualDurationMin / 60) * 55));
+  const estimatedTss = Math.round(totalTrimpLoad);
 
   return {
     plannedDurationMin,
