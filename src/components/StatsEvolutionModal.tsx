@@ -55,6 +55,11 @@ interface DataPoint {
   secondaryValue?: number; // e.g. D+ for running
 }
 
+interface PointCoord extends DataPoint {
+  x: number;
+  y: number;
+}
+
 function parsePaceSeconds(paceStr?: string): number {
   if (!paceStr) return 0;
   const parts = paceStr.split(':').map(p => parseInt(p.trim(), 10));
@@ -92,7 +97,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
   initialScope = 'plan'
 }) => {
   const [scope, setScope] = useState<'week' | 'plan' | '4w' | 'all'>(initialScope);
-  const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
+  const [hoveredPoint, setHoveredPoint] = useState<PointCoord | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   if (!metric) return null;
