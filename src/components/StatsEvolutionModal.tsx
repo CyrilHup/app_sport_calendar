@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Activity,
   ArrowDownRight,
@@ -93,6 +93,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
 }) => {
   const [scope, setScope] = useState<'week' | 'plan' | '4w' | 'all'>(initialScope);
   const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   if (!metric) return null;
 
@@ -545,6 +546,35 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
     return padTop + chartHeight - ((stats.avg - yMin) / (yMax - yMin)) * chartHeight;
   }, [stats, yMin, yMax, padTop, chartHeight]);
 
+  // Détection magnétique fluide du point le plus proche au survol (scrubbing horizontal)
+  const handleSvgMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current || pointCoords.length === 0) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    if (rect.width === 0) return;
+
+    // Conversion clientX -> coordonnées du système viewBox SVG
+    const scaleX = svgWidth / rect.width;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+
+    // Détection du point le plus proche selon l'axe horizontal
+    let closestPt = pointCoords[0];
+    let minDist = Math.abs(pointCoords[0].x - mouseX);
+
+    for (let i = 1; i < pointCoords.length; i++) {
+      const dist = Math.abs(pointCoords[i].x - mouseX);
+      if (dist < minDist) {
+        minDist = dist;
+        closestPt = pointCoords[i];
+      }
+    }
+
+    setHoveredPoint(closestPt);
+  };
+
+  const handleSvgMouseLeave = () => {
+    setHoveredPoint(null);
+  };
+
   return (
     <div
       style={{
@@ -758,8 +788,11 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
             ) : (
               <>
                 <svg
+                  ref={svgRef}
                   viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                  style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible' }}
+                  style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+                  onMouseMove={handleSvgMouseMove}
+                  onMouseLeave={handleSvgMouseLeave}
                 >
                   <defs>
                     <linearGradient id="curveGradient" x1="0" y1="0" x2="0" y2="1">
@@ -826,6 +859,20 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                     </g>
                   )}
 
+                  {/* Ligne verticale de repère au survol */}
+                  {hoveredPoint && (
+                    <line
+                      x1={hoveredPoint.x}
+                      y1={padTop}
+                      x2={hoveredPoint.x}
+                      y2={padTop + chartHeight}
+                      stroke="rgba(255, 87, 34, 0.45)"
+                      strokeDasharray="3 3"
+                      strokeWidth="1.5"
+                      pointerEvents="none"
+                    />
+                  )}
+
                   {/* Remplissage dégradé sous la courbe */}
                   {areaPathData && <path d={areaPathData} fill="url(#curveGradient)" />}
 
@@ -841,21 +888,40 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                     />
                   )}
 
-                  {/* Points interactifs */}
+                  {/* Points interactifs avec zone d'accroche généreuse */}
                   {pointCoords.map(pt => {
                     const isHovered = hoveredPoint?.id === pt.id;
                     return (
                       <g key={pt.id}>
+                        {/* Halo lumineux actif */}
+                        {isHovered && (
+                          <circle
+                            cx={pt.x}
+                            cy={pt.y}
+                            r={11}
+                            fill="rgba(255, 87, 34, 0.25)"
+                            pointerEvents="none"
+                          />
+                        )}
+                        {/* Point visible */}
                         <circle
                           cx={pt.x}
                           cy={pt.y}
                           r={isHovered ? 6 : 3.5}
                           fill={isHovered ? '#ffffff' : 'var(--primary)'}
-                          stroke="#0c1220"
+                          stroke={isHovered ? 'var(--primary)' : '#0c1220'}
                           strokeWidth={isHovered ? 2.5 : 1.5}
-                          style={{ cursor: 'pointer', transition: 'r 0.15s' }}
+                          pointerEvents="none"
+                          style={{ transition: 'all 0.12s ease' }}
+                        />
+                        {/* Zone d'accroche transparente élargie (48px de diamètre) */}
+                        <circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={24}
+                          fill="transparent"
+                          style={{ cursor: 'pointer' }}
                           onMouseEnter={() => setHoveredPoint(pt)}
-                          onMouseLeave={() => setHoveredPoint(null)}
                         />
                       </g>
                     );
