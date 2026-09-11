@@ -360,6 +360,25 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           <div>
                             <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span>{comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Activité Bonus'}</span>
+                              {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
+                                <span
+                                  style={{
+                                    fontSize: '0.65rem',
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    background: 'rgba(245, 158, 11, 0.15)',
+                                    color: '#fbbf24',
+                                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                                    fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3
+                                  }}
+                                  title={`Consolidation de ${comp.subActivities.length} activités du même jour`}
+                                >
+                                  ⚡ {comp.subActivities.length} {isTrailOrRunning(comp.actualActivity) ? 'sorties combinées' : 'séances combinées'}
+                                </span>
+                              )}
                               {comp.isPostponedCatchup && comp.scheduledDate && (
                                 <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
                                   🔄 Remplacée / Reportée du {new Date(comp.scheduledDate + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
@@ -686,6 +705,57 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                               )}
                             </div>
 
+                            {/* Décomposition des activités combinées */}
+                            {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
+                              <div style={{
+                                background: 'rgba(245, 158, 11, 0.06)',
+                                border: '1px solid rgba(245, 158, 11, 0.25)',
+                                borderRadius: 6,
+                                padding: '8px 12px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 6
+                              }}>
+                                <div style={{ fontSize: '0.74rem', fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <Zap size={13} />
+                                  <span>Décomposition des {comp.subActivities.length} activités consolidées :</span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {comp.subActivities.map((sub, sIdx) => {
+                                    const timePart = sub.startTimeLocal?.split('T')[1]?.slice(0, 5) || '';
+                                    return (
+                                      <div
+                                        key={sub.activityId || sIdx}
+                                        style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          background: 'rgba(0, 0, 0, 0.25)',
+                                          padding: '5px 10px',
+                                          borderRadius: 4,
+                                          fontSize: '0.74rem'
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>#{sIdx + 1}</span>
+                                          {timePart && <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>{timePart}</span>}
+                                          <span style={{ color: '#fff', fontWeight: 600 }}>{sub.activityName}</span>
+                                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>({sub.activityType})</span>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)' }}>
+                                          <span><strong>{sub.durationMinutes}m</strong></span>
+                                          {sub.distanceKm ? <span>{sub.distanceKm.toFixed(1)} km</span> : null}
+                                          {sub.avgPaceMinKm ? <span style={{ color: 'var(--accent-blue)' }}>⚡ {sub.avgPaceMinKm}</span> : null}
+                                          {sub.elevationGainM ? <span>+{sub.elevationGainM}m</span> : null}
+                                          {sub.avgHeartRate ? <span><Heart size={10} style={{ display: 'inline', marginRight: 2 }} />{sub.avgHeartRate} bpm</span> : null}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
                             <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                               Détail & Diagnostics Coach :
                             </div>
@@ -819,6 +889,25 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                       <div style={{ fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         <span>{formatGarminActivityName(comp.actualActivity?.activityName, comp.plannedEvent?.title, comp.actualActivity?.activityType)}</span>
                         {getActivityTypeBadge(comp.actualActivity?.activityType)}
+                        {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
+                          <span
+                            style={{
+                              fontSize: '0.65rem',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: 'rgba(245, 158, 11, 0.15)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(245, 158, 11, 0.35)',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3
+                            }}
+                            title={`Consolidation de ${comp.subActivities.length} activités du même jour`}
+                          >
+                            ⚡ {comp.subActivities.length} {isTrailOrRunning(comp.actualActivity) ? 'sorties combinées' : 'séances combinées'}
+                          </span>
+                        )}
                         {comp.isPostponedCatchup && comp.scheduledDate && (
                           <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
                             🔄 Remplacée / Reportée du {new Date(comp.scheduledDate + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
@@ -918,6 +1007,51 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 ) : (
                   <div style={{ fontSize: '0.75rem', color: comp.status === 'MISSED' ? '#f87171' : 'var(--accent-blue)', fontStyle: 'italic' }}>
                     {comp.status === 'MISSED' ? 'Séance prescrite mais non enregistrée sur la montre.' : 'Prévue aujourd\'hui — synchroniser la montre après la séance.'}
+                  </div>
+                )}
+
+                {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.06)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    borderRadius: 6,
+                    padding: '8px 10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4
+                  }}>
+                    <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Zap size={12} /> Décomposition ({comp.subActivities.length} activités combinées) :
+                    </div>
+                    {comp.subActivities.map((sub, sIdx) => {
+                      const timePart = sub.startTimeLocal?.split('T')[1]?.slice(0, 5) || '';
+                      return (
+                        <div
+                          key={sub.activityId || sIdx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: 'rgba(0, 0, 0, 0.2)',
+                            padding: '4px 8px',
+                            borderRadius: 4,
+                            fontSize: '0.72rem'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ color: 'var(--text-muted)' }}>#{sIdx + 1}</span>
+                            {timePart && <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>{timePart}</span>}
+                            <span style={{ color: '#fff', fontWeight: 600 }}>{sub.activityName}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
+                            <span><strong>{sub.durationMinutes}m</strong></span>
+                            {sub.distanceKm ? <span>{sub.distanceKm.toFixed(1)} km</span> : null}
+                            {sub.elevationGainM ? <span>+{sub.elevationGainM}m</span> : null}
+                            {sub.avgHeartRate ? <span><Heart size={9} style={{ display: 'inline', marginRight: 2 }} />{sub.avgHeartRate} bpm</span> : null}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 

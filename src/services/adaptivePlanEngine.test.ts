@@ -20,7 +20,7 @@ import {
   isAutoAdaptEnabled,
   setAutoAdaptEnabled
 } from './adaptivePlanEngine';
-import { buildWorkoutPayloadFromEvent } from './garminService';
+import { buildWorkoutPayloadFromEvent, setGarminWorkoutTargetMode } from './garminService';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
@@ -299,6 +299,7 @@ describe('Adaptive Plan Engine', () => {
       }
     };
 
+    setGarminWorkoutTargetMode('HR_ONLY');
     const payload = buildWorkoutPayloadFromEvent(trailLongEvent, '2026-09-12', 'FORERUNNER_55');
 
     expect(payload.sportType).toBe('RUNNING');

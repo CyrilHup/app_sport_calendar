@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { GarminActivity, GarminSyncState } from '../types/garmin';
+import { GarminActivity, GarminSyncState, GarminWorkoutTargetMode } from '../types/garmin';
 import { CalendarEvent } from '../types/calendar';
 import {
   clearGarminCredentials,
@@ -9,7 +9,13 @@ import {
   parseGPXString,
   saveGarminCredentials,
   syncWithGarminAPI,
-  cleanDuplicateGarminWorkouts
+  cleanDuplicateGarminWorkouts,
+  getGarminWorkoutTargetMode,
+  setGarminWorkoutTargetMode,
+  getAthleteBasePace,
+  setAthleteBasePace,
+  formatSecondsToPace,
+  parsePaceToSeconds
 } from '../services/garminService';
 import {
   isGarminAutoSyncEnabled,
@@ -29,6 +35,7 @@ import {
   Download,
   ExternalLink,
   FileUp,
+  Gauge,
   Heart,
   Lock,
   LogOut,
@@ -142,6 +149,8 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   const [isGarminProcessing, setIsGarminProcessing] = useState(false);
   const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.email && !cloudGarminEmail);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => isGarminAutoSyncEnabled());
+  const [targetMode, setTargetMode] = useState<GarminWorkoutTargetMode>(() => getGarminWorkoutTargetMode());
+  const [basePace, setBasePace] = useState<string>(() => getAthleteBasePace());
   const [isCleaningDuplicates, setIsCleaningDuplicates] = useState<boolean>(false);
   const [cleanDuplicatesMsg, setCleanDuplicatesMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
@@ -1279,6 +1288,160 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                     style={{ width: 18, height: 18, accentColor: 'var(--primary)', cursor: 'pointer' }}
                   />
                 </label>
+              </div>
+
+              {/* Carte Mode de Guidage des Cibles & Anti-Vibrations */}
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 182, 212, 0.04))',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <Gauge size={18} color="#10b981" style={{ marginTop: 2, flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>Guidage des Cibles Garmin & Anti-Vibrations</span>
+                        <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 800 }}>
+                          ACTIF
+                        </span>
+                      </div>
+                      <p style={{ margin: '3px 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                        Évite les vibrations continues au poignet causées par des cibles cardiaques trop basses. Choisissez votre stratégie de guidage :
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Options de Guidage */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetMode('SMART_PACE_AND_TRAIL_FREE');
+                      setGarminWorkoutTargetMode('SMART_PACE_AND_TRAIL_FREE');
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 6,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      border: targetMode === 'SMART_PACE_AND_TRAIL_FREE' ? '1.5px solid #10b981' : '1px solid var(--border-color)',
+                      background: targetMode === 'SMART_PACE_AND_TRAIL_FREE' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      color: '#fff'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.78rem', color: targetMode === 'SMART_PACE_AND_TRAIL_FREE' ? '#34d399' : '#fff' }}>
+                        ⚡ Allure sur plat & Libre en trail
+                      </span>
+                      {targetMode === 'SMART_PACE_AND_TRAIL_FREE' && <CheckCircle2 size={13} color="#34d399" />}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                      Allure réaliste sur le plat avec marge anti-bip. 100% libre en trail & Mont-Royal (zéro vibration en côte/descente).
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetMode('ALL_FREE');
+                      setGarminWorkoutTargetMode('ALL_FREE');
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 6,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      border: targetMode === 'ALL_FREE' ? '1.5px solid #38bdf8' : '1px solid var(--border-color)',
+                      background: targetMode === 'ALL_FREE' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      color: '#fff'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.78rem', color: targetMode === 'ALL_FREE' ? '#38bdf8' : '#fff' }}>
+                        🕊️ 100% Libre / Zéro bip
+                      </span>
+                      {targetMode === 'ALL_FREE' && <CheckCircle2 size={13} color="#38bdf8" />}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                      Guidage par temps & structure uniquement. Aucun contrôle de zone ou d'allure, confort absolu.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetMode('HR_ONLY');
+                      setGarminWorkoutTargetMode('HR_ONLY');
+                    }}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 6,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      border: targetMode === 'HR_ONLY' ? '1.5px solid #f43f5e' : '1px solid var(--border-color)',
+                      background: targetMode === 'HR_ONLY' ? 'rgba(244, 63, 94, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      color: '#fff'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.78rem', color: targetMode === 'HR_ONLY' ? '#f43f5e' : '#fff' }}>
+                        💓 Fréquence Cardiaque
+                      </span>
+                      {targetMode === 'HR_ONLY' && <CheckCircle2 size={13} color="#f43f5e" />}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                      Consignes cardio traditionnelles (125-142 bpm pour récupération). Vibre si hors zone.
+                    </div>
+                  </button>
+                </div>
+
+                {/* Réglage de l'Allure de Base de Footing */}
+                {targetMode !== 'ALL_FREE' && targetMode !== 'HR_ONLY' && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 4 }}>
+                    <div>
+                      <div style={{ fontSize: '0.76rem', fontWeight: 600, color: '#fff' }}>
+                        Allure cible de base pour l'endurance (min/km)
+                      </div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                        Calibrée sur vos footings récents. Plage générée : {basePace ? `${formatSecondsToPace(parsePaceToSeconds(basePace) - 15)} – ${formatSecondsToPace(parsePaceToSeconds(basePace) + 20)}/km` : '5:50 – 6:25/km'}.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="text"
+                        value={basePace}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setBasePace(val);
+                          if (/^\d{1,2}:\d{2}$/.test(val)) {
+                            setAthleteBasePace(val);
+                          }
+                        }}
+                        placeholder="6:05"
+                        style={{
+                          width: 65,
+                          padding: '4px 8px',
+                          background: 'rgba(255,255,255,0.08)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 4,
+                          color: '#fff',
+                          fontSize: '0.82rem',
+                          textAlign: 'center',
+                          fontWeight: 700
+                        }}
+                      />
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>/km</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Latest Garmin Telemetry & Wellness Ingestion */}

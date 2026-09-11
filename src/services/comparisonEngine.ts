@@ -27,6 +27,97 @@ export interface WeeklyStatsSummary {
 }
 
 /**
+ * Fusionne plusieurs activités Garmin du même jour et de même discipline en une seule activité composite.
+ */
+export function consolidateGarminActivities(
+  activities: GarminActivity[],
+  primaryActivityName?: string
+): GarminActivity {
+  if (activities.length === 0) {
+    throw new Error('Cannot consolidate empty activities array');
+  }
+  if (activities.length === 1) {
+    return activities[0];
+  }
+
+  // Trier chronologiquement
+  const sorted = [...activities].sort((a, b) => {
+    return new Date(a.startTimeLocal).getTime() - new Date(b.startTimeLocal).getTime();
+  });
+
+  const mainAct = sorted[0];
+  const isRun = isTrailOrRunning(mainAct);
+
+  let totalDurationMinutes = 0;
+  let totalDistanceKm = 0;
+  let totalElevationGainM = 0;
+  let totalElevationLossM = 0;
+  let weightedHrSum = 0;
+  let hrDurationSum = 0;
+  let maxHr: number | undefined = undefined;
+  let totalTrainingLoad = 0;
+  let hasLoad = false;
+  let totalCalories = 0;
+
+  for (const act of sorted) {
+    totalDurationMinutes += act.durationMinutes;
+    if (act.distanceKm) totalDistanceKm += act.distanceKm;
+    if (act.elevationGainM) totalElevationGainM += act.elevationGainM;
+    if (act.elevationLossM) totalElevationLossM += act.elevationLossM;
+
+    if (act.avgHeartRate && act.durationMinutes > 0) {
+      weightedHrSum += act.avgHeartRate * act.durationMinutes;
+      hrDurationSum += act.durationMinutes;
+    }
+
+    if (act.maxHeartRate) {
+      maxHr = maxHr === undefined ? act.maxHeartRate : Math.max(maxHr, act.maxHeartRate);
+    }
+
+    if (act.trainingLoad) {
+      totalTrainingLoad += act.trainingLoad;
+      hasLoad = true;
+    }
+
+    if (act.calories) {
+      totalCalories += act.calories;
+    }
+  }
+
+  const weightedAvgHr = hrDurationSum > 0 ? Math.round(weightedHrSum / hrDurationSum) : undefined;
+
+  // Calcul allure moyenne globale si distance présente
+  let avgPaceMinKm: string | undefined = undefined;
+  if (totalDistanceKm > 0 && totalDurationMinutes > 0) {
+    const paceSecPerKm = Math.round((totalDurationMinutes * 60) / totalDistanceKm);
+    const paceMin = Math.floor(paceSecPerKm / 60);
+    const paceSec = paceSecPerKm % 60;
+    avgPaceMinKm = `${paceMin}:${paceSec.toString().padStart(2, '0')}`;
+  }
+
+  const compositeName = primaryActivityName || (
+    isRun
+      ? `${mainAct.activityName} (+${sorted.length - 1} sortie${sorted.length > 2 ? 's' : ''})`
+      : `${mainAct.activityName} (+${sorted.length - 1} séance${sorted.length > 2 ? 's' : ''})`
+  );
+
+  return {
+    ...mainAct,
+    activityId: `merged-${sorted.map(a => a.activityId).join('-')}`,
+    activityName: compositeName,
+    durationMinutes: totalDurationMinutes,
+    distanceKm: totalDistanceKm > 0 ? Number(totalDistanceKm.toFixed(2)) : undefined,
+    elevationGainM: totalElevationGainM > 0 ? Math.round(totalElevationGainM) : undefined,
+    elevationLossM: totalElevationLossM > 0 ? Math.round(totalElevationLossM) : undefined,
+    avgHeartRate: weightedAvgHr,
+    maxHeartRate: maxHr,
+    avgPaceMinKm,
+    trainingLoad: hasLoad ? Math.round(totalTrainingLoad) : undefined,
+    calories: totalCalories > 0 ? totalCalories : undefined
+  };
+}
+
+/**
  * Compare les séances prévues avec les activités Garmin réelles.
  * Intègre la réconciliation automatique à l'échelle du microcycle hebdomadaire :
  * si une séance prévue plus tôt dans la semaine a été manquée et qu'une séance correspondante
@@ -54,6 +145,7 @@ export function compareWorkoutsWithGarmin(
   interface MatchRecord {
     plan: CalendarEvent;
     act: GarminActivity;
+    subActivities?: GarminActivity[];
     isPostponedCatchup: boolean;
     scheduledDate: string;
     executedDate: string;
@@ -73,6 +165,7 @@ export function compareWorkoutsWithGarmin(
         planMatches.set(plan.id, {
           plan,
           act: foundAct,
+          subActivities: [foundAct],
           isPostponedCatchup: scheduledDate !== executedDate,
           scheduledDate,
           executedDate
@@ -99,15 +192,39 @@ export function compareWorkoutsWithGarmin(
         .sort((a, b) => b.score - a.score);
 
       if (scoredCandidates.length > 0) {
-        const bestMatch = scoredCandidates[0].act;
-        matchedGarminIds.add(bestMatch.activityId);
-        planMatches.set(plan.id, {
-          plan,
-          act: bestMatch,
-          isPostponedCatchup: false,
-          scheduledDate: planDateKey,
-          executedDate: planDateKey
+        // Vérifier s'il y a d'autres séances prévues de la MÊME discipline sur ce jour
+        const sameDisciplinePlans = plansToEvaluate.filter(p => {
+          const dKey = formatDateKey(new Date(p.startDate));
+          if (dKey !== planDateKey) return false;
+          return (isTrailOrRunning(p) === isTrailOrRunning(plan)) && (isStrengthOrCalisthenics(p) === isStrengthOrCalisthenics(plan));
         });
+
+        // S'il n'y a qu'une seule séance prévue de ce sport mais plusieurs sorties Garmin du même sport ce jour :
+        // les consolider directement pour combler la séance prévue !
+        if (sameDisciplinePlans.length === 1 && scoredCandidates.length >= 2) {
+          const actsToMerge = scoredCandidates.map(c => c.act);
+          actsToMerge.forEach(a => matchedGarminIds.add(a.activityId));
+          const compositeAct = consolidateGarminActivities(actsToMerge);
+          planMatches.set(plan.id, {
+            plan,
+            act: compositeAct,
+            subActivities: actsToMerge,
+            isPostponedCatchup: false,
+            scheduledDate: planDateKey,
+            executedDate: planDateKey
+          });
+        } else {
+          const bestMatch = scoredCandidates[0].act;
+          matchedGarminIds.add(bestMatch.activityId);
+          planMatches.set(plan.id, {
+            plan,
+            act: bestMatch,
+            subActivities: [bestMatch],
+            isPostponedCatchup: false,
+            scheduledDate: planDateKey,
+            executedDate: planDateKey
+          });
+        }
       }
     }
   }
@@ -166,11 +283,40 @@ export function compareWorkoutsWithGarmin(
         planMatches.set(candidate.plan.id, {
           plan: candidate.plan,
           act: candidate.act,
+          subActivities: [candidate.act],
           isPostponedCatchup: true,
           scheduledDate: candidate.scheduledDate,
           executedDate: candidate.executedDate
         });
       }
+    }
+  }
+
+  // Étape 3bis : Consolidation automatique des activités résiduelles de même discipline sur la journée d'exécution
+  // Si une séance a été appariée (en direct ou en rattrapage) et qu'il reste sur ce jour d'autres activités
+  // du même sport sans autre séance prévue pour les réclamer, les fusionner dans la séance prévue !
+  for (const match of planMatches.values()) {
+    const executedDate = match.executedDate;
+    const residualActs = garminActivities.filter(act => {
+      if (matchedGarminIds.has(act.activityId)) return false;
+      if (getGarminLocalDateKey(act) !== executedDate) return false;
+      return scoreActivityMatch(match.plan, act) >= 50;
+    });
+
+    const otherPlansOnDay = plansToEvaluate.filter(p => {
+      if (p.id === match.plan.id) return false;
+      const dKey = formatDateKey(new Date(p.startDate));
+      const matchExec = planMatches.get(p.id)?.executedDate;
+      return (dKey === executedDate || matchExec === executedDate) &&
+        (isTrailOrRunning(p) === isTrailOrRunning(match.plan)) &&
+        (isStrengthOrCalisthenics(p) === isStrengthOrCalisthenics(match.plan));
+    });
+
+    if (residualActs.length > 0 && otherPlansOnDay.length === 0) {
+      const allActs = match.subActivities ? [...match.subActivities, ...residualActs] : [match.act, ...residualActs];
+      residualActs.forEach(a => matchedGarminIds.add(a.activityId));
+      match.act = consolidateGarminActivities(allActs);
+      match.subActivities = allActs;
     }
   }
 
@@ -194,6 +340,16 @@ export function compareWorkoutsWithGarmin(
           `🔄 Séance du ${formatFriendlyDay(match.scheduledDate)} reportée et réalisée le ${formatFriendlyDay(match.executedDate)} sur Garmin.`
         );
       }
+
+      if (match.subActivities && match.subActivities.length > 1) {
+        comp.isMergedExecution = true;
+        comp.subActivities = match.subActivities;
+        const isRun = isTrailOrRunning(match.act);
+        comp.feedbackNotes.unshift(
+          `⚡ ${match.subActivities.length} ${isRun ? 'sorties combinées' : 'séances combinées'} pour cette journée (${match.subActivities.map(a => `${a.durationMinutes}m`).join(' + ')} = ${match.act.durationMinutes}m réelles).`
+        );
+      }
+
       comparisons.push(comp);
     } else if (planDateKey === asOfKey) {
       // Séance d'aujourd'hui pas encore téléversée
@@ -420,28 +576,28 @@ function evaluateSingleWorkout(
   let hrCompliance: 'OPTIMAL' | 'TOO_HIGH' | 'TOO_LOW' | 'N/A' = 'OPTIMAL';
   const titleLower = plan.title.toLowerCase();
   const isRecovery = plan.sportType === 'RUN_EASY' || titleLower.includes('récupération') || titleLower.includes('footing');
-  const targetRange: [number, number] | undefined = isRecovery
-    ? (plan.metadata?.targetHeartRateRange && plan.metadata.targetHeartRateRange[1] <= 150 ? plan.metadata.targetHeartRateRange : [115, 142])
-    : plan.metadata?.targetHeartRateRange;
+  // Seuil réaliste pour l'athlète (FCmax = 203 bpm) : un footing en reprise jusqu'à 165 bpm reste dans une intensité aérobie tolérée sans pénalité
+  const effectiveMaxTarget = isRecovery ? 165 : (plan.metadata?.targetHeartRateRange?.[1] || 175);
+  const effectiveMinTarget = isRecovery ? 115 : (plan.metadata?.targetHeartRateRange?.[0] || 125);
 
-  if (act.avgHeartRate && targetRange) {
-    const [minTarget, maxTarget] = targetRange;
-    if (act.avgHeartRate > maxTarget + 5) {
+  if (act.avgHeartRate) {
+    if (act.avgHeartRate > effectiveMaxTarget + 5) {
       hrCompliance = 'TOO_HIGH';
-      score -= 20;
+      score -= 15;
       feedbackNotes.push(
-        `⚠️ Fréquence cardiaque élevée : moy. ${act.avgHeartRate} bpm (plafond cible : ${maxTarget} bpm). Effort plus soutenu que la récupération prescrite.`
+        `⚠️ Fréquence cardiaque soutenue : moy. ${act.avgHeartRate} bpm (plafond recommandé : ${effectiveMaxTarget} bpm). Effort au-dessus de l'aérobie douce.`
       );
-    } else if (act.avgHeartRate < minTarget - 12) {
+    } else if (act.avgHeartRate < effectiveMinTarget - 12) {
       hrCompliance = 'TOO_LOW';
       score -= 10;
       feedbackNotes.push(
-        `Fréquence cardiaque sous la zone cible (${act.avgHeartRate} bpm vs cible ${minTarget}-${maxTarget} bpm). Effort de récupération très doux.`
+        `Fréquence cardiaque sous la zone cible (${act.avgHeartRate} bpm vs cible ${effectiveMinTarget}-${effectiveMaxTarget} bpm). Effort de récupération très doux.`
       );
     } else {
       hrCompliance = 'OPTIMAL';
+      const pctFcMax = Math.round((act.avgHeartRate / (GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203)) * 100);
       feedbackNotes.push(
-        `🎯 Cardio optimal : FC moy. ${act.avgHeartRate} bpm parfaitement calée dans la zone cible (${minTarget}-${maxTarget} bpm).`
+        `🎯 Cardio maîtrisé : FC moy. ${act.avgHeartRate} bpm (~${pctFcMax}% FCmax, zone aérobie bien calibrée).`
       );
     }
   }

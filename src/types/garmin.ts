@@ -52,6 +52,8 @@ export interface ActivityComparison {
   isPostponedCatchup?: boolean;
   scheduledDate?: string;
   executedDate?: string;
+  isMergedExecution?: boolean;
+  subActivities?: GarminActivity[];
 }
 
 export interface GarminSyncState {
@@ -90,6 +92,12 @@ export interface GarminWellnessData {
   syncedAt: string; // ISO
 }
 
+export type GarminWorkoutTargetMode =
+  | 'SMART_PACE_AND_TRAIL_FREE'
+  | 'ALL_FREE'
+  | 'PACE_ONLY'
+  | 'HR_ONLY';
+
 export interface WorkoutStepDefinition {
   stepType: 'WARMUP' | 'INTERVAL' | 'RECOVERY' | 'REST' | 'COOLDOWN';
   durationSeconds?: number;
@@ -98,7 +106,10 @@ export interface WorkoutStepDefinition {
   targetType?: 'HR_ZONE' | 'HR_RANGE' | 'PACE' | 'NONE';
   targetHrLow?: number;
   targetHrHigh?: number;
-  targetPaceMinKm?: string;
+  targetPaceMinKm?: string; // e.g. "6:05"
+  targetPaceLowMinKm?: string; // e.g. "5:50"
+  targetPaceHighMinKm?: string; // e.g. "6:25"
+  targetPaceMarginSeconds?: number; // e.g. 18
   stepNotes?: string;
   reps?: number;
 }

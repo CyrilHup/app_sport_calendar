@@ -22,11 +22,22 @@ const DistanceDuration = (garminPkg as any).DistanceDuration || (garminPkg as an
 const LapPressDuration = (garminPkg as any).LapPressDuration || (garminPkg as any).default?.LapPressDuration;
 const HrmZoneTarget = (garminPkg as any).HrmZoneTarget || (garminPkg as any).default?.HrmZoneTarget;
 const HrmTarget = (garminPkg as any).HrmTarget || (garminPkg as any).default?.HrmTarget;
+const PaceTarget = (garminPkg as any).PaceTarget || (garminPkg as any).default?.PaceTarget;
 const NoTarget = (garminPkg as any).NoTarget || (garminPkg as any).default?.NoTarget;
 
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+function parsePaceSeconds(paceStr?: string): number {
+  if (!paceStr) return 0;
+  const parts = paceStr.split(':').map(p => parseInt(p.trim(), 10));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return parts[0] * 60 + parts[1];
+  }
+  const val = parseFloat(paceStr);
+  return isNaN(val) ? 0 : Math.round(val * 60);
+}
 
 /**
  * Self-contained Garmin activity type classifier for Vercel Serverless execution.
@@ -335,7 +346,23 @@ export default async function handler(req: any, res: any) {
         }
 
         let target: any = new NoTarget();
-        if (st.targetType === 'HR_RANGE' && st.targetHrLow && st.targetHrHigh) {
+        if (st.targetType === 'PACE' && PaceTarget) {
+          const fastSec = parsePaceSeconds(st.targetPaceLowMinKm);
+          const slowSec = parsePaceSeconds(st.targetPaceHighMinKm);
+          if (fastSec > 0 && slowSec > 0) {
+            const minSpeed = 1000 / Math.max(fastSec, slowSec);
+            const maxSpeed = 1000 / Math.min(fastSec, slowSec);
+            target = new PaceTarget(minSpeed, maxSpeed);
+          } else if (st.targetPaceMinKm) {
+            const baseSec = parsePaceSeconds(st.targetPaceMinKm);
+            const margin = st.targetPaceMarginSeconds || 18;
+            if (baseSec > 0) {
+              const slow = baseSec + margin;
+              const fast = Math.max(30, baseSec - margin);
+              target = new PaceTarget(1000 / slow, 1000 / fast);
+            }
+          }
+        } else if (st.targetType === 'HR_RANGE' && st.targetHrLow && st.targetHrHigh) {
           const mid = Math.round((st.targetHrLow + st.targetHrHigh) / 2);
           const delta = Math.max(5, Math.round((st.targetHrHigh - st.targetHrLow) / 2));
           target = HrmTarget.hrm(mid, delta);
