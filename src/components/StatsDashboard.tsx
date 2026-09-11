@@ -121,30 +121,44 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             </span>
             <span
               style={{
-                background: scope === 'plan' ? 'rgba(16, 185, 129, 0.14)' : (scope === '4w' ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.08)'),
-                color: scope === 'plan' ? 'var(--accent-green)' : (scope === '4w' ? 'var(--accent-cyan)' : 'var(--text-secondary)'),
+                background: scope === 'week'
+                  ? 'rgba(255, 87, 34, 0.14)'
+                  : (scope === 'plan'
+                    ? 'rgba(16, 185, 129, 0.14)'
+                    : (scope === '4w' ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.08)')),
+                color: scope === 'week'
+                  ? 'var(--primary)'
+                  : (scope === 'plan'
+                    ? 'var(--accent-green)'
+                    : (scope === '4w' ? 'var(--accent-cyan)' : 'var(--text-secondary)')),
                 padding: '2px 9px',
                 borderRadius: '9999px',
                 fontSize: '0.72rem',
                 fontWeight: 700
               }}
             >
-              {scope === 'plan' ? '🎯 Plan QMT actif (Depuis le 1er sept.)' : (scope === '4w' ? '📅 4 dernières semaines glissantes' : '🌐 Tout l\'historique')}
+              {scope === 'week'
+                ? '📅 Microcycle actif (Cette semaine)'
+                : (scope === 'plan'
+                  ? '🎯 Plan QMT actif (Depuis le 1er sept.)'
+                  : (scope === '4w' ? '📅 4 dernières semaines glissantes' : '🌐 Tout l\'historique'))}
             </span>
           </div>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
             Tableau de Bord & Santé Athlétique
           </h2>
           <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            {scope === 'plan'
-              ? `Sur le plan QMT : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
-              : (scope === '4w'
-                ? `Sur les 28 derniers jours : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
-                : `Cumul historique complet : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`)}
+            {scope === 'week'
+              ? `Sur la semaine en cours : ${global.totalSessionsCount} séance${global.totalSessionsCount > 1 ? 's' : ''} réalisée${global.totalSessionsCount > 1 ? 's' : ''} (${formatMinutes(global.totalDurationMinutes)})`
+              : (scope === 'plan'
+                ? `Sur le plan QMT : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
+                : (scope === '4w'
+                  ? `Sur les 28 derniers jours : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`
+                  : `Cumul historique complet : ${global.totalSessionsCount} séances réalisées (${formatMinutes(global.totalDurationMinutes)})`))}
           </p>
         </div>
 
-        {/* Sélecteur de Timeline épuré (Plan / 4 semaines / Tout) */}
+        {/* Sélecteur de Timeline épuré (Cette semaine / Plan / 4 semaines / Tout) */}
         <div
           style={{
             display: 'inline-flex',
@@ -156,6 +170,23 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             flexWrap: 'wrap'
           }}
         >
+          <button
+            onClick={() => setScope('week')}
+            style={{
+              padding: '6px 12px',
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              borderRadius: '4px',
+              border: 'none',
+              cursor: 'pointer',
+              background: scope === 'week' ? 'var(--primary)' : 'transparent',
+              color: scope === 'week' ? '#ffffff' : 'var(--text-secondary)',
+              transition: 'all 0.15s ease'
+            }}
+            title="Microcycle de la semaine en cours (du lundi au dimanche)"
+          >
+            📅 Cette semaine
+          </button>
           <button
             onClick={() => setScope('plan')}
             style={{
@@ -188,7 +219,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             }}
             title="Cycle d'entraînement récent sur les 28 derniers jours"
           >
-            📅 4 dernières sem.
+            📅 4 sem.
           </button>
           <button
             onClick={() => setScope('all')}
@@ -229,7 +260,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Volume d'Entraînement</span>
               <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
-                {scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique')}
+                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique'))}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -310,7 +341,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Course à Pied & Sentiers</span>
               <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
-                {scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique')}
+                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique'))}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1543,6 +1574,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           trainingLoad={trainingLoad}
           athleteFcMax={athleteFcMax}
           baselineRestingHr={baselineRhr}
+          initialScope={scope === 'week' ? 'week' : (scope === '4w' ? '4w' : (scope === 'all' ? 'all' : 'plan'))}
         />
       )}
     </div>

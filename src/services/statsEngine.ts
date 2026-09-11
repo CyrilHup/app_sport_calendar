@@ -1,6 +1,6 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, GarminActivity } from '../types/garmin';
-import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, toLocalDateKey } from './dateUtils';
+import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, toLocalDateKey, parseLocalDate, addDays } from './dateUtils';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import {
@@ -35,7 +35,7 @@ export const DEFAULT_WEEKLY_TARGETS = {
   plannedElevationM: 780
 };
 
-export type TimeRangeScope = 'plan' | '4w' | '12w' | 'all' | (string & {});
+export type TimeRangeScope = 'week' | 'plan' | '4w' | '12w' | 'all' | (string & {});
 
 export interface WeeklyTrendPoint {
   weekKey: string; // YYYY-MM-DD of Monday
@@ -154,12 +154,21 @@ export function filterItemsByScope<T extends { date: string }>(
   scope: TimeRangeScope,
   asOfDate: Date = new Date()
 ): T[] {
-  // 1. Specific week scope: 'week:YYYY-MM-DD' (from Monday to Sunday)
+  // 1. Current week scope: 'week' (from Monday to Sunday of asOfDate)
+  if (scope === 'week') {
+    const todayKey = formatDateKey(asOfDate);
+    const mondayKey = getMondayWeekKey(todayKey);
+    const monDate = parseLocalDate(mondayKey);
+    const sunDate = addDays(monDate, 6);
+    const sunKey = formatDateKey(sunDate);
+    return items.filter(item => item.date >= mondayKey && item.date <= sunKey);
+  }
+
+  // 2. Specific week scope: 'week:YYYY-MM-DD' (from Monday to Sunday)
   if (scope.startsWith('week:')) {
     const mondayKey = scope.replace('week:', '');
-    const monDate = new Date(mondayKey + 'T12:00:00');
-    const sunDate = new Date(monDate);
-    sunDate.setDate(monDate.getDate() + 6);
+    const monDate = parseLocalDate(mondayKey);
+    const sunDate = addDays(monDate, 6);
     const sunKey = formatDateKey(sunDate);
     return items.filter(item => item.date >= mondayKey && item.date <= sunKey);
   }

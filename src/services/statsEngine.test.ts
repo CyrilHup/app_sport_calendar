@@ -692,6 +692,62 @@ describe('statsEngine unit tests', () => {
     const baseline = getBaselineRestingHeartRate();
     expect(baseline).toBe(48); // Math.round((46 + 50) / 2)
   });
+
+  it('filters activities for the current week correctly (Monday to Sunday)', async () => {
+    const { filterItemsByScope } = await import('./statsEngine');
+
+    // Thursday Sept 10, 2026 -> Monday is Sept 7, Sunday is Sept 13
+    const asOfDate = new Date('2026-09-10T14:30:00');
+
+    const items = [
+      { id: '1', date: '2026-09-06' }, // Sunday prior week -> exclude
+      { id: '2', date: '2026-09-07' }, // Monday current week -> include
+      { id: '3', date: '2026-09-08' }, // Tuesday current week -> include
+      { id: '4', date: '2026-09-10' }, // Thursday current week -> include
+      { id: '5', date: '2026-09-13' }, // Sunday current week -> include
+      { id: '6', date: '2026-09-14' }  // Monday next week -> exclude
+    ];
+
+    const filtered = filterItemsByScope(items, 'week', asOfDate);
+    expect(filtered.map(i => i.id)).toEqual(['2', '3', '4', '5']);
+  });
+
+  it('aggregates all activities within a Monday-Sunday week into a single week bucket regardless of time of day', () => {
+    const activities: GarminActivity[] = [
+      {
+        activityId: 'act-mon-morning',
+        activityName: 'Footing lundi matin',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-07 07:15:00',
+        durationMinutes: 45,
+        distanceKm: 7.0,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-tue-night',
+        activityName: 'Calisthénie mardi soir',
+        activityType: 'STRENGTH_TRAINING',
+        startTimeLocal: '2026-09-08 21:30:00',
+        durationMinutes: 60,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-thu-afternoon',
+        activityName: 'Sentiers jeudi',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-10 16:00:00',
+        durationMinutes: 50,
+        distanceKm: 8.0,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const report = computeFullStatsReport(activities, [], [], 'week', new Date('2026-09-10T18:00:00'));
+    expect(report.global.weeklyTrend.length).toBe(1);
+    expect(report.global.weeklyTrend[0].weekKey).toBe('2026-09-07');
+    expect(report.global.weeklyTrend[0].totalMinutes).toBe(155); // 45 + 60 + 50
+    expect(report.global.weeklyTrend[0].sessionCount).toBe(3);
+  });
 });
 
 

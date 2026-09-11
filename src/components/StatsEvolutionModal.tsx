@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { GarminActivity, GarminWellnessData } from '../types/garmin';
 import { TrainingLoadStats, formatMinutes, PLAN_START_DATE } from '../services/statsEngine';
+import { formatDateKey, parseLocalDate, addDays, getMondayWeekKey, getGarminLocalDateKey } from '../services/dateUtils';
 
 export type EvolutionMetricType =
   | 'volume'
@@ -40,6 +41,7 @@ interface StatsEvolutionModalProps {
   trainingLoad?: TrainingLoadStats;
   athleteFcMax?: number;
   baselineRestingHr?: number;
+  initialScope?: 'week' | 'plan' | '4w' | 'all';
 }
 
 interface DataPoint {
@@ -86,34 +88,41 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
   wellnessHistory = {},
   trainingLoad,
   athleteFcMax = 203,
-  baselineRestingHr = 48
+  baselineRestingHr = 48,
+  initialScope = 'plan'
 }) => {
-  const [scope, setScope] = useState<'4w' | 'plan' | 'all'>('plan');
+  const [scope, setScope] = useState<'week' | 'plan' | '4w' | 'all'>(initialScope);
   const [hoveredPoint, setHoveredPoint] = useState<DataPoint | null>(null);
 
   if (!metric) return null;
 
-  // Filtrer les données selon le scope temporel
-  const filteredActivities = useMemo(() => {
-    const now = new Date();
-    const nowStr = now.toISOString().slice(0, 10);
-    const planStart = PLAN_START_DATE;
+  // Bornes de dates locales strictes (sans dérive UTC)
+  const now = new Date();
+  const todayKey = formatDateKey(now);
+  const mondayKey = getMondayWeekKey(todayKey);
+  const sundayKey = formatDateKey(addDays(parseLocalDate(mondayKey), 6));
+  const planStart = PLAN_START_DATE;
+  const d4w = formatDateKey(addDays(now, -28));
 
+  // Filtrer les activités selon le scope temporel
+  const filteredActivities = useMemo(() => {
     return garminActivities.filter(a => {
-      const actDate = a.startTimeLocal.slice(0, 10);
+      const actDate = getGarminLocalDateKey(a);
+      if (scope === 'week') {
+        return actDate >= mondayKey && actDate <= sundayKey;
+      }
       if (scope === 'plan') {
-        return actDate >= planStart && actDate <= nowStr;
+        return actDate >= planStart && actDate <= todayKey;
       }
       if (scope === '4w') {
-        const d4w = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-        return actDate >= d4w && actDate <= nowStr;
+        return actDate >= d4w && actDate <= todayKey;
       }
       return true; // 'all'
     }).sort((a, b) => new Date(a.startTimeLocal).getTime() - new Date(b.startTimeLocal).getTime());
-  }, [garminActivities, scope]);
+  }, [garminActivities, scope, mondayKey, sundayKey, planStart, d4w, todayKey]);
 
   // Extraction de la série temporelle selon la métrique
-  const { title, subtitle, icon, unit, points, advice, isInverseBetter, referenceValue } = useMemo(() => {
+  const { title, subtitle, icon, unit, points, advice, isInverseBetter, referenceValue, maxSingleSessionKm, totalElevationGainM } = useMemo(() => {
     const pts: DataPoint[] = [];
     let t = '';
     let sub = '';
@@ -122,70 +131,117 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
     let adv = '';
     let invBetter = false; // true si une baisse est positive (ex: FC moy, FC repos, allure)
     let refVal: number | undefined = undefined;
+    let maxSingleRun: number | undefined = undefined;
+    let totalElevationM: number | undefined = undefined;
 
     switch (metric) {
       case 'volume': {
         t = "Évolution du Volume d'Entraînement";
-        sub = "Volume cumulé et régularité des séances";
+        sub = scope === 'week'
+          ? "Volume journalier et cumul de la semaine en cours"
+          : "Volume cumulé hebdomadaire et régularité des microcycles";
         ic = <Clock size={20} color="var(--primary)" />;
         u = "min";
         invBetter = false;
         adv = "Pour l'ultra-trail QMT-80, la régularité du volume hebdomadaire prévaut sur les pics isolés. Veillez à ne pas augmenter votre volume de plus de 10% d'une semaine à l'autre.";
 
-        // Regrouper par semaine
-        const weekMap = new Map<string, { minutes: number; count: number; date: string }>();
-        for (const act of filteredActivities) {
-          const d = new Date(act.startTimeLocal);
-          const day = d.getDay();
-          const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-          const monday = new Date(d.setDate(diff)).toISOString().slice(0, 10);
-          const cur = weekMap.get(monday) || { minutes: 0, count: 0, date: monday };
-          cur.minutes += act.durationMinutes || 0;
-          cur.count += 1;
-          weekMap.set(monday, cur);
-        }
+        if (scope === 'week') {
+          // Affichage jour par jour pour le microcycle de la semaine en cours
+          const dayMap = new Map<string, { minutes: number; count: number; date: string; title: string }>();
+          for (let i = 0; i < 7; i++) {
+            const dStr = formatDateKey(addDays(parseLocalDate(mondayKey), i));
+            dayMap.set(dStr, { minutes: 0, count: 0, date: dStr, title: '' });
+          }
 
-        const sortedWeeks = Array.from(weekMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-        for (const [wKey, wData] of sortedWeeks) {
-          pts.push({
-            id: wKey,
-            date: wData.date,
-            label: `Sem. du ${formatDateFr(wData.date)}`,
-            value: wData.minutes,
-            displayValue: formatMinutes(wData.minutes),
-            subValue: `${wData.count} séance${wData.count > 1 ? 's' : ''}`,
-            title: `Volume hebdomadaire`
-          });
+          for (const act of filteredActivities) {
+            const actDate = getGarminLocalDateKey(act);
+            const cur = dayMap.get(actDate) || { minutes: 0, count: 0, date: actDate, title: '' };
+            cur.minutes += act.durationMinutes || 0;
+            cur.count += 1;
+            cur.title = cur.title ? `${cur.title}, ${act.activityName}` : (act.activityName || 'Séance');
+            dayMap.set(actDate, cur);
+          }
+
+          const sortedDays = Array.from(dayMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+          for (const [dKey, dData] of sortedDays) {
+            const dObj = parseLocalDate(dKey);
+            const dayName = dObj.toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric' });
+            pts.push({
+              id: dKey,
+              date: dKey,
+              label: dayName,
+              value: dData.minutes,
+              displayValue: formatMinutes(dData.minutes),
+              subValue: dData.count > 0 ? `${dData.count} séance${dData.count > 1 ? 's' : ''}` : 'Repos',
+              title: dData.title || (dData.count > 0 ? 'Entraînement' : 'Jour de repos')
+            });
+          }
+        } else {
+          // Regrouper strictement par début de semaine (Lundi) via dateUtils
+          const weekMap = new Map<string, { minutes: number; count: number; date: string }>();
+          for (const act of filteredActivities) {
+            const actDate = getGarminLocalDateKey(act);
+            const monday = getMondayWeekKey(actDate);
+            const cur = weekMap.get(monday) || { minutes: 0, count: 0, date: monday };
+            cur.minutes += act.durationMinutes || 0;
+            cur.count += 1;
+            weekMap.set(monday, cur);
+          }
+
+          const sortedWeeks = Array.from(weekMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+          for (const [wKey, wData] of sortedWeeks) {
+            pts.push({
+              id: wKey,
+              date: wData.date,
+              label: `Sem. du ${formatDateFr(wData.date)}`,
+              value: wData.minutes,
+              displayValue: formatMinutes(wData.minutes),
+              subValue: `${wData.count} séance${wData.count > 1 ? 's' : ''}`,
+              title: `Volume hebdomadaire`
+            });
+          }
         }
         break;
       }
 
       case 'running': {
-        t = "Évolution Course à Pied & Sentiers";
-        sub = "Distance (km) et dénivelé (+D m) par sortie";
+        t = "Progression Kilométrique Course à Pied & Sentiers";
+        sub = "Progression du kilométrage total cumulé et dénivelé au fil des sorties";
         ic = <Footprints size={20} color="var(--accent-cyan)" />;
         u = "km";
         invBetter = false;
         adv = "Sur le QMT-80 (+3 500 m D+), l'accumulation progressive de dénivelé et de sorties longues permet d'endurcir les quadriceps contre la fatigue excentrique.";
 
         const runActs = filteredActivities.filter(
-          a => a.activityType === 'RUNNING' || a.activityType === 'TRAIL_RUNNING'
-        );
+          a => (a.activityType === 'RUNNING' || a.activityType === 'TRAIL_RUNNING') && (a.distanceKm || 0) > 0
+        ).sort((a, b) => new Date(a.startTimeLocal).getTime() - new Date(b.startTimeLocal).getTime());
+
+        const runDistances = runActs.map(a => a.distanceKm || 0);
+        maxSingleRun = runDistances.length > 0 ? Math.max(...runDistances) : 0;
+
+        let cumulativeKm = 0;
+        let cumulativeElevationM = 0;
+
         for (const act of runActs) {
           const dist = act.distanceKm || 0;
-          if (dist > 0) {
-            pts.push({
-              id: act.activityId,
-              date: act.startTimeLocal.slice(0, 10),
-              label: formatDateFr(act.startTimeLocal),
-              value: dist,
-              displayValue: `${dist.toFixed(1)} km`,
-              subValue: act.elevationGainM ? `+${act.elevationGainM}m D+ • ${act.avgPaceMinKm || ''}` : act.avgPaceMinKm,
-              title: act.activityName,
-              secondaryValue: act.elevationGainM || 0
-            });
-          }
+          const gain = act.elevationGainM || 0;
+          cumulativeKm = Math.round((cumulativeKm + dist) * 10) / 10;
+          cumulativeElevationM += gain;
+
+          const actDate = getGarminLocalDateKey(act);
+          pts.push({
+            id: act.activityId,
+            date: actDate,
+            label: formatDateFr(actDate),
+            value: cumulativeKm,
+            displayValue: `${cumulativeKm.toFixed(1)} km cumulés`,
+            subValue: `+${dist.toFixed(1)} km sortie • +${gain}m D+ • ${act.avgPaceMinKm || ''}`,
+            title: act.activityName || 'Course / Trail',
+            secondaryValue: cumulativeElevationM
+          });
         }
+
+        totalElevationM = cumulativeElevationM;
         break;
       }
 
@@ -279,15 +335,11 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
         adv = `Votre FC au repos basale est de ${baselineRestingHr} bpm. Une élévation persistante de +4 à +6 bpm au réveil est le signal avant-coureur d'une fatigue nerveuse accumulée ou d'une mauvaise récupération.`;
 
         const dates = Object.keys(wellnessHistory).sort();
-        const nowStr = new Date().toISOString().slice(0, 10);
-        const planStart = PLAN_START_DATE;
 
         for (const dKey of dates) {
-          if (scope === 'plan' && (dKey < planStart || dKey > nowStr)) continue;
-          if (scope === '4w') {
-            const d4w = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-            if (dKey < d4w || dKey > nowStr) continue;
-          }
+          if (scope === 'week' && (dKey < mondayKey || dKey > sundayKey)) continue;
+          if (scope === 'plan' && (dKey < planStart || dKey > todayKey)) continue;
+          if (scope === '4w' && (dKey < d4w || dKey > todayKey)) continue;
 
           const w = wellnessHistory[dKey];
           if (w.restingHeartRate && w.restingHeartRate > 30 && w.restingHeartRate < 100) {
@@ -326,8 +378,8 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
           if (paceSec > 180 && paceSec < 600) {
             pts.push({
               id: act.activityId,
-              date: act.startTimeLocal.slice(0, 10),
-              label: formatDateFr(act.startTimeLocal),
+              date: getGarminLocalDateKey(act),
+              label: formatDateFr(getGarminLocalDateKey(act)),
               value: paceSec,
               displayValue: act.avgPaceMinKm!,
               subValue: `${act.distanceKm} km • FC ${act.avgHeartRate || '--'} bpm`,
@@ -348,16 +400,10 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
 
         const fitnessData = trainingLoad?.fitnessTrend || trainingLoad?.fitnessHistory;
         if (fitnessData && fitnessData.length > 0) {
-          const now = new Date();
-          const nowStr = now.toISOString().slice(0, 10);
-          const planStart = PLAN_START_DATE;
-
           for (const fh of fitnessData) {
-            if (scope === 'plan' && (fh.date < planStart || fh.date > nowStr)) continue;
-            if (scope === '4w') {
-              const d4w = new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-              if (fh.date < d4w || fh.date > nowStr) continue;
-            }
+            if (scope === 'week' && (fh.date < mondayKey || fh.date > sundayKey)) continue;
+            if (scope === 'plan' && (fh.date < planStart || fh.date > todayKey)) continue;
+            if (scope === '4w' && (fh.date < d4w || fh.date > todayKey)) continue;
 
             pts.push({
               id: fh.date,
@@ -382,9 +428,11 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
       points: pts,
       advice: adv,
       isInverseBetter: invBetter,
-      referenceValue: refVal
+      referenceValue: refVal,
+      maxSingleSessionKm: maxSingleRun,
+      totalElevationGainM: totalElevationM
     };
-  }, [metric, filteredActivities, wellnessHistory, trainingLoad, athleteFcMax, baselineRestingHr, scope]);
+  }, [metric, filteredActivities, wellnessHistory, trainingLoad, athleteFcMax, baselineRestingHr, scope, mondayKey, sundayKey, planStart, d4w, todayKey]);
 
   // Statistiques calculées sur la série
   const stats = useMemo(() => {
@@ -592,6 +640,21 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
               }}
             >
               <button
+                onClick={() => setScope('week')}
+                style={{
+                  padding: '4px 9px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: scope === 'week' ? 'var(--primary)' : 'transparent',
+                  color: scope === 'week' ? '#ffffff' : 'var(--text-secondary)'
+                }}
+              >
+                Cette sem.
+              </button>
+              <button
                 onClick={() => setScope('plan')}
                 style={{
                   padding: '4px 9px',
@@ -740,7 +803,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                   })}
 
                   {/* Ligne de moyenne horizontale */}
-                  {avgY !== null && (
+                  {avgY !== null && metric !== 'running' && (
                     <g>
                       <line
                         x1={padLeft}
@@ -887,13 +950,13 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  Dernière valeur
+                  {metric === 'running' ? 'Kilométrage total cumulé' : 'Dernière valeur'}
                 </div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--primary)' }}>
-                  {stats.latest.displayValue}
+                  {metric === 'running' ? `${stats.latest.value.toFixed(1)} km` : stats.latest.displayValue}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {stats.latest.label}
+                  {metric === 'running' ? `${stats.count} sortie${stats.count > 1 ? 's' : ''} • Dernier : ${stats.latest.label}` : stats.latest.label}
                 </div>
               </div>
 
@@ -906,17 +969,21 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  Moyenne sur la période
+                  {metric === 'running' ? 'Dénivelé total cumulé' : 'Moyenne sur la période'}
                 </div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-cyan)' }}>
-                  {metric === 'endurance_pace'
-                    ? formatPace(stats.avg)
-                    : metric === 'volume'
-                    ? formatMinutes(stats.avg)
-                    : `${stats.avg} ${unit}`}
+                  {metric === 'running'
+                    ? `+${(totalElevationGainM || 0).toLocaleString('fr-CA')} m D+`
+                    : (metric === 'endurance_pace'
+                      ? formatPace(stats.avg)
+                      : metric === 'volume'
+                      ? formatMinutes(stats.avg)
+                      : `${stats.avg} ${unit}`)}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {stats.count} point{stats.count > 1 ? 's' : ''}
+                  {metric === 'running'
+                    ? `Moy. ${(stats.latest.value / Math.max(1, stats.count)).toFixed(1)} km / sortie`
+                    : `${stats.count} point${stats.count > 1 ? 's' : ''}`}
                 </div>
               </div>
 
@@ -929,17 +996,19 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  Min / Max
+                  {metric === 'running' ? 'Plus longue sortie' : 'Min / Max'}
                 </div>
                 <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#ffffff' }}>
-                  {metric === 'endurance_pace'
-                    ? `${formatPace(stats.min)} / ${formatPace(stats.max)}`
-                    : metric === 'volume'
-                    ? `${formatMinutes(stats.min)} / ${formatMinutes(stats.max)}`
-                    : `${stats.min} / ${stats.max} ${unit}`}
+                  {metric === 'running'
+                    ? `${(maxSingleSessionKm || 0).toFixed(1)} km`
+                    : (metric === 'endurance_pace'
+                      ? `${formatPace(stats.min)} / ${formatPace(stats.max)}`
+                      : metric === 'volume'
+                      ? `${formatMinutes(stats.min)} / ${formatMinutes(stats.max)}`
+                      : `${stats.min} / ${stats.max} ${unit}`)}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Étendue observée
+                  {metric === 'running' ? 'Sur une séance' : 'Étendue observée'}
                 </div>
               </div>
 
@@ -952,7 +1021,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  Tendance
+                  {metric === 'running' ? 'Progression totale' : 'Tendance'}
                 </div>
                 <div
                   style={{
@@ -961,14 +1030,20 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                     display: 'flex',
                     alignItems: 'center',
                     gap: '4px',
-                    color: stats.isNeutral
-                      ? 'var(--text-secondary)'
-                      : stats.isPositive
+                    color: metric === 'running'
                       ? 'var(--accent-green)'
-                      : 'var(--accent-amber)'
+                      : (stats.isNeutral
+                        ? 'var(--text-secondary)'
+                        : stats.isPositive
+                        ? 'var(--accent-green)'
+                        : 'var(--accent-amber)')
                   }}
                 >
-                  {stats.isNeutral ? (
+                  {metric === 'running' ? (
+                    <>
+                      <TrendingUp size={15} /> +{stats.latest.value.toFixed(1)} km
+                    </>
+                  ) : stats.isNeutral ? (
                     <>
                       <Minus size={14} /> Stable
                     </>
@@ -985,7 +1060,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                   )}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {stats.isPositive ? 'Adaptation favorable' : 'À surveiller'}
+                  {metric === 'running' ? 'Kilomètres cumulés' : (stats.isPositive ? 'Adaptation favorable' : 'À surveiller')}
                 </div>
               </div>
             </div>
