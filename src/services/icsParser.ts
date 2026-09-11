@@ -1,6 +1,6 @@
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { COLOR_MAP, GLOBAL_APP_CONFIG, getDailyWorkoutPlan, getPeriodizationContext } from './periodizationEngine';
-import { formatDateKey } from './dateUtils';
+import { formatDateKey, addDays } from './dateUtils';
 
 export interface RawIcsEvent {
   uid: string;
@@ -140,7 +140,7 @@ export function analyzeETSEvent(ev: RawIcsEvent) {
   };
 }
 
-export { formatDateKey } from './dateUtils';
+export { formatDateKey, addDays };
 
 export function buildCompleteCalendar(
   rawCourses: RawIcsEvent[],
@@ -160,7 +160,7 @@ export function buildCompleteCalendar(
   const allEvents: CalendarEvent[] = [];
 
   for (let i = 0; i < daysCount; i++) {
-    const currentDate = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+    const currentDate = addDays(startDate, i);
     const dateKey = formatDateKey(currentDate);
     const dayOfWeek = (currentDate.getDay() + 6) % 7; // 0=Lundi, ..., 6=Dimanche
     const periodContext = getPeriodizationContext(currentDate);

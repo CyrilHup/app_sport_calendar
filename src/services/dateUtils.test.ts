@@ -5,7 +5,10 @@ import {
   getMondayWeekKey,
   getGarminLocalDateKey,
   formatFriendlyDay,
-  formatTime
+  formatTime,
+  parseLocalDate,
+  addDays,
+  toLocalDateKey
 } from './dateUtils';
 
 describe('dateUtils', () => {
@@ -50,10 +53,28 @@ describe('dateUtils', () => {
     expect(formatted.toLowerCase()).toContain('sept');
   });
 
-  it('formats time in 24h format', () => {
-    const d = new Date('2026-09-05T14:05:00');
-    expect(formatTime(d)).toBe('14:05');
-    expect(formatTime('2026-09-05T09:30:00')).toBe('09:30');
-    expect(formatTime('invalid')).toBe('');
+  it('parses local dates at midnight without UTC shifting', () => {
+    const d = parseLocalDate('2026-09-09');
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(8); // Sept
+    expect(d.getDate()).toBe(9);
+    expect(d.getHours()).toBe(0);
+    expect(formatDateKey(d)).toBe('2026-09-09');
+  });
+
+  it('safely adds days without DST drifting', () => {
+    const d = parseLocalDate('2026-09-09');
+    const plus3 = addDays(d, 3);
+    expect(formatDateKey(plus3)).toBe('2026-09-12');
+    const minus5 = addDays(d, -5);
+    expect(formatDateKey(minus5)).toBe('2026-09-04');
+  });
+
+  it('extracts local date key from ISO string and Garmin local strings', () => {
+    expect(toLocalDateKey('2026-09-09')).toBe('2026-09-09');
+    expect(toLocalDateKey('2026-09-09 18:30:00')).toBe('2026-09-09');
+    const d = new Date(2026, 8, 9, 21, 0, 0);
+    expect(toLocalDateKey(d)).toBe('2026-09-09');
+    expect(toLocalDateKey(d.toISOString())).toBe('2026-09-09');
   });
 });

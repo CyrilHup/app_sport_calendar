@@ -28,6 +28,11 @@ const NoTarget = (garminPkg as any).NoTarget || (garminPkg as any).default?.NoTa
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import {
+  hasGarminEmojiOrSpecialSymbols,
+  normalizeWorkoutTitleForMatching,
+  areWorkoutsEquivalent
+} from '../src/services/garminDeduplication';
 
 function parsePaceSeconds(paceStr?: string): number {
   if (!paceStr) return 0;
@@ -154,48 +159,6 @@ function sanitizeGarminText(text: string, maxLength?: number): string {
   return cleaned;
 }
 
-function hasGarminEmojiOrSpecialSymbols(text: string): boolean {
-  if (!text) return false;
-  return /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}➔➜➝➞•●▪–—]/u.test(text);
-}
-
-function normalizeWorkoutTitleForMatching(raw: string): string {
-  if (!raw) return '';
-  return raw
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[➔➜➝➞•●▪–—\-_/\\|:;,()[\]{}"'`~*+?&!]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function areWorkoutsEquivalent(title1: string, title2: string): boolean {
-  const norm1 = normalizeWorkoutTitleForMatching(title1);
-  const norm2 = normalizeWorkoutTitleForMatching(title2);
-
-  if (!norm1 || !norm2) return false;
-  if (norm1 === norm2) return true;
-
-  const minLen = Math.min(norm1.length, norm2.length);
-  if (minLen >= 10 && (norm1.startsWith(norm2.slice(0, minLen)) || norm2.startsWith(norm1.slice(0, minLen)))) {
-    return true;
-  }
-
-  const tokens1 = norm1.split(' ').filter(t => t.length >= 3);
-  const tokens2 = norm2.split(' ').filter(t => t.length >= 3);
-  if (tokens1.length > 0 && tokens2.length > 0) {
-    const intersection = tokens1.filter(t => tokens2.includes(t));
-    const overlap1 = intersection.length / tokens1.length;
-    const overlap2 = intersection.length / tokens2.length;
-    if (overlap1 >= 0.8 || overlap2 >= 0.8) {
-      return true;
-    }
-  }
-
-  return false;
-}
 
 export default async function handler(req: any, res: any) {
   // Polyfill response helpers for Node/Vite connect middleware

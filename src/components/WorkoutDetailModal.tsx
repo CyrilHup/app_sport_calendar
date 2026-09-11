@@ -23,7 +23,7 @@ import { buildWorkoutPayloadFromEvent } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { useAuth } from '../contexts/AuthContext';
 import { ActivityComparison } from '../types/garmin';
-import { formatTime, formatDateKey } from '../services/dateUtils';
+import { formatTime, formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
@@ -101,14 +101,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
 
-  const originalDateKey = effectiveEvent.metadata?.originalDate || effectiveEvent.startDate.slice(0, 10);
-  const currentEventDateKey = effectiveEvent.startDate.slice(0, 10);
+  const originalDateKey = effectiveEvent.metadata?.originalDate || toLocalDateKey(effectiveEvent.startDate);
+  const currentEventDateKey = toLocalDateKey(effectiveEvent.startDate);
 
   // Date de demain par défaut pour le report rapide
-  const baseDate = new Date(currentEventDateKey + 'T12:00:00');
-  const defaultTomorrow = new Date(baseDate);
-  defaultTomorrow.setDate(defaultTomorrow.getDate() + 1);
-  const defaultTomorrowStr = defaultTomorrow.toISOString().slice(0, 10);
+  const defaultTomorrowStr = toLocalDateKey(addDays(parseLocalDate(currentEventDateKey), 1));
 
   const defaultHours = String(new Date(effectiveEvent.startDate).getHours()).padStart(2, '0');
   const defaultMins = String(new Date(effectiveEvent.startDate).getMinutes()).padStart(2, '0');
@@ -120,12 +117,10 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
 
   const selectedWatch = 'FORERUNNER_55';
-  const workoutPreview = effectiveEvent.category === 'sport' ? buildWorkoutPayloadFromEvent(effectiveEvent, effectiveEvent.startDate.slice(0, 10), selectedWatch) : null;
+  const workoutPreview = effectiveEvent.category === 'sport' ? buildWorkoutPayloadFromEvent(effectiveEvent, toLocalDateKey(effectiveEvent.startDate), selectedWatch) : null;
 
   const handleQuickPostpone = (daysOffset: number) => {
-    const d = new Date(currentEventDateKey + 'T12:00:00');
-    d.setDate(d.getDate() + daysOffset);
-    const newDateStr = d.toISOString().slice(0, 10);
+    const newDateStr = toLocalDateKey(addDays(parseLocalDate(currentEventDateKey), daysOffset));
     setTargetDateInput(newDateStr);
   };
 
@@ -166,31 +161,12 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   // 1. PRIORITÉ ABSOLUE AU TRAIL ET À LA COURSE À PIED
   const isTrailOrRun = isSport && (
-    effectiveEvent.sportType === 'TRAIL_INTENSE' ||
-    effectiveEvent.sportType === 'TRAIL_LONG' ||
-    effectiveEvent.sportType === 'RUN_EASY' ||
     isTrailOrRunning(effectiveEvent) ||
-    titleLower.includes('trail') ||
-    titleLower.includes('hill repeats') ||
-    titleLower.includes('côte') ||
-    titleLower.includes('cotes') ||
-    titleLower.includes('footing') ||
-    titleLower.includes('running') ||
-    titleLower.includes('course') ||
-    titleLower.includes('rando-course') ||
-    titleLower.includes('mont-royal') ||
-    titleLower.includes('mont royal') ||
     Boolean(effectiveEvent.metadata?.targetElevationM && effectiveEvent.metadata.targetElevationM > 0)
   );
 
   // 2. Calisthénie / Musculation STRICTEMENT exclusive au trail/running
-  const isCalisthenics = isSport && !isTrailOrRun && (
-    effectiveEvent.sportType === 'CALISTHENICS' ||
-    effectiveEvent.sportType === 'GYM_FORCE' ||
-    effectiveEvent.sportType === 'MOBILITY' ||
-    titleLower.includes('calisth') ||
-    isStrengthOrCalisthenics(effectiveEvent)
-  );
+  const isCalisthenics = isSport && !isTrailOrRun && isStrengthOrCalisthenics(effectiveEvent);
 
   const actualStartDate = effectiveComparison?.actualActivity?.startTimeLocal ? new Date(effectiveComparison.actualActivity.startTimeLocal) : null;
   const actualDurationMinutes = effectiveComparison?.actualActivity?.durationMinutes;
@@ -238,6 +214,75 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const sessionTrimpInfo = actualTrimpInfo || plannedTrimpInfo;
 
   const trimpSaved = (originalTrimpInfo && plannedTrimpInfo) ? Math.max(0, originalTrimpInfo.trimp - plannedTrimpInfo.trimp) : 0;
+
+  const isTrailIntense = effectiveEvent.sportType === 'TRAIL_INTENSE' || titleLower.includes('hill repeats') || titleLower.includes('côte') || titleLower.includes('cote');
+  const isTrailLong = effectiveEvent.sportType === 'TRAIL_LONG' || titleLower.includes('trail') || titleLower.includes('rando-course');
+  const hasLegStrength = titleLower.includes('leg strength') || titleLower.includes('renfo') || titleLower.includes('strength');
+
+  const unifiedTargetInfo = React.useMemo(() => {
+    if (!isSport || isCalisthenics) return null;
+
+    // Check if any workout step has a PACE target
+    const paceStep = workoutPreview?.steps.find(s => s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm);
+    if (paceStep && paceStep.targetPaceLowMinKm && paceStep.targetPaceHighMinKm) {
+      return {
+        badgeTitle: 'Cible Allure (Plat)',
+        icon: '🎯',
+        value: `${paceStep.targetPaceLowMinKm} – ${paceStep.targetPaceHighMinKm} /km`,
+        color: '#38bdf8',
+        subtitle: 'Allure guidée sur montre • Cardio libre (~155-165 bpm)'
+      };
+    }
+
+    if (isTrailIntense) {
+      return {
+        badgeTitle: 'Cible Côtes & D+',
+        icon: '⚡',
+        value: 'Effort tonique (RPE 8/10)',
+        color: '#f97316',
+        subtitle: hasLegStrength ? 'Côtes dynamiques + Renfo excentrique' : 'Montée active • Descente trot souple'
+      };
+    }
+
+    if (isTrailLong || effectiveElevationM >= 200) {
+      return {
+        badgeTitle: 'Cible Trail & D+',
+        icon: '⛰️',
+        value: 'Rando-Course libre',
+        color: '#10b981',
+        subtitle: 'Power-hike montée • Relance souple'
+      };
+    }
+
+    const hrStep = workoutPreview?.steps.find(s => s.targetType === 'HR_RANGE' && s.targetHrLow && s.targetHrHigh);
+    if (hrStep && hrStep.targetHrLow && hrStep.targetHrHigh) {
+      return {
+        badgeTitle: 'Cible Cardio',
+        icon: '💓',
+        value: `${hrStep.targetHrLow} – ${hrStep.targetHrHigh} bpm`,
+        color: 'var(--accent-red)',
+        subtitle: `FCmax = ${athleteFcMax} bpm`
+      };
+    }
+
+    if (effectiveEvent.metadata?.targetHeartRate) {
+      return {
+        badgeTitle: 'Cible Séance',
+        icon: '🕊️',
+        value: 'Libre au feeling Z2',
+        color: '#a78bfa',
+        subtitle: 'Zéro vibration • Aisance respiratoire'
+      };
+    }
+
+    return {
+      badgeTitle: 'Cible Séance',
+      icon: '🕊️',
+      value: 'Libre au feeling Z2',
+      color: '#a78bfa',
+      subtitle: 'Zéro alerte de montre'
+    };
+  }, [isSport, isCalisthenics, workoutPreview, isTrailIntense, isTrailLong, hasLegStrength, effectiveElevationM, athleteFcMax, effectiveEvent.metadata?.targetHeartRate]);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -785,17 +830,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               </div>
             )}
 
-            {/* Cible Cardiaque */}
-            {effectiveEvent.metadata?.targetHeartRate && (
+            {/* Cible de Séance Unifiée (Allure / Trail Libre / Côtes / Cardio) */}
+            {unifiedTargetInfo && (
               <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
-                  <Heart size={11} color="var(--accent-red)" /> Cible Cardio / Intensité
+                  <span style={{ fontSize: '0.78rem' }}>{unifiedTargetInfo.icon}</span> {unifiedTargetInfo.badgeTitle}
                 </span>
-                <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--accent-red)', marginTop: 3 }}>
-                  {effectiveEvent.metadata.targetHeartRate}
+                <div style={{ fontWeight: 700, fontSize: '0.86rem', color: unifiedTargetInfo.color, marginTop: 3 }}>
+                  {unifiedTargetInfo.value}
                 </div>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
-                  FCmax = {athleteFcMax} bpm
+                  {unifiedTargetInfo.subtitle}
                 </span>
               </div>
             )}
@@ -911,7 +956,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   <span>DÉROULÉ CONCRET DE LA SÉANCE</span>
                 </div>
                 <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  {effectiveEvent.durationMinutes} min au total
+                  {Math.round(workoutPreview.steps.reduce((acc, s) => acc + (s.durationSeconds || 0), 0) / 60)} min au total
                 </span>
               </div>
 
@@ -962,12 +1007,23 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       </div>
 
                       <div style={{ flex: 1, fontSize: '0.78rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
-                        <div>{st.stepNotes}</div>
-                        {st.targetHrLow && st.targetHrHigh && (
-                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                            Cible : {st.targetHrLow} – {st.targetHrHigh} bpm
+                        <div style={{ fontWeight: 600 }}>{st.stepNotes}</div>
+                        {st.targetType === 'PACE' && st.targetPaceLowMinKm && st.targetPaceHighMinKm ? (
+                          <div style={{ fontSize: '0.72rem', color: '#38bdf8', marginTop: 3, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>🎯 Allure cible :</span>
+                            <span>{st.targetPaceLowMinKm} – {st.targetPaceHighMinKm}/km</span>
                           </div>
-                        )}
+                        ) : st.targetType === 'HR_RANGE' && st.targetHrLow && st.targetHrHigh ? (
+                          <div style={{ fontSize: '0.72rem', color: 'var(--accent-red)', marginTop: 3, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>💓 Cible FC :</span>
+                            <span>{st.targetHrLow} – {st.targetHrHigh} bpm</span>
+                          </div>
+                        ) : st.targetType === 'NONE' ? (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span>🕊️ Guidage libre</span>
+                            <span>(au feeling, zéro alerte)</span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -976,23 +1032,31 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
               {/* Règle d'or / Consignes clés directes */}
               <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.06)', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <span style={{ fontWeight: 700, color: '#f59e0b' }}>⚠️ Règles clés :</span>
+                <span style={{ fontWeight: 700, color: '#f59e0b' }}>⚠️ Consignes clés :</span>
                 {isRecoveryFooting ? (
                   <>
-                    <span>• <strong>Course 100% sur terrain plat ou herbeux souple</strong> : aucun dénivelé, aucune côte pour reposer tendons et genoux.</span>
-                    <span>• <strong>Allure de récupération douce</strong> : rester strictement sous 142 bpm (Zone 1/2) en aisance respiratoire totale.</span>
+                    <span>• <strong>Terrain 100% plat ou herbeux souple</strong> : aucun dénivelé, aucune côte pour préserver articulations et tendons.</span>
+                    <span>• <strong>Allure de récupération douce</strong> : courir en totale aisance respiratoire, foulée économique et relâchée.</span>
                   </>
-                ) : effectiveEvent?.sportType === 'TRAIL_LONG' || effectiveElevationM >= 200 ? (
+                ) : isTrailIntense ? (
                   <>
-                    <span>• ⛰️ <strong>Stratégie Rando-Course Ultra-Trail QMT-80</strong> : pour accumuler +{effectiveElevationM} m D+ tout en restant sous 155 bpm (Zone 2), alternez marche et course.</span>
-                    <span>• <strong>Power-Hike obligatoire en côte</strong> : dès que la pente dépasse 7 à 8 % (ou dès que la FC approche 150 bpm), passez en marche rapide active (mains en appui sur les cuisses ou bâtons) pour brider les pulsations en Zone 2.</span>
-                    <span>• <strong>Relance fluide sur le plat & descentes</strong> : courez souplement dès que le terrain s'adoucit pour travailler la foulée d'endurance sans exploser le cardio.</span>
-                    <span>• <strong>Filière lipidique</strong> : respecter la Zone 2 permet d'optimiser la combustion des graisses indispensable pour boucler 80 km sans panne de glycogène.</span>
+                    <span>• ⚡ <strong>Spécifique Côtes & Puissance D+</strong> : montée tonique et engagée (effort RPE 8/10) avec buste droit et poussée active sur l'avant-pied.</span>
+                    <span>• <strong>Descente de récupération</strong> : descente marchée ou trottinée très souple pour faire redescendre les pulsations avant la répétition suivante.</span>
+                    {hasLegStrength && (
+                      <span>• 🏋️ <strong>Renforcement spécifique post-côtes</strong> : enchaîner sans pause longue le bloc de renforcement (fentes bulgares, squats tempo, mollets) pour développer la résistance excentrique indispensable aux descentes du QMT-80.</span>
+                    )}
+                  </>
+                ) : (effectiveEvent?.sportType === 'TRAIL_LONG' || effectiveElevationM >= 200) ? (
+                  <>
+                    <span>• ⛰️ <strong>Stratégie Rando-Course Ultra-Trail QMT-80</strong> : pour accumuler +{effectiveElevationM} m D+ en endurance sans épuiser le glycogène, alternez marche et course.</span>
+                    <span>• <strong>Power-Hike en côte</strong> : dès que la pente dépasse 7-8%, passez en marche rapide active (mains en appui sur les cuisses ou bâtons) pour préserver les jambes.</span>
+                    <span>• <strong>Relance souple sur plat & descentes</strong> : courez souplement dès que le terrain s'adoucit pour travailler la foulée d'endurance.</span>
+                    <span>• <strong>Filière lipidique</strong> : courir en aisance respiratoire permet d'optimiser l'endurance fondamentale indispensable pour boucler 80 km.</span>
                   </>
                 ) : (
                   <>
-                    <span>• <strong>Marche active (power-hike)</strong> dès que la pente dépasse 8% pour économiser les tendons et mollets.</span>
-                    <span>• Respect strict de la <strong>Zone 2</strong> pour favoriser la filière lipidique sans stress lactique.</span>
+                    <span>• <strong>Allure régulière et contrôlée</strong> : foulée fluide et cadence dynamique (~170-175 spm).</span>
+                    <span>• <strong>Endurance fondamentale</strong> : courir en aisance respiratoire pour développer le réseau capillaire sans accumuler de fatigue résiduelle.</span>
                   </>
                 )}
               </div>

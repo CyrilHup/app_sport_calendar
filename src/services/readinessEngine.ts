@@ -1,8 +1,8 @@
 import { CalendarEvent } from '../types/calendar';
 import { GarminWellnessData } from '../types/garmin';
-import { storageGet, storageSet } from './storageService';
+import { storageGet, storageSet, STORAGE_KEYS } from './storageService';
 
-const WELLNESS_STORAGE_KEY = 'garmin_wellness_history';
+const WELLNESS_STORAGE_KEY = STORAGE_KEYS.WELLNESS_HISTORY;
 
 /**
  * Loads all saved Garmin wellness history from local storage.

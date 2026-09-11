@@ -53,7 +53,7 @@ export function setGarminAutoSyncEnabled(enabled: boolean): void {
  * Any modification (postponement, duration change, adapted status, elevation) changes this signature.
  */
 export function computeWorkoutSyncSignature(event: CalendarEvent): string {
-  const dateStr = event.startDate.slice(0, 10);
+  const dateStr = toLocalDateKey(event.startDate);
   const dur = event.durationMinutes || 0;
   const sport = event.sportType || 'SPORT';
   const adapted = event.metadata?.isAdapted ? '1' : '0';
@@ -92,8 +92,8 @@ export function saveSyncedWeekWorkoutSignatures(signatures: Record<string, strin
 /**
  * Calculates the Monday Date of the week containing date.
  */
-import { getMondayOfWeek, formatDateKey } from './dateUtils';
-export { getMondayOfWeek, formatDateKey };
+import { getMondayOfWeek, formatDateKey, toLocalDateKey } from './dateUtils';
+export { getMondayOfWeek, formatDateKey, toLocalDateKey };
 
 /**
  * Calculates start and end boundaries (Monday to Sunday) for the week containing referenceDate.
@@ -127,7 +127,7 @@ export function filterCurrentWeekSportWorkouts(
   return events.filter(ev => {
     if (ev.category !== 'sport') return false;
     if (ev.metadata?.isPostponedPlaceholder) return false;
-    const evDate = ev.startDate.slice(0, 10);
+    const evDate = toLocalDateKey(ev.startDate);
     return evDate >= weekStartStr && evDate <= weekEndStr;
   });
 }
@@ -226,7 +226,7 @@ export async function syncCurrentWeekWorkoutsToGarmin(
     let pushedCount = 0;
 
     for (const workout of toPush) {
-      const dateStr = workout.startDate.slice(0, 10);
+      const dateStr = toLocalDateKey(workout.startDate);
       const pushRes = await pushWorkoutToGarmin(workout, dateStr, 'FORERUNNER_55');
       results.push(pushRes);
 

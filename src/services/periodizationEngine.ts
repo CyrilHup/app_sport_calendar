@@ -293,7 +293,7 @@ export function getDailyWorkoutPlan(
           colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
           colorId: COLOR_MAP.TRAIL_INTENSE.colorId,
           description: `❄️ WINTER SAFETY (Incline treadmill):\n• 15' flat warm-up\n• Hill intervals 12-15% incline (5.5 - 6.5 km/h) — Target HR: 172-190 bpm (Zone 4/5)\n• Post-hill leg strength (${renfoTuesdayMin} min):\n  - Tempo squats (3s descent): ${isDeload ? '2x8' : '4x8'}\n  - Bulgarian split squats: ${isDeload ? '2x8' : '3x10'}\n  - Unilateral calf raises: ${isDeload ? '2x12' : '4x15'}`,
-          targetHeartRate: "172 - 190 bpm (Zone 4/5)",
+          targetHeartRate: "Effort tonique en côte (Zone 4/5)",
           targetHeartRateRange: [172, 190],
           targetElevationM: 400
         };
@@ -309,7 +309,7 @@ export function getDailyWorkoutPlan(
         colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
         colorId: COLOR_MAP.TRAIL_INTENSE.colorId,
         description: `• 15' warm-up + ${isDeload ? '1 set of 5x 1\' hill' : '2 sets of (5x 1\' hill, easy jog descent)'} + 10' cool-down.\n• Uphill target: HR 172-190 bpm (Zone 4/5).\n• Post-hill leg strength (${renfoTuesdayMin} min): Bulgarian split squats, tempo squats and calf raises for eccentric quad resistance.`,
-        targetHeartRate: "172 - 190 bpm (Zone 4/5)",
+        targetHeartRate: "Effort tonique en côte (Zone 4/5)",
         targetHeartRateRange: [172, 190],
         targetElevationM: 380
       };
@@ -341,7 +341,7 @@ export function getDailyWorkoutPlan(
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
         colorId: COLOR_MAP.RUN_EASY.colorId,
         description: `• ${durationThursday} min strictly in conversational aerobic pace.\n• Cardio target: HR < 148 bpm (optimal 138-145 bpm, 100% nasal breathing possible).\n• Biomechanics cue: Keep high cadence (170-175 spm) with light, short steps right under the hips.`,
-        targetHeartRate: "< 148 bpm (Zone 1/2 easy)",
+        targetHeartRate: "Endurance fondamentale (Zone 2)",
         targetHeartRateRange: [130, 148],
         targetCadence: "170 - 175 spm"
       };
@@ -470,7 +470,7 @@ export function getDailyWorkoutPlan(
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
         colorId: COLOR_MAP.RUN_EASY.colorId,
         description: `• ${durationSunday} min aerobic endurance on fatigue from previous day (Back-to-back effect).\n• Cardio Target: HR < 148 bpm strict. Dynamic cadence 170-175 spm.`,
-        targetHeartRate: "< 148 bpm (Zone 2 strict)",
+        targetHeartRate: "Endurance fondamentale (Zone 2)",
         targetHeartRateRange: [130, 148],
         targetCadence: "170 - 175 spm"
       };

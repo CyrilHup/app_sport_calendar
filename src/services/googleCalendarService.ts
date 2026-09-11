@@ -1,7 +1,8 @@
 import { CalendarEvent } from '../types/calendar';
+import { STORAGE_KEYS } from './storageService';
 
-const GCAL_STORAGE_MAP_KEY = 'gcal_synced_events_map_v1';
-const GCAL_CLIENT_ID_KEY = 'gcal_oauth_client_id';
+const GCAL_STORAGE_MAP_KEY = STORAGE_KEYS.GCAL_EVENT_MAP;
+const GCAL_CLIENT_ID_KEY = STORAGE_KEYS.GCAL_CLIENT_ID;
 
 export interface GCalSyncProgress {
   total: number;

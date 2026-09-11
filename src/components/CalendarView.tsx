@@ -31,7 +31,7 @@ import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { formatDateKey, formatTime, formatFriendlyDay, getGarminLocalDateKey } from '../services/dateUtils';
+import { formatDateKey, formatTime, formatFriendlyDay, getGarminLocalDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { computeTrainingLoadStats, calculateSessionTrimp } from '../services/statsEngine';
 import { evaluateAdaptivePlanStatus, isAutoAdaptEnabled, setAutoAdaptEnabled } from '../services/adaptivePlanEngine';
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
@@ -367,9 +367,9 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
         )}
 
         {/* Cibles planifiées si séance non encore validée */}
-        {!group.hasValidated && !group.hasUnplannedBonus && mainEv?.metadata?.targetHeartRate && (
+        {!group.hasValidated && !group.hasUnplannedBonus && !isStrength && mainEv?.metadata?.targetHeartRate && (
           <span style={{ color: 'var(--primary)', fontWeight: 600 }}>
-            ❤️ Cible : {mainEv.metadata.targetHeartRate}
+            🎯 Cible : {mainEv.metadata.targetHeartRate}
           </span>
         )}
         {!group.hasValidated && !group.hasUnplannedBonus && !isStrength && mainEv?.metadata?.targetElevationM && (
@@ -544,7 +544,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
-  const effectiveRefDate = referenceDate || (referenceDateStr ? new Date(referenceDateStr + 'T12:00:00') : new Date());
+  const effectiveRefDate = referenceDate || (referenceDateStr ? parseLocalDate(referenceDateStr) : new Date());
   const todayKey = referenceDateStr || formatDateKey(effectiveRefDate);
   const currentTodayIndex = schedules.findIndex(s => s.date === todayKey);
   const currentWeekOffset = currentTodayIndex >= 0 ? Math.floor(currentTodayIndex / 7) : 0;
@@ -685,8 +685,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const formatWeekRange = () => {
     if (displayedDays.length === 0) return '';
     try {
-      const start = new Date(displayedDays[0].date + 'T12:00:00');
-      const end = new Date(displayedDays[displayedDays.length - 1].date + 'T12:00:00');
+      const start = parseLocalDate(displayedDays[0].date);
+      const end = parseLocalDate(displayedDays[displayedDays.length - 1].date);
       const startDay = start.getDate();
       const endDay = end.getDate();
       const endMonth = end.toLocaleDateString('fr-CA', { month: 'short' });
@@ -1074,12 +1074,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               type="button"
               className="btn-secondary"
               onClick={() => {
-                const tmrw = new Date();
-                tmrw.setDate(tmrw.getDate() + 1);
+                const tmrwStr = toLocalDateKey(addDays(parseLocalDate(todayKey), 1));
                 onPostponeWorkout(
                   todaySchedule.sportSession!.id,
                   todayKey,
-                  tmrw.toISOString().slice(0, 10),
+                  tmrwStr,
                   'Adaptation VFC Garmin basse'
                 );
               }}
@@ -1372,7 +1371,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
         if (viewMode === 'day') {
           const currentDay = displayedDays[activeDayIndex] || displayedDays[0];
-          const dObj = currentDay ? new Date(currentDay.date + 'T12:00:00') : new Date();
+          const dObj = currentDay ? parseLocalDate(currentDay.date) : new Date();
           const isToday = currentDay ? currentDay.date === todayKey : false;
 
           return (
@@ -1380,7 +1379,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               {/* Ruban Hebdomadaire Mobile (Lundi -> Dimanche) */}
               <div className="mobile-week-ribbon">
                 {displayedDays.map((day, idx) => {
-                  const dayObj = new Date(day.date + 'T12:00:00');
+                  const dayObj = parseLocalDate(day.date);
                   const isDayToday = day.date === todayKey;
                   const isSelected = idx === activeDayIndex;
                   const shortNames = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
@@ -1454,7 +1453,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <div className="calendar-scroll-wrapper">
               <div className="week-grid">
                 {displayedDays.map(day => {
-                  const dateObj = new Date(day.date + 'T12:00:00');
+                  const dateObj = parseLocalDate(day.date);
                   const isToday = day.date === todayKey;
                   const isDragTarget = dragOverDate === day.date;
 
@@ -1475,8 +1474,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       onDrop={(e) => {
                         e.preventDefault();
                         setDragOverDate(null);
-                        if (draggedEvent && onPostponeWorkout && draggedEvent.startDate.slice(0, 10) !== day.date) {
-                          const origDate = draggedEvent.metadata?.originalDate || draggedEvent.startDate.slice(0, 10);
+                        if (draggedEvent && onPostponeWorkout && toLocalDateKey(draggedEvent.startDate) !== day.date) {
+                          const origDate = draggedEvent.metadata?.originalDate || toLocalDateKey(draggedEvent.startDate);
                           onPostponeWorkout(draggedEvent.id, origDate, day.date);
                           setDraggedEvent(null);
                         }
@@ -1524,7 +1523,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {displayedDays.map(day => {
-            const dateObj = new Date(day.date + 'T12:00:00');
+            const dateObj = parseLocalDate(day.date);
             const isToday = day.date === todayKey;
 
             const courseEvents = day.events.filter(e => e.category === 'course');

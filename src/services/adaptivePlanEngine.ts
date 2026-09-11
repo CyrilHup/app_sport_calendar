@@ -8,6 +8,7 @@ import {
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
 import { storageGet, storageSet, storageRemove } from './storageService';
+import { toLocalDateKey } from './dateUtils';
 
 export const ADAPTIVE_PLAN_STORAGE_KEY = 'sport_calendar_adaptive_overrides';
 
@@ -90,7 +91,7 @@ export function evaluateAdaptivePlanStatus(
       const isPostponed = Boolean(ev.metadata?.isPostponedPlaceholder);
       if (isPostponed) continue;
 
-      const dateStr = ev.startDate.slice(0, 10);
+      const dateStr = toLocalDateKey(ev.startDate);
 
       // Traiter les séances dures de côtes (TRAIL_INTENSE)
       if (ev.sportType === 'TRAIL_INTENSE') {
@@ -149,7 +150,7 @@ export function evaluateAdaptivePlanStatus(
       const isPostponed = Boolean(ev.metadata?.isPostponedPlaceholder);
       if (isPostponed) continue;
 
-      const dateStr = ev.startDate.slice(0, 10);
+      const dateStr = toLocalDateKey(ev.startDate);
 
       if (ev.sportType === 'TRAIL_INTENSE') {
         const adaptedMins = Math.max(40, Math.round(ev.durationMinutes * 0.85));
@@ -185,7 +186,7 @@ export function evaluateAdaptivePlanStatus(
     if (trailAcwrRatio < 0.6) {
       for (const ev of upcomingSportEvents) {
         if (ev.sportType === 'TRAIL_INTENSE') {
-          const dateStr = ev.startDate.slice(0, 10);
+          const dateStr = toLocalDateKey(ev.startDate);
           recommendedActions.push({
             eventId: ev.id,
             date: dateStr,

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/garmin';
-import { formatDateKey } from '../services/dateUtils';
+import { formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { formatGarminActivityName, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
@@ -381,7 +381,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                               )}
                               {comp.isPostponedCatchup && comp.scheduledDate && (
                                 <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
-                                  🔄 Remplacée / Reportée du {new Date(comp.scheduledDate + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                  🔄 Remplacée / Reportée du {parseLocalDate(comp.scheduledDate).toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 </span>
                               )}
                             </div>
@@ -623,13 +623,11 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                                 className="btn-secondary"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  const origDate = comp.plannedEvent?.metadata?.originalDate || comp.plannedEvent!.startDate.slice(0, 10);
+                                  const origDate = comp.plannedEvent?.metadata?.originalDate || toLocalDateKey(comp.plannedEvent!.startDate);
                                   const todayStr = referenceDateStr || formatDateKey(new Date());
                                   let targetDate = todayStr;
                                   if (origDate >= todayStr) {
-                                    const nextD = new Date(todayStr + 'T12:00:00');
-                                    nextD.setDate(nextD.getDate() + 1);
-                                    targetDate = nextD.toISOString().slice(0, 10);
+                                    targetDate = toLocalDateKey(addDays(parseLocalDate(todayStr), 1));
                                   }
                                   onPostponeWorkout(comp.plannedEvent!.id, origDate, targetDate, 'Reporté depuis la télémétrie');
                                 }}
@@ -815,7 +813,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                                         className="btn-hover-effect"
                                       >
                                         <span>
-                                          <strong>{act.activityName}</strong> ({act.activityType}) • {act.startTimeLocal.slice(0, 10)}
+                                          <strong>{act.activityName}</strong> ({act.activityType}) • {toLocalDateKey(act.startTimeLocal)}
                                         </span>
                                         <span style={{ color: 'var(--primary)', fontWeight: 700 }}>
                                           {act.durationMinutes} min {act.elevationGainM ? `• +${act.elevationGainM}m` : ''}
@@ -910,7 +908,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         )}
                         {comp.isPostponedCatchup && comp.scheduledDate && (
                           <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
-                            🔄 Remplacée / Reportée du {new Date(comp.scheduledDate + 'T12:00:00').toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
+                            🔄 Remplacée / Reportée du {parseLocalDate(comp.scheduledDate).toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
                           </span>
                         )}
                       </div>
@@ -927,13 +925,11 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         className="btn-secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          const origDate = comp.plannedEvent?.metadata?.originalDate || comp.plannedEvent!.startDate.slice(0, 10);
+                          const origDate = comp.plannedEvent?.metadata?.originalDate || toLocalDateKey(comp.plannedEvent!.startDate);
                           const todayStr = referenceDateStr || formatDateKey(new Date());
                           let targetDate = todayStr;
                           if (origDate >= todayStr) {
-                            const nextD = new Date(todayStr + 'T12:00:00');
-                            nextD.setDate(nextD.getDate() + 1);
-                            targetDate = nextD.toISOString().slice(0, 10);
+                            targetDate = toLocalDateKey(addDays(parseLocalDate(todayStr), 1));
                           }
                           onPostponeWorkout(comp.plannedEvent!.id, origDate, targetDate, 'Reporté depuis la télémétrie');
                         }}

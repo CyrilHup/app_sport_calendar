@@ -157,4 +157,72 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
       expect(step.targetType).toBe('NONE');
     }
   });
+
+  it('guarantees that Hill Repeats + Leg Strength (70 min) steps sum to exactly 70 minutes (4200s)', () => {
+    setGarminWorkoutTargetMode('SMART_PACE_AND_TRAIL_FREE');
+
+    const tuesdaySession = createMockEvent({
+      id: 'event-tuesday-70min',
+      title: 'Trail: Hill Repeats D+ (Mont-Royal) + Leg Strength',
+      startDate: '2026-09-15T17:00:00',
+      endDate: '2026-09-15T18:10:00',
+      sportType: 'TRAIL_INTENSE',
+      durationMinutes: 70,
+      location: 'Mont Royal',
+      metadata: { targetElevationM: 380 }
+    });
+
+    const payload = buildWorkoutPayloadFromEvent(tuesdaySession);
+
+    // 1. Total seconds must exactly match 70 min = 4200 seconds
+    const totalSeconds = payload.steps.reduce((sum, s) => sum + (s.durationSeconds || 0), 0);
+    expect(totalSeconds).toBe(70 * 60);
+
+    // 2. Must contain running hill repeats steps as well as leg strength steps
+    const hasRenfoStep = payload.steps.some(s => s.stepNotes?.includes('Renfo'));
+    expect(hasRenfoStep).toBe(true);
+
+    const hasFentesSquats = payload.steps.some(s => s.stepNotes?.includes('Fentes bulgares'));
+    expect(hasFentesSquats).toBe(true);
+
+    const hasMollets = payload.steps.some(s => s.stepNotes?.includes('Mollets'));
+    expect(hasMollets).toBe(true);
+
+    // 3. TargetType should be NONE in smart mode to avoid watch alerts on hill climbs and strength
+    for (const step of payload.steps) {
+      expect(step.targetType).toBe('NONE');
+    }
+  });
+
+  it('guarantees that all sport sessions mathematically match their planned duration', () => {
+    setGarminWorkoutTargetMode('SMART_PACE_AND_TRAIL_FREE');
+
+    const runEasy = createMockEvent({
+      id: 'run-easy-45',
+      title: 'Running: Easy Aerobic Base Run Z2',
+      sportType: 'RUN_EASY',
+      durationMinutes: 45
+    });
+    const p1 = buildWorkoutPayloadFromEvent(runEasy);
+    expect(p1.steps.reduce((sum, s) => sum + (s.durationSeconds || 0), 0)).toBe(45 * 60);
+
+    const trailLong = createMockEvent({
+      id: 'trail-long-105',
+      title: 'Trail: Rando-Course D+ (1h45)',
+      sportType: 'TRAIL_LONG',
+      durationMinutes: 105
+    });
+    const p2 = buildWorkoutPayloadFromEvent(trailLong);
+    expect(p2.steps.reduce((sum, s) => sum + (s.durationSeconds || 0), 0)).toBe(105 * 60);
+
+    const calisthenics = createMockEvent({
+      id: 'calis-60',
+      title: 'Entraînement Calisthénie',
+      sportType: 'CALISTHENICS',
+      durationMinutes: 60
+    });
+    const p3 = buildWorkoutPayloadFromEvent(calisthenics);
+    expect(p3.steps.reduce((sum, s) => sum + (s.durationSeconds || 0), 0)).toBe(60 * 60);
+  });
 });
+

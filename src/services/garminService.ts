@@ -13,15 +13,15 @@ import { classifyGarminActivityType } from './activityClassifier';
 import { getApiUrl } from './apiConfig';
 import { saveWellnessData } from './readinessEngine';
 import { setAppConfigOverrides } from './periodizationEngine';
-import { formatDateKey } from './dateUtils';
+import { formatDateKey, toLocalDateKey } from './dateUtils';
 
 
 import { Preferences } from '@capacitor/preferences';
 import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storageService';
 
-const GARMIN_STORAGE_KEY = 'garmin_activities_synced';
-const GARMIN_STATE_KEY = 'garmin_sync_state';
-const GARMIN_CREDS_KEY = 'garmin_credentials';
+const GARMIN_STORAGE_KEY = STORAGE_KEYS.GARMIN_ACTIVITIES;
+const GARMIN_STATE_KEY = STORAGE_KEYS.GARMIN_STATE;
+const GARMIN_CREDS_KEY = STORAGE_KEYS.GARMIN_CREDS;
 export const GARMIN_WORKOUT_TARGET_MODE_KEY = 'garmin_workout_target_mode';
 export const GARMIN_ATHLETE_BASE_PACE_KEY = 'garmin_athlete_base_pace';
 
@@ -50,16 +50,60 @@ export function setGarminWorkoutTargetMode(mode: GarminWorkoutTargetMode): void 
   }
 }
 
-export function getAthleteBasePace(): string {
+/**
+ * Dynamically computes the athlete's rolling baseline easy pace
+ * from their recent flat running activities (< 35m D+/km).
+ * Updates automatically as the athlete progresses over the weeks!
+ */
+export function computeDynamicAthleteBasePace(activities?: GarminActivity[]): string {
+  const acts = activities || loadStoredGarminActivities();
+  const runActs = acts.filter(a => {
+    if (a.activityType !== 'RUNNING') return false;
+    if (!a.distanceKm || a.distanceKm < 1.5) return false;
+    if (!a.avgPaceMinKm) return false;
+    // Exclude heavy trail/hill repeats that distort flat aerobic baseline
+    const density = (a.elevationGainM || 0) / (a.distanceKm || 1);
+    return density < 35;
+  });
+
+  if (runActs.length === 0) {
+    return '6:05'; // Realistic initial seed
+  }
+
+  // Rolling weighted average of recent runs (up to 6 last runs)
+  const recentRuns = runActs.slice(0, 6);
+  let totalWeightedSec = 0;
+  let totalDurMin = 0;
+
+  for (const r of recentRuns) {
+    const sec = parsePaceToSeconds(r.avgPaceMinKm || '');
+    if (sec >= 180 && sec <= 600) { // between 3:00/km and 10:00/km
+      const weight = Math.max(10, r.durationMinutes || 30);
+      totalWeightedSec += sec * weight;
+      totalDurMin += weight;
+    }
+  }
+
+  if (totalDurMin > 0) {
+    const avgSec = Math.round(totalWeightedSec / totalDurMin);
+    return formatSecondsToPace(avgSec);
+  }
+
+  return '6:05';
+}
+
+export function isAthleteBasePaceAuto(): boolean {
   try {
     if (typeof localStorage !== 'undefined') {
       const pace = localStorage.getItem(GARMIN_ATHLETE_BASE_PACE_KEY);
-      if (pace && /^\d{1,2}:\d{2}$/.test(pace)) {
-        return pace;
-      }
+      return !pace || pace === 'AUTO';
     }
   } catch {}
-  return '6:05'; // Default realistic baseline from recent runs (5:42 to 6:07 /km)
+  return true;
+}
+
+export function getAthleteBasePace(): string {
+  return computeDynamicAthleteBasePace();
 }
 
 export function setAthleteBasePace(pace: string): void {
@@ -111,12 +155,6 @@ export function saveGarminCredentials(creds: GarminCredentials): void {
   try {
     Preferences.set({ key: GARMIN_CREDS_KEY, value: jsonStr }).catch(() => {});
   } catch {}
-  // Purge any legacy plaintext cookie
-  try {
-    if (typeof document !== 'undefined') {
-      document.cookie = `${encodeURIComponent(GARMIN_CREDS_KEY)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-    }
-  } catch {}
 }
 
 /**
@@ -158,11 +196,6 @@ export function clearGarminCredentials(): void {
   } catch {}
   try {
     Preferences.remove({ key: GARMIN_CREDS_KEY }).catch(() => {});
-  } catch {}
-  try {
-    if (typeof document !== 'undefined') {
-      document.cookie = `${encodeURIComponent(GARMIN_CREDS_KEY)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-    }
   } catch {}
 }
 
@@ -450,7 +483,7 @@ export function buildWorkoutPayloadFromEvent(
   targetDateStr?: string,
   targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
 ): WorkoutPushPayload {
-  const dateKey = targetDateStr || event.startDate.slice(0, 10);
+  const dateKey = targetDateStr || toLocalDateKey(event.startDate);
   const durMin = event.durationMinutes || 45;
   const isFR55 = targetWatch === 'FORERUNNER_55';
   const targetMode = getGarminWorkoutTargetMode();
@@ -579,269 +612,192 @@ export function buildWorkoutPayloadFromEvent(
       ];
     }
   } else if (event.sportType === 'TRAIL_INTENSE') {
-    // Hill Repeats (Séances de Côtes)
+    // Hill Repeats (Séances de Côtes) & Renforcement Spécifique Post-Côtes
     sportType = 'RUNNING';
-    const isModerate = event.title.includes('1 série') || durMin <= 50;
+    const hasLegStrength = titleLower.includes('leg strength') || titleLower.includes('renfo') || titleLower.includes('strength');
 
-    if (useFreeForTrail || useFreeForAll) {
-      // Sur le Mont-Royal / Côtes : Guidage par intervalles SANS vibrations d'allure ni FC
-      if (isModerate) {
-        steps = [
-          {
-            stepType: 'WARMUP',
-            durationSeconds: 12 * 60,
-            targetType: 'NONE',
-            stepNotes: 'Échauffement progressif vers les côtes'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Montée côte modérée (RPE 7/10)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente marchée très souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Montée côte modérée contrôlée'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente marchée souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Dernière répétition en côte souple'
-          },
-          {
-            stepType: 'COOLDOWN',
-            durationSeconds: 8 * 60,
-            targetType: 'NONE',
-            stepNotes: 'Retour au calme & trot très lent'
-          }
-        ];
-      } else {
-        steps = [
-          {
-            stepType: 'WARMUP',
-            durationSeconds: 15 * 60,
-            targetType: 'NONE',
-            stepNotes: 'Échauffement progressif vers le Mont-Royal'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Répétition côte raide (effort tonique)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente trot très souple ou marche'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Répétition côte raide (effort tonique)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente trot très souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Répétition côte raide'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente trot souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'NONE',
-            stepNotes: 'Dernière montée tonique !'
-          },
-          {
-            stepType: 'COOLDOWN',
-            durationSeconds: 10 * 60,
-            targetType: 'NONE',
-            stepNotes: 'Retour au calme & décrassage plat'
-          }
-        ];
+    // If session includes post-hill leg strength (e.g. Tuesday 70 min = 45 min trail + 25 min renfo)
+    let strengthMin = 0;
+    if (hasLegStrength) {
+      strengthMin = durMin >= 65 ? 25 : (durMin >= 50 ? 20 : 15);
+    }
+    const trailMin = Math.max(20, durMin - strengthMin);
+    const trailSec = trailMin * 60;
+
+    const warmupDurSec = (trailMin <= 35 ? 10 : 15) * 60;
+    const cooldownDurSec = (hasLegStrength ? 5 : 8) * 60;
+    const hillBlockSec = Math.max(10 * 60, trailSec - warmupDurSec - cooldownDurSec);
+
+    const isTargetFree = useFreeForTrail || useFreeForAll;
+
+    // Build the Hill Repeats running steps
+    const hillSteps: WorkoutStepDefinition[] = [
+      {
+        stepType: 'WARMUP',
+        durationSeconds: warmupDurSec,
+        targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
+        targetHrLow: isTargetFree ? undefined : 135,
+        targetHrHigh: isTargetFree ? undefined : 150,
+        stepNotes: 'Échauffement progressif vers les côtes (Mont-Royal)'
+      }
+    ];
+
+    // Standard rep = 60s montée tonique + 90s descente trot très souple = 150s (2.5 min)
+    if (hillBlockSec >= 1200) {
+      // 2 séries de côtes avec pause inter-séries
+      // Série 1: 4 répétitions (4 * 150s = 600s = 10 min)
+      for (let i = 1; i <= 4; i++) {
+        hillSteps.push({
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
+          targetHrLow: isTargetFree ? undefined : 172,
+          targetHrHigh: isTargetFree ? undefined : 190,
+          stepNotes: `Série 1 - Côte ${i}/4 (effort tonique RPE 8/10)`
+        });
+        hillSteps.push({
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente trot très souple ou marche'
+        });
+      }
+
+      // Inter-série recovery (180s = 3 min)
+      hillSteps.push({
+        stepType: 'RECOVERY',
+        durationSeconds: 180,
+        targetType: 'NONE',
+        stepNotes: 'Récupération inter-séries (marche & hydratation)'
+      });
+
+      // Série 2: 4 répétitions (4 * 150s = 600s = 10 min)
+      for (let i = 1; i <= 4; i++) {
+        hillSteps.push({
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
+          targetHrLow: isTargetFree ? undefined : 172,
+          targetHrHigh: isTargetFree ? undefined : 190,
+          stepNotes: `Série 2 - Côte ${i}/4 (effort tonique RPE 8/10)`
+        });
+        hillSteps.push({
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: i < 4 ? 'Descente trot très souple ou marche' : 'Descente finale souple'
+        });
+      }
+
+      // Remainder of hill block (e.g. 1500 - 600 - 180 - 600 = 120s / 2 min) added as transition trot
+      const allocatedHillSec = 600 + 180 + 600;
+      const remainHillSec = hillBlockSec - allocatedHillSec;
+      if (remainHillSec > 30) {
+        hillSteps.push({
+          stepType: 'RECOVERY',
+          durationSeconds: remainHillSec,
+          targetType: 'NONE',
+          stepNotes: 'Trot de transition souple'
+        });
       }
     } else {
-      // Fallback avec consigne FC si l'utilisateur l'impose explicitement
-      if (isModerate) {
-        steps = [
-          {
-            stepType: 'WARMUP',
-            durationSeconds: 12 * 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 135,
-            targetHrHigh: 150,
-            stepNotes: 'Échauffement progressif Zone 2'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 165,
-            targetHrHigh: 175,
-            stepNotes: 'Côte modérée contrôlée (FC < 175 bpm)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente marchée très souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 165,
-            targetHrHigh: 175,
-            stepNotes: 'Côte modérée (FC < 175 bpm)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente marchée souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 165,
-            targetHrHigh: 175,
-            stepNotes: 'Dernière répétition souple'
-          },
-          {
-            stepType: 'COOLDOWN',
-            durationSeconds: 8 * 60,
-            targetType: 'NONE',
-            stepNotes: 'Retour au calme & trot très lent'
-          }
-        ];
-      } else {
-        steps = [
-          {
-            stepType: 'WARMUP',
-            durationSeconds: 15 * 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 135,
-            targetHrHigh: 150,
-            stepNotes: 'Échauffement progressif Zone 2'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 172,
-            targetHrHigh: 190,
-            stepNotes: 'Répétition côte raide (Zone 4/5)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente trot très souple ou marche'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 172,
-            targetHrHigh: 190,
-            stepNotes: 'Répétition côte raide (Zone 4/5)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente trot très souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 172,
-            targetHrHigh: 190,
-            stepNotes: 'Répétition côte raide (Zone 4/5)'
-          },
-          {
-            stepType: 'RECOVERY',
-            durationSeconds: 90,
-            targetType: 'NONE',
-            stepNotes: 'Descente trot souple'
-          },
-          {
-            stepType: 'INTERVAL',
-            durationSeconds: 60,
-            targetType: 'HR_RANGE',
-            targetHrLow: 172,
-            targetHrHigh: 190,
-            stepNotes: 'Dernière montée tonique !'
-          },
-          {
-            stepType: 'COOLDOWN',
-            durationSeconds: 10 * 60,
-            targetType: 'NONE',
-            stepNotes: 'Retour au calme & décrassage'
-          }
-        ];
+      // 1 série de côtes adaptées à la durée disponible
+      const numReps = Math.max(3, Math.floor(hillBlockSec / 150));
+      for (let i = 1; i <= numReps; i++) {
+        hillSteps.push({
+          stepType: 'INTERVAL',
+          durationSeconds: 60,
+          targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
+          targetHrLow: isTargetFree ? undefined : 172,
+          targetHrHigh: isTargetFree ? undefined : 190,
+          stepNotes: `Côte ${i}/${numReps} (effort tonique RPE 8/10)`
+        });
+        hillSteps.push({
+          stepType: 'RECOVERY',
+          durationSeconds: 90,
+          targetType: 'NONE',
+          stepNotes: 'Descente marchée très souple'
+        });
+      }
+      const allocatedHillSec = numReps * 150;
+      const remainHillSec = hillBlockSec - allocatedHillSec;
+      if (remainHillSec > 30) {
+        hillSteps.push({
+          stepType: 'RECOVERY',
+          durationSeconds: remainHillSec,
+          targetType: 'NONE',
+          stepNotes: 'Trot de liaison souple'
+        });
       }
     }
+
+    // Cooldown du bloc trail
+    hillSteps.push({
+      stepType: 'COOLDOWN',
+      durationSeconds: cooldownDurSec,
+      targetType: 'NONE',
+      stepNotes: hasLegStrength
+        ? 'Trot souple & transition vers renforcement'
+        : 'Retour au calme & décrassage plat'
+    });
+
+    // Post-hill leg strength steps if requested
+    if (hasLegStrength && strengthMin > 0) {
+      const strengthSec = strengthMin * 60;
+      const s1Sec = Math.round(strengthMin * 0.4) * 60; // e.g. 10 min
+      const s2Sec = Math.round(strengthMin * 0.32) * 60; // e.g. 8 min
+      const s3Sec = Math.max(60, strengthSec - s1Sec - s2Sec); // e.g. 7 min
+
+      hillSteps.push({
+        stepType: 'INTERVAL',
+        durationSeconds: s1Sec,
+        targetType: 'NONE',
+        stepNotes: 'Renfo : Fentes bulgares & squats tempo (freinage excentrique)'
+      });
+
+      hillSteps.push({
+        stepType: 'INTERVAL',
+        durationSeconds: s2Sec,
+        targetType: 'NONE',
+        stepNotes: 'Renfo : Mollets unilatéraux & stabilité chevilles'
+      });
+
+      hillSteps.push({
+        stepType: 'COOLDOWN',
+        durationSeconds: s3Sec,
+        targetType: 'NONE',
+        stepNotes: 'Mobilité hanches & étirements doux'
+      });
+    }
+
+    steps = hillSteps;
   } else if (event.sportType === 'TRAIL_LONG') {
     sportType = 'RUNNING';
-    const mainDurSec = Math.max(20 * 60, (durMin - 20) * 60);
     const isAdapted = Boolean(event.metadata?.isAdapted);
+    const warmupDurSec = durMin <= 40 ? 10 * 60 : 15 * 60;
+    const cooldownDurSec = 5 * 60;
+    const mainDurSec = Math.max(10 * 60, durMin * 60 - warmupDurSec - cooldownDurSec);
 
     if (useFreeForTrail || useFreeForAll) {
       // Sortie Trail / Rando-course sans vibration d'alerte (targetType: 'NONE')
-      const targetHrHigh = event.metadata?.targetHeartRateRange?.[1] || 155;
       steps = [
         {
           stepType: 'WARMUP',
-          durationSeconds: 15 * 60,
+          durationSeconds: warmupDurSec,
           targetType: 'NONE',
-          targetHrLow: 135,
-          targetHrHigh: targetHrHigh,
           stepNotes: 'Échauffement progressif sur sentier'
         },
         {
           stepType: 'INTERVAL',
           durationSeconds: mainDurSec,
           targetType: 'NONE',
-          targetHrLow: 135,
-          targetHrHigh: targetHrHigh,
           stepNotes: isAdapted
             ? 'Rando-Course allégée : Power-hike dès 7%'
             : 'Rando-Course Z2 : Power-hike dès 7%'
         },
         {
           stepType: 'COOLDOWN',
-          durationSeconds: 5 * 60,
+          durationSeconds: cooldownDurSec,
           targetType: 'NONE',
           stepNotes: 'Marche active et retour au calme'
         }
@@ -851,7 +807,7 @@ export function buildWorkoutPayloadFromEvent(
       steps = [
         {
           stepType: 'WARMUP',
-          durationSeconds: 15 * 60,
+          durationSeconds: warmupDurSec,
           targetType: 'HR_RANGE',
           targetHrLow: 135,
           targetHrHigh: targetHrHigh,
@@ -869,7 +825,7 @@ export function buildWorkoutPayloadFromEvent(
         },
         {
           stepType: 'COOLDOWN',
-          durationSeconds: 5 * 60,
+          durationSeconds: cooldownDurSec,
           targetType: 'NONE',
           stepNotes: 'Marche active et retour au calme'
         }
@@ -882,6 +838,7 @@ export function buildWorkoutPayloadFromEvent(
       {
         stepType: 'INTERVAL',
         durationSeconds: durMin * 60,
+        targetType: 'NONE',
         stepNotes: 'Entraînement Calisthénie libre au poids du corps'
       }
     ];
@@ -891,19 +848,31 @@ export function buildWorkoutPayloadFromEvent(
       {
         stepType: 'WARMUP',
         durationSeconds: 10 * 60,
+        targetType: 'NONE',
         stepNotes: 'Échauffement libre'
       },
       {
         stepType: 'INTERVAL',
         durationSeconds: Math.max(10, durMin - 15) * 60,
+        targetType: 'NONE',
         stepNotes: event.title
       },
       {
         stepType: 'COOLDOWN',
         durationSeconds: 5 * 60,
+        targetType: 'NONE',
         stepNotes: 'Retour au calme'
       }
     ];
+  }
+
+  // Universal mathematical guarantee: Ensure total duration of steps exactly matches durMin * 60
+  const totalCalculatedSec = steps.reduce((acc, s) => acc + (s.durationSeconds || 0), 0);
+  const targetTotalSec = durMin * 60;
+  if (totalCalculatedSec !== targetTotalSec && steps.length > 0) {
+    const diffSec = targetTotalSec - totalCalculatedSec;
+    const lastIdx = steps.length - 1;
+    steps[lastIdx].durationSeconds = Math.max(60, (steps[lastIdx].durationSeconds || 0) + diffSec);
   }
 
   // Sanitize all step notes for clean Forerunner 55 watch screen rendering
@@ -1000,7 +969,7 @@ export async function pushWeekWorkoutsToGarmin(
   let pushedCount = 0;
 
   for (const ev of sportEvents) {
-    const dateStr = ev.startDate.slice(0, 10);
+    const dateStr = toLocalDateKey(ev.startDate);
     const res = await pushWorkoutToGarmin(ev, dateStr, targetWatch);
     results.push(res);
     if (res.success) pushedCount++;

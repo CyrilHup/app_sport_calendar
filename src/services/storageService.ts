@@ -20,13 +20,13 @@ export const STORAGE_KEYS = {
   CACHED_ETS_ICS: 'cached_ets_ics',
 
   // Télémétrie et Bien-être
-  WELLNESS_HISTORY: 'wellness_history',
+  WELLNESS_HISTORY: 'garmin_wellness_history',
   WEATHER_CACHE: 'mont_royal_weather_cache_v2',
 
   // Alarmes et Google Calendar
   ALARMS: 'app_scheduled_run_alarms',
-  GCAL_EVENT_MAP: 'gcal_event_map',
-  GCAL_CLIENT_ID: 'gcal_client_id'
+  GCAL_EVENT_MAP: 'gcal_synced_events_map_v1',
+  GCAL_CLIENT_ID: 'gcal_oauth_client_id'
 } as const;
 
 /**
