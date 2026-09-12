@@ -580,6 +580,29 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
     setHoveredPoint(closestPt);
   };
 
+  const handleSvgTouch = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (!svgRef.current || pointCoords.length === 0 || !e.touches || e.touches.length === 0) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    if (rect.width === 0) return;
+
+    const touch = e.touches[0];
+    const scaleX = svgWidth / rect.width;
+    const touchX = (touch.clientX - rect.left) * scaleX;
+
+    let closestPt = pointCoords[0];
+    let minDist = Math.abs(pointCoords[0].x - touchX);
+
+    for (let i = 1; i < pointCoords.length; i++) {
+      const dist = Math.abs(pointCoords[i].x - touchX);
+      if (dist < minDist) {
+        minDist = dist;
+        closestPt = pointCoords[i];
+      }
+    }
+
+    setHoveredPoint(closestPt);
+  };
+
   const handleSvgMouseLeave = () => {
     setHoveredPoint(null);
   };
@@ -802,6 +825,9 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                   style={{ width: '100%', height: 'auto', display: 'block', overflow: 'visible', cursor: 'crosshair' }}
                   onMouseMove={handleSvgMouseMove}
                   onMouseLeave={handleSvgMouseLeave}
+                  onTouchStart={handleSvgTouch}
+                  onTouchMove={handleSvgTouch}
+                  onTouchEnd={handleSvgMouseLeave}
                 >
                   <defs>
                     <linearGradient id="curveGradient" x1="0" y1="0" x2="0" y2="1">

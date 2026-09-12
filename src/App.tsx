@@ -26,6 +26,7 @@ import { saveWellnessData, loadWellnessHistory } from './services/readinessEngin
 import { getApiUrl } from './services/apiConfig';
 import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncService';
 import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } from './services/storageService';
+import { SyncErrorModal, SyncErrorInfo } from './components/SyncErrorModal';
 
 function loadManualPairs(): Record<string, string> {
   return storageGet<Record<string, string>>(STORAGE_KEYS.GARMIN_MANUAL_PAIRS, {});
@@ -50,6 +51,7 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization' | 'stats'>('calendar');
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
+  const [syncError, setSyncError] = useState<SyncErrorInfo | null>(null);
   const [accountModal, setAccountModal] = useState<{ isOpen: boolean; tab: AccountModalTab }>({
     isOpen: false,
     tab: 'profile'
@@ -156,7 +158,7 @@ export const App: React.FC = () => {
   const currentPeriodContext = getPeriodizationContext(referenceDate);
 
   // Function to recharge both ÉTS iCal and Garmin Connect (Mobile & Web)
-  const autoRechargeAll = async () => {
+  const autoRechargeAll = async (isManualTrigger = false) => {
     setIsRecharging(true);
     let rawCourses: RawIcsEvent[] = [];
 
@@ -216,7 +218,7 @@ export const App: React.FC = () => {
     setSchedules(transformedSchedules);
     setAllEvents(transformedEvents);
 
-    // 2. Load stored real Garmin activities and attempt sync for latest activities
+    // 2. Synchronisation Incrémentielle Garmin Connect
     let loadedActivities = loadStoredGarminActivities();
     const asyncLocalCreds = await loadGarminCredentialsAsync();
     const creds = asyncLocalCreds || (
@@ -229,32 +231,46 @@ export const App: React.FC = () => {
       saveGarminCredentials(creds);
     }
 
-    try {
-      if (creds?.email && creds?.password) {
-        const result = await syncWithGarminAPI(creds);
-        if (result.success && result.activities.length > 0) {
-          loadedActivities = result.activities;
-        }
-      } else {
-        const garminEndpoint = getApiUrl('/api/garmin-sync');
-        const garminRes = await fetch(garminEndpoint);
-        if (garminRes.ok) {
-          try {
-            const garminData = await garminRes.json();
-            if (garminData.activities && Array.isArray(garminData.activities) && garminData.activities.length > 0) {
-              loadedActivities = garminData.activities;
-              saveGarminActivities(loadedActivities);
-            }
-          } catch {
-            // Ignore non-json response
-          }
-        }
+    if (!creds?.email || !creds?.password) {
+      // Si aucun identifiant n'est renseigné et que l'utilisateur a cliqué sur Synchro
+      if (isManualTrigger) {
+        setSyncError({
+          title: 'Compte Garmin non configuré',
+          message: 'Aucun identifiant Garmin Connect n\'a été détecté sur cet appareil.',
+          details: 'Veuillez saisir votre adresse email et mot de passe Garmin dans l\'onglet Garmin pour synchroniser vos sorties réelles et vos données de forme.',
+          isMissingCreds: true
+        });
       }
-    } catch {
-      // Offline, dev server not running, or credentials prompt needed
+    } else {
+      try {
+        // Synchronisation incrémentielle systématique des activités récentes et wellness
+        const result = await syncWithGarminAPI(creds, { mode: 'incremental' });
+        if (result.success) {
+          // Succès : effacement d'un éventuel message d'erreur antérieur
+          setSyncError(null);
+          if (result.activities && result.activities.length > 0) {
+            loadedActivities = result.activities;
+          }
+        } else {
+          // Échec de la synchronisation retourné par le serveur Garmin Connect
+          console.warn('[Garmin Sync Error]', result.error);
+          setSyncError({
+            title: 'Erreur de synchronisation Garmin',
+            message: 'La synchronisation incrémentielle avec Garmin Connect a rencontré une erreur.',
+            details: result.error || 'Échec de l\'authentification ou de la récupération des activités Garmin.'
+          });
+        }
+      } catch (syncErr: any) {
+        console.error('[Garmin Sync Exception]', syncErr);
+        setSyncError({
+          title: 'Erreur de connexion Garmin',
+          message: 'Impossible de contacter le serveur de synchronisation Garmin Connect.',
+          details: syncErr?.message || 'Vérifiez votre connexion Internet et réessayez.'
+        });
+      }
     }
 
-    // Preserve existing activities if sync failed to avoid clearing calendar
+    // Préserver les activités existantes si la synchro échoue pour ne pas vider l'application
     if (loadedActivities.length === 0 && garminActivities.length > 0) {
       loadedActivities = garminActivities;
     }
@@ -504,7 +520,7 @@ export const App: React.FC = () => {
         garminActivities={garminActivities}
         referenceDate={referenceDate}
         onOpenAccountModal={handleOpenAccountModal}
-        onRefreshAll={autoRechargeAll}
+        onRefreshAll={() => autoRechargeAll(true)}
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
         userDisplayName={profile?.displayName}
@@ -553,7 +569,7 @@ export const App: React.FC = () => {
           weeklyStats={weeklyStats}
           comparisons={comparisons}
           onOpenAccountModal={handleOpenAccountModal}
-          onRefreshAll={autoRechargeAll}
+          onRefreshAll={() => autoRechargeAll(true)}
           isRecharging={isRecharging}
           lastSyncTime={lastSyncTime}
           onSelectPeriodizationTab={() => setActiveTab('periodization')}
@@ -628,9 +644,21 @@ export const App: React.FC = () => {
           onUpdateGarminState={handleUpdateGarminState}
           onActivitiesSynced={handleActivitiesSynced}
           calendarEvents={allEvents}
-          onRefreshAll={autoRechargeAll}
+          onRefreshAll={() => autoRechargeAll(true)}
           isRecharging={isRecharging}
           lastSyncTime={lastSyncTime}
+        />
+
+        {/* Global Garmin Sync Error Modal */}
+        <SyncErrorModal
+          error={syncError}
+          onClose={() => setSyncError(null)}
+          onRetry={() => autoRechargeAll(true)}
+          onOpenGarminSettings={() => {
+            setSyncError(null);
+            handleOpenAccountModal('garmin');
+          }}
+          isRetrying={isRecharging}
         />
       </div>
     </div>
