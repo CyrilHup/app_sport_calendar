@@ -1,38 +1,79 @@
 // Vercel Serverless Function: Live Garmin Connect Sync & Push Engine
-if (typeof (globalThis as any).__dirname === 'undefined') {
-  (globalThis as any).__dirname = process.cwd();
-}
-if (typeof (globalThis as any).__filename === 'undefined') {
-  (globalThis as any).__filename = process.cwd();
-}
-
-import * as garminPkg from '@flow-js/garmin-connect';
-
-const GarminConnect =
-  (garminPkg as any).GarminConnect ||
-  (garminPkg as any).default?.GarminConnect ||
-  (garminPkg as any).default ||
-  garminPkg;
-const WorkoutBuilder = (garminPkg as any).WorkoutBuilder || (garminPkg as any).default?.WorkoutBuilder;
-const WorkoutType = (garminPkg as any).WorkoutType || (garminPkg as any).default?.WorkoutType;
-const Step = (garminPkg as any).Step || (garminPkg as any).default?.Step;
-const StepType = (garminPkg as any).StepType || (garminPkg as any).default?.StepType;
-const TimeDuration = (garminPkg as any).TimeDuration || (garminPkg as any).default?.TimeDuration;
-const DistanceDuration = (garminPkg as any).DistanceDuration || (garminPkg as any).default?.DistanceDuration;
-const LapPressDuration = (garminPkg as any).LapPressDuration || (garminPkg as any).default?.LapPressDuration;
-const HrmZoneTarget = (garminPkg as any).HrmZoneTarget || (garminPkg as any).default?.HrmZoneTarget;
-const HrmTarget = (garminPkg as any).HrmTarget || (garminPkg as any).default?.HrmTarget;
-const PaceTarget = (garminPkg as any).PaceTarget || (garminPkg as any).default?.PaceTarget;
-const NoTarget = (garminPkg as any).NoTarget || (garminPkg as any).default?.NoTarget;
-
+import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import {
-  hasGarminEmojiOrSpecialSymbols,
-  normalizeWorkoutTitleForMatching,
-  areWorkoutsEquivalent
-} from '../src/services/garminDeduplication';
+
+const require = createRequire(import.meta.url);
+let garminPkg: any;
+try {
+  garminPkg = require('@flow-js/garmin-connect');
+} catch (loadErr) {
+  console.error('Failed to load @flow-js/garmin-connect:', loadErr);
+}
+
+const GarminConnect =
+  garminPkg?.GarminConnect ||
+  garminPkg?.default?.GarminConnect ||
+  garminPkg?.default ||
+  garminPkg;
+const WorkoutBuilder = garminPkg?.WorkoutBuilder || garminPkg?.default?.WorkoutBuilder;
+const WorkoutType = garminPkg?.WorkoutType || garminPkg?.default?.WorkoutType;
+const Step = garminPkg?.Step || garminPkg?.default?.Step;
+const StepType = garminPkg?.StepType || garminPkg?.default?.StepType;
+const TimeDuration = garminPkg?.TimeDuration || garminPkg?.default?.TimeDuration;
+const DistanceDuration = garminPkg?.DistanceDuration || garminPkg?.default?.DistanceDuration;
+const LapPressDuration = garminPkg?.LapPressDuration || garminPkg?.default?.LapPressDuration;
+const HrmZoneTarget = garminPkg?.HrmZoneTarget || garminPkg?.default?.HrmZoneTarget;
+const HrmTarget = garminPkg?.HrmTarget || garminPkg?.default?.HrmTarget;
+const PaceTarget = garminPkg?.PaceTarget || garminPkg?.default?.PaceTarget;
+const NoTarget = garminPkg?.NoTarget || garminPkg?.default?.NoTarget;
+
+/**
+ * Self-contained deduplication utilities to avoid fragile cross-directory imports from src/.
+ */
+function hasGarminEmojiOrSpecialSymbols(text: string): boolean {
+  if (!text) return false;
+  return /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}➔➜➝➞•●▪–—]/u.test(text);
+}
+
+function normalizeWorkoutTitleForMatching(raw: string): string {
+  if (!raw) return '';
+  return raw
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[➔➜➝➞•●▪–—\-_/\\|:;,()[\]{}"'`~*+?&!]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function areWorkoutsEquivalent(title1: string, title2: string): boolean {
+  const norm1 = normalizeWorkoutTitleForMatching(title1);
+  const norm2 = normalizeWorkoutTitleForMatching(title2);
+
+  if (!norm1 || !norm2) return false;
+  if (norm1 === norm2) return true;
+
+  const minLen = Math.min(norm1.length, norm2.length);
+  if (minLen >= 10 && (norm1.startsWith(norm2.slice(0, minLen)) || norm2.startsWith(norm1.slice(0, minLen)))) {
+    return true;
+  }
+
+  const tokens1 = norm1.split(' ').filter((t: string) => t.length >= 3);
+  const tokens2 = norm2.split(' ').filter((t: string) => t.length >= 3);
+  if (tokens1.length > 0 && tokens2.length > 0) {
+    const intersection = tokens1.filter((t: string) => tokens2.includes(t));
+    const overlap1 = intersection.length / tokens1.length;
+    const overlap2 = intersection.length / tokens2.length;
+    if (overlap1 >= 0.8 || overlap2 >= 0.8) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 function parsePaceSeconds(paceStr?: string): number {
   if (!paceStr) return 0;
