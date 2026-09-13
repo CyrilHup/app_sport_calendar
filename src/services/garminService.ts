@@ -141,21 +141,21 @@ export function getDynamicAthleteProfile(
       }
     } catch {}
 
-    // Validation avec les pics réels enregistrés sur la montre
+    if (!fcMax) {
+      fcMax = GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+    }
+
+    // Validation avec les pics réels enregistrés sur la montre (rehausse si un pic réel supérieur est mesuré)
     if (acts.length > 0) {
       const recordedPeaks = acts
         .map(a => a.maxHeartRate)
         .filter((hr): hr is number => typeof hr === 'number' && hr > 150 && hr < 240);
       if (recordedPeaks.length > 0) {
         const peakRecorded = Math.max(...recordedPeaks);
-        if (!fcMax || peakRecorded > fcMax) {
+        if (peakRecorded > fcMax) {
           fcMax = peakRecorded;
         }
       }
-    }
-
-    if (!fcMax) {
-      fcMax = GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
     }
   }
 
@@ -165,7 +165,8 @@ export function getDynamicAthleteProfile(
 
   // 3. Calcul dynamique de la FC moyenne en Trail (activités avec D+ >= 80m ou type TRAIL)
   const trailActs = acts.filter(a => {
-    const isTrail = a.activityType === 'TRAIL_RUNNING' || (isTrailOrRunning(a) && (a.elevationGainM || 0) >= 80);
+    const actTypeUpper = String(a.activityType || '').toUpperCase();
+    const isTrail = actTypeUpper === 'TRAIL_RUNNING' || (isTrailOrRunning(a) && ((a.elevationGainM || 0) >= 80 || String(a.activityName || '').toLowerCase().includes('trail')));
     return isTrail && typeof a.avgHeartRate === 'number' && a.avgHeartRate > 110 && a.avgHeartRate < 210;
   });
 
@@ -187,7 +188,10 @@ export function getDynamicAthleteProfile(
 
   // 4. Calcul dynamique de la FC moyenne en Footing Plat / Récupération
   const easyActs = acts.filter(a => {
-    const isFlatRun = a.activityType === 'RUNNING' && ((a.elevationGainM || 0) / (a.distanceKm || 1) < 35);
+    const actTypeUpper = String(a.activityType || '').toUpperCase();
+    const nameLower = String(a.activityName || '').toLowerCase();
+    const isTrail = actTypeUpper === 'TRAIL_RUNNING' || nameLower.includes('trail') || (a.elevationGainM || 0) >= 80;
+    const isFlatRun = !isTrail && (actTypeUpper === 'RUNNING' || isTrailOrRunning(a)) && ((a.elevationGainM || 0) / Math.max(0.5, a.distanceKm || 1) < 35);
     return isFlatRun && typeof a.avgHeartRate === 'number' && a.avgHeartRate > 100 && a.avgHeartRate < 200;
   });
 
@@ -242,9 +246,43 @@ export function getDynamicAthleteProfile(
   };
 }
 
+export interface AthleteHeartRateZones {
+  fcMax: number;
+  fcRest: number;
+  fcReserve: number;
+  zone1: [number, number]; // Récupération active / Échauffement doux (50-60% HRR)
+  zone2: [number, number]; // Endurance fondamentale / Aérobie de base (60-75% HRR)
+  zone3: [number, number]; // Allure tempo / Puissance aérobie (75-84% HRR)
+  zone4: [number, number]; // Seuil anaérobie / Spécifique montées (84-92% HRR)
+  zone5: [number, number]; // Puissance max / VO2 Max / Sprint (92-100% HRR)
+}
+
+/**
+ * Calcule dynamiquement les 5 zones d'intensité cardio de l'athlète selon le modèle
+ * de réserve cardiaque de Karvonen (HRr = FCmax - FCrepos).
+ */
+export function getAthleteHeartRateZones(profile?: AthletePhysiologicalProfile): AthleteHeartRateZones {
+  const p = profile || getDynamicAthleteProfile();
+  const fcRest = p.fcRest;
+  const fcReserve = p.fcReserve;
+  const fcMax = p.fcMax;
+
+  return {
+    fcMax,
+    fcRest,
+    fcReserve,
+    zone1: [Math.round(fcRest + 0.50 * fcReserve), Math.round(fcRest + 0.60 * fcReserve)],
+    zone2: [Math.round(fcRest + 0.60 * fcReserve), Math.round(fcRest + 0.75 * fcReserve)],
+    zone3: [Math.round(fcRest + 0.75 * fcReserve), Math.round(fcRest + 0.84 * fcReserve)],
+    zone4: [Math.round(fcRest + 0.84 * fcReserve), Math.round(fcRest + 0.92 * fcReserve)],
+    zone5: [Math.round(fcRest + 0.92 * fcReserve), fcMax]
+  };
+}
+
 /**
  * Détermine la fréquence cardiaque moyenne attendue pour une séance planifiée,
- * en fonction de la discipline, du dénivelé cible, et du profil dynamique de l'athlète.
+ * en s'ancrant en priorité absolue sur les statistiques physiologiques réelles de l'athlète
+ * (historique Garmin/Supabase) et sa réserve cardiaque (HRr).
  */
 export function getExpectedHeartRateForEvent(
   event: {
@@ -263,55 +301,60 @@ export function getExpectedHeartRateForEvent(
   const sportType = String(event.sportType || '').toUpperCase();
   const targetElevation = event.metadata?.targetElevationM || 0;
 
-  // 1. Cible explicite par plage chiffrée
+  const isTrailIntense = sportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill') || titleLower.includes('répétition');
+  const isTrailDiscipline = sportType === 'TRAIL_LONG' || titleLower.includes('trail') || titleLower.includes('rando-course') || targetElevation >= 80;
+  const isTempoDiscipline = sportType === 'RUN_TEMPO' || titleLower.includes('tempo') || titleLower.includes('seuil');
+  const isEasyRunDiscipline = sportType === 'RUN_EASY' || titleLower.includes('footing') || titleLower.includes('doux') || titleLower.includes('récupération') || titleLower.includes('aerobic base') || titleLower.includes('rolling run');
+  const isCalisthenics = isStrengthOrCalisthenics(sportType, event.title);
+
+  // 1. Détermination du niveau physiologique de base pour la discipline (ancrage sur télémétrie réelle)
+  let baseDisciplineHr: number;
+  if (isTrailIntense) {
+    baseDisciplineHr = Math.round(p.fcRest + 0.80 * p.fcReserve);
+  } else if (isTrailDiscipline) {
+    baseDisciplineHr = p.trailAvgHr;
+  } else if (isTempoDiscipline) {
+    baseDisciplineHr = Math.round(p.fcRest + 0.75 * p.fcReserve);
+  } else if (isEasyRunDiscipline) {
+    baseDisciplineHr = p.runEasyAvgHr;
+  } else if (isCalisthenics) {
+    baseDisciplineHr = p.calisthenicsAvgHr;
+  } else {
+    baseDisciplineHr = Math.round(p.fcRest + 0.65 * p.fcReserve);
+  }
+
+  // 2. Si une plage cible numérique explicite a été fournie
   if (event.metadata?.targetHeartRateRange && event.metadata.targetHeartRateRange.length === 2) {
     const [low, high] = event.metadata.targetHeartRateRange;
     if (low > 60 && high > low) {
-      if (sportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill') || targetElevation >= 100) {
-        return Math.min(p.fcMax - 5, Math.max(low, high - 2));
+      if (isTrailIntense || targetElevation >= 100) {
+        return Math.min(p.fcMax - 5, Math.max(baseDisciplineHr, high - 2));
       }
-      return Math.round((low + high) / 2);
+      const rangeMid = Math.round((low + high) / 2);
+      // Si la plage cible prescrit un effort spécifique supérieur à l'endurance de base
+      if (rangeMid > baseDisciplineHr) {
+        return Math.min(p.fcMax - 5, rangeMid);
+      }
+      // Pour les séances d'endurance ou de trail, la télémétrie réelle prévaut sur toute plage statique basse
+      return baseDisciplineHr;
     }
   }
 
-  // 2. Cible chiffrée textuelle (ex: "< 155 bpm" ou "160 - 175 bpm")
+  // 3. Si une cible textuelle explicite existe
   if (event.metadata?.targetHeartRate) {
     const text = event.metadata.targetHeartRate;
     const matchRange = text.match(/(\d{2,3})\s*[-–]\s*(\d{2,3})/);
     if (matchRange) {
       const low = parseInt(matchRange[1], 10);
       const high = parseInt(matchRange[2], 10);
-      if (low > 60 && high > low) return Math.round((low + high) / 2);
-    }
-    const matchUnder = text.match(/<\s*(\d{2,3})/);
-    if (matchUnder) {
-      const cap = parseInt(matchUnder[1], 10);
-      if (cap > 60) return Math.round(cap - 5);
+      if (low > 60 && high > low) {
+        const mid = Math.round((low + high) / 2);
+        if (mid > baseDisciplineHr) return Math.min(p.fcMax - 5, mid);
+      }
     }
   }
 
-  // 3. Typologie de la séance
-  if (sportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill') || titleLower.includes('répétition')) {
-    return Math.round(p.fcRest + 0.80 * p.fcReserve);
-  }
-
-  if (sportType === 'TRAIL_LONG' || titleLower.includes('trail') || titleLower.includes('rando-course') || targetElevation >= 100) {
-    return p.trailAvgHr;
-  }
-
-  if (sportType === 'RUN_TEMPO' || titleLower.includes('tempo') || titleLower.includes('seuil')) {
-    return Math.round(p.fcRest + 0.75 * p.fcReserve);
-  }
-
-  if (sportType === 'RUN_EASY' || titleLower.includes('footing') || titleLower.includes('doux') || titleLower.includes('récupération')) {
-    return p.runEasyAvgHr;
-  }
-
-  if (isStrengthOrCalisthenics(sportType, event.title)) {
-    return p.calisthenicsAvgHr;
-  }
-
-  return Math.round(p.fcRest + 0.58 * p.fcReserve);
+  return baseDisciplineHr;
 }
 
 export function isAthleteBasePaceAuto(): boolean {
@@ -510,15 +553,34 @@ export async function syncWithGarminAPI(
 
     const syncMode = options?.mode || 'incremental';
 
-    const response = await fetch(getApiUrl('/api/garmin-sync'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...(credsToUse || {}),
-        syncMode,
-        clientDate: formatDateKey(new Date())
-      })
-    });
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 35000);
+
+    let response: Response;
+    try {
+      response = await fetch(getApiUrl('/api/garmin-sync'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(credsToUse || {}),
+          syncMode,
+          clientDate: formatDateKey(new Date())
+        }),
+        signal: abortController.signal
+      });
+    } catch (fetchErr: any) {
+      if (fetchErr?.name === 'AbortError') {
+        return {
+          success: false,
+          activities: [],
+          count: 0,
+          error: 'La synchronisation Garmin a expiré (délai d\'attente dépassé après 35s). Vérifiez vos identifiants ou réessayez.'
+        };
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     let data: any;
     const responseText = await response.text();
@@ -732,7 +794,9 @@ export function buildWorkoutPayloadFromEvent(
   const durMin = event.durationMinutes || 45;
   const isFR55 = targetWatch === 'FORERUNNER_55';
   const targetMode = getGarminWorkoutTargetMode();
-  const basePaceStr = getAthleteBasePace();
+  const profile = getDynamicAthleteProfile();
+  const athleteZones = getAthleteHeartRateZones(profile);
+  const basePaceStr = profile.basePace || getAthleteBasePace();
   const baseSec = parsePaceToSeconds(basePaceStr);
 
   let sportType: WorkoutPushPayload['sportType'] = 'RUNNING';
@@ -830,23 +894,25 @@ export function buildWorkoutPayloadFromEvent(
         }
       ];
     } else {
-      // Mode Fréquence Cardiaque classique
+      // Mode Fréquence Cardiaque dynamique (Karvonen Zone 1/2)
+      const targetHrLow = event.metadata?.targetHeartRateRange?.[0] || athleteZones.zone1[0];
+      const targetHrHigh = event.metadata?.targetHeartRateRange?.[1] || athleteZones.zone2[1];
       steps = [
         {
           stepType: 'WARMUP',
           durationSeconds: warmupDurSec,
           targetType: 'HR_RANGE',
-          targetHrLow: 125,
-          targetHrHigh: 140,
-          stepNotes: 'Échauffement progressif très doux (Zone 1/2)'
+          targetHrLow: athleteZones.zone1[0],
+          targetHrHigh: athleteZones.zone1[1],
+          stepNotes: `Échauffement progressif très doux (Zone 1 : ${athleteZones.zone1[0]}-${athleteZones.zone1[1]} bpm)`
         },
         {
           stepType: 'INTERVAL',
           durationSeconds: mainDurSec,
           targetType: 'HR_RANGE',
-          targetHrLow: 130,
-          targetHrHigh: 142,
-          stepNotes: 'Footing souple et régulier sur terrain plat (Zone 1/2 stricte < 142 bpm)'
+          targetHrLow: targetHrLow,
+          targetHrHigh: targetHrHigh,
+          stepNotes: `Footing régulier en Zone 2 (${targetHrLow}-${targetHrHigh} bpm)`
         },
         {
           stepType: 'COOLDOWN',
@@ -1048,25 +1114,26 @@ export function buildWorkoutPayloadFromEvent(
         }
       ];
     } else {
-      const targetHrHigh = event.metadata?.targetHeartRateRange?.[1] || 155;
+      const targetHrLow = event.metadata?.targetHeartRateRange?.[0] || athleteZones.zone2[0];
+      const targetHrHigh = event.metadata?.targetHeartRateRange?.[1] || athleteZones.zone2[1];
       steps = [
         {
           stepType: 'WARMUP',
           durationSeconds: warmupDurSec,
           targetType: 'HR_RANGE',
-          targetHrLow: 135,
+          targetHrLow: targetHrLow,
           targetHrHigh: targetHrHigh,
-          stepNotes: 'Échauffement progressif sur sentier (Zone 1/2)'
+          stepNotes: `Échauffement progressif sur sentier (${targetHrLow}-${targetHrHigh} bpm)`
         },
         {
           stepType: 'INTERVAL',
           durationSeconds: mainDurSec,
           targetType: 'HR_RANGE',
-          targetHrLow: 135,
+          targetHrLow: targetHrLow,
           targetHrHigh: targetHrHigh,
           stepNotes: isAdapted
             ? 'Rando-Course allégée : Power-hike dès 7%'
-            : 'Rando-Course Z2 : Power-hike dès 7%'
+            : `Rando-Course Z2 (${targetHrLow}-${targetHrHigh} bpm) : Power-hike dès 7%`
         },
         {
           stepType: 'COOLDOWN',

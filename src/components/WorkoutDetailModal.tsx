@@ -174,16 +174,15 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const elapsedMinutes = effectiveComparison?.actualActivity?.elapsedDurationMinutes || actualDurationMinutes;
   const actualEndDate = (actualStartDate && elapsedMinutes) ? new Date(actualStartDate.getTime() + elapsedMinutes * 60000) : null;
   const isDifferentDayExecution = Boolean(actualStartDate && formatDateKey(actualStartDate) !== formatDateKey(startDate));
-
-  const isRecoveryFooting = isSport && !isCalisthenics && !titleLower.includes('trail') && !titleLower.includes('côte') && !titleLower.includes('hill') && (
-    (effectiveEvent.sportType === 'RUN_EASY' && (titleLower.includes('footing') || titleLower.includes('récupération') || titleLower.includes('doux'))) ||
-    Boolean(effectiveEvent.metadata?.isAdapted)
+  const isRestSession = effectiveEvent.durationMinutes === 0 || effectiveEvent.title.toLowerCase().includes('repos');
+  const effectiveElevationM = (isCalisthenics || isRestSession) ? 0 : (effectiveEvent.metadata?.targetElevationM ?? 0);
+  const isRecoveryFooting = isSport && !isCalisthenics && !isRestSession && effectiveElevationM === 0 && (
+    effectiveEvent.sportType === 'RUN_EASY' ||
+    titleLower.includes('plat') ||
+    titleLower.includes('footing')
   );
 
-  const effectiveElevationM = isCalisthenics ? 0 : (isRecoveryFooting ? 0 : (effectiveEvent.metadata?.targetElevationM ?? 0));
-  const effectiveLocation = (isRecoveryFooting && effectiveEvent.location?.toLowerCase().includes('mont royal'))
-    ? 'Terrain plat / Parc (évite le D+)'
-    : (effectiveEvent.location || 'Garmin Connect');
+  const effectiveLocation = effectiveEvent.location || 'Garmin Connect';
 
   const dynamicProfile = getDynamicAthleteProfile();
   const athleteFcRest = dynamicProfile.fcRest;
@@ -204,13 +203,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const originalTrimpInfo = isSport && isAdapted ? calculateSessionTrimp(
     effectiveEvent.metadata?.originalDurationMinutes || effectiveEvent.durationMinutes,
-    (effectiveEvent.metadata as any)?.originalSportType || effectiveEvent.sportType,
+    effectiveEvent.metadata?.originalSportType || effectiveEvent.sportType,
     effectiveEvent.metadata?.originalTitle || effectiveEvent.title,
     null,
     {
-      elevationGainM: (effectiveEvent.metadata as any)?.originalElevationM || effectiveElevationM,
-      targetHeartRateRange: (effectiveEvent.metadata as any)?.originalTargetHeartRateRange || effectiveEvent.metadata?.targetHeartRateRange,
-      targetHeartRate: (effectiveEvent.metadata as any)?.originalTargetHeartRate || effectiveEvent.metadata?.targetHeartRate,
+      elevationGainM: effectiveEvent.metadata?.originalElevationM ?? effectiveElevationM,
+      targetHeartRateRange: effectiveEvent.metadata?.originalTargetHeartRateRange || effectiveEvent.metadata?.targetHeartRateRange,
+      targetHeartRate: effectiveEvent.metadata?.originalTargetHeartRate || effectiveEvent.metadata?.targetHeartRate,
       athleteFcMax,
       athleteFcRest
     }
@@ -650,13 +649,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, color: '#38bdf8', fontSize: '0.88rem' }}>
                   <ShieldCheck size={17} />
-                  <span>Séance Allégée Anti-blessure (Protection Tendons & ACWR)</span>
+                  <span>{isRestSession ? 'Séance Annulée Anti-blessure (Repos Complet & ACWR)' : 'Séance Allégée Anti-blessure (Protection Tendons & ACWR)'}</span>
                 </div>
-                {trimpSaved > 0 && (
+                {isRestSession ? (
+                  <span style={{ background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38bdf8', color: '#38bdf8', padding: '2px 8px', borderRadius: 9999, fontWeight: 800, fontSize: '0.74rem' }}>
+                    Séance annulée (Repos complet)
+                  </span>
+                ) : trimpSaved > 0 ? (
                   <span style={{ background: 'rgba(16, 185, 129, 0.2)', border: '1px solid #10b981', color: '#34d399', padding: '2px 8px', borderRadius: 9999, fontWeight: 800, fontSize: '0.74rem' }}>
                     -{trimpSaved} TRIMP d'impact économisés
                   </span>
-                )}
+                ) : null}
               </div>
 
               <div>{effectiveEvent.metadata?.adaptationReason}</div>
@@ -679,7 +682,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               )}
 
               <p style={{ margin: 0, fontSize: '0.73rem', color: '#93c5fd', lineHeight: 1.45 }}>
-                💡 <strong>Pourquoi cette réduction de charge ?</strong> La charge aiguë (7 jours) additionne directement les TRIMPs de vos séances de course. En remplaçant les chocs excentriques intenses (côtes D+) par un footing régénérant à plat, vous retirez {trimpSaved > 0 ? `${trimpSaved} TRIMP` : 'de la fatigue'} du numérateur ACWR pour ramener le ratio dans le Sweet Spot (&lt; 1.3) et donner à vos tendons le temps de surcompenser.
+                💡 <strong>Pourquoi cette modulation de charge ?</strong> La charge aiguë (7 jours) additionne directement les TRIMPs et Km-Effort de vos séances de course. En modulant la séance {isRestSession ? 'vers un repos complet' : 'avec dénivelé allégé ou terrain plat'}, vous retirez {trimpSaved > 0 ? `${trimpSaved} TRIMP` : 'des chocs mécaniques'} du numérateur ACWR pour ramener le ratio dans le Sweet Spot (&lt; 1.3) et donner à vos tendons le temps de surcompenser.
               </p>
             </div>
           )}
@@ -810,7 +813,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   : `${formatTime(startDate)} – ${formatTime(endDate)}`}
               </div>
               <span style={{ fontSize: '0.72rem', color: actualDurationMinutes ? '#10b981' : 'var(--accent-blue)', fontWeight: 600 }}>
-                {actualDurationMinutes ? `${actualDurationMinutes} min (effort actif)` : `${effectiveEvent.durationMinutes} minutes`}
+                {actualDurationMinutes ? `${actualDurationMinutes} min (effort actif)` : (isRestSession ? '0 min (Repos complet)' : `${effectiveEvent.durationMinutes} minutes`)}
               </span>
               {actualStartDate && (actualDurationMinutes !== effectiveEvent.durationMinutes || formatTime(actualStartDate) !== formatTime(startDate)) && (
                 <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 2 }}>
@@ -833,7 +836,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 </span>
               ) : isAdapted ? (
                 <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
-                  {isRecoveryFooting ? 'Plat sans chocs' : 'Adapté anti-blessure'}
+                  {isRestSession ? 'Repos passif' : (isRecoveryFooting ? 'Plat sans chocs' : 'Adapté anti-blessure')}
                 </span>
               ) : isCalisthenics ? (
                 <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600 }}>
@@ -852,7 +855,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   {effectiveElevationM > 0 ? `+${effectiveElevationM} m` : '0 m (Plat)'}
                 </div>
                 <span style={{ fontSize: '0.68rem', color: isAdapted ? '#38bdf8' : 'var(--text-secondary)' }}>
-                  {isRecoveryFooting ? 'Terrain plat (sans D+)' : (isAdapted ? 'D+ allégé' : (effectiveElevationM > 0 ? 'Ultra-Trail' : 'Récupération souple'))}
+                  {isRestSession ? 'Repos (zéro impact)' : (isRecoveryFooting ? 'Terrain plat (sans D+)' : (isAdapted ? 'D+ allégé' : (effectiveElevationM > 0 ? 'Ultra-Trail' : 'Récupération souple')))}
                 </span>
               </div>
             )}
@@ -946,20 +949,20 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     )}
                     {plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp && (
                       <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '6px 8px', borderRadius: 4, color: '#93c5fd', marginTop: 4, lineHeight: 1.4 }}>
-                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {effectiveEvent.durationMinutes} min de {isCalisthenics ? 'calisthénie / renforcement' : (titleLower.includes('trail') || titleLower.includes('côte') || titleLower.includes('hill') ? 'trail & côtes' : 'course à pied')} ({plannedTrimpInfo.trimp} TRIMP). La séance réalisée ({effectiveComparison?.actualActivity?.durationMinutes} min) {isCalisthenics ? 'a été réalisée' : 'a été courue'} à un rythme plus soutenu (FC moy. {effectiveComparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {effectiveComparison?.actualActivity?.maxHeartRate || '--'} bpm). La charge réelle enregistrée (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) est celle qui alimente votre charge aiguë (ATL) et votre ratio ACWR pour protéger fidèlement vos tendons.
+                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {effectiveEvent.durationMinutes} min de {isCalisthenics ? 'calisthénie / renforcement' : (titleLower.includes('trail') || titleLower.includes('côte') || titleLower.includes('hill') ? 'trail & côtes' : 'course à pied')} ({plannedTrimpInfo.trimp} TRIMP, {plannedTrimpInfo.mechanicalKmEffort} Km-e). La séance réalisée ({effectiveComparison?.actualActivity?.durationMinutes} min) {isCalisthenics ? 'a été réalisée' : 'a été courue'} à un rythme plus soutenu (FC moy. {effectiveComparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {effectiveComparison?.actualActivity?.maxHeartRate || '--'} bpm). Sa contrainte mécanique (<strong>{actualTrimpInfo.mechanicalKmEffort} Km-Effort</strong>) alimente votre ratio ACWR de protection articulaire, et sa charge cardio (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) alimente votre forme Banister (ATL/CTL).
                       </div>
                     )}
                   </>
                 ) : (
                   <>
                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      • <strong style={{ color: '#e2e8f0' }}>0.80 TRIMP/min (Modèle Banister) :</strong> Taux standard de dépense aérobie en endurance douce (~48 TRIMP pour 1 heure en Zone 2).
+                      • <strong style={{ color: '#e2e8f0' }}>{sessionTrimpInfo.baseRate.toFixed(2)} TRIMP/min (Modèle Banister) :</strong> {sessionTrimpInfo.details || 'Taux physiologique selon la réserve cardiaque (HRr).'}.
                     </div>
                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                      • <strong style={{ color: '#e2e8f0' }}>Facteur {sessionTrimpInfo.factor} ({sessionTrimpInfo.factorLabel}) :</strong> Majoration des contraintes mécaniques liées aux impacts répétés de la foulée au sol (+15% par rapport à une activité sans choc).
+                      • <strong style={{ color: '#e2e8f0' }}>Facteur {sessionTrimpInfo.factor} ({sessionTrimpInfo.factorLabel}) :</strong> {sessionTrimpInfo.isMechanicalImpact ? 'Majoration des contraintes d\'impacts de la foulée et dénivelé (+15% à +35%).' : 'Sollicitation neuromusculaire sans onde de choc articulaire au sol.'}
                     </div>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2, fontStyle: 'italic' }}>
-                      ➔ Taux net appliqué : 0.80 × {sessionTrimpInfo.factor} = {sessionTrimpInfo.ratePerMin} TRIMP / minute d'effort.
+                      ➔ Taux net appliqué : {sessionTrimpInfo.baseRate.toFixed(2)} × {sessionTrimpInfo.factor} = {sessionTrimpInfo.ratePerMin} TRIMP / minute d'effort.
                     </div>
                   </>
                 )}
@@ -968,11 +971,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 {sessionTrimpInfo.isMechanicalImpact ? (
                   <>
-                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance de <strong>{actualTrimpInfo ? (effectiveComparison?.actualActivity?.durationMinutes || effectiveEvent.durationMinutes) : effectiveEvent.durationMinutes} min</strong> applique des forces de freinage excentriques répétées. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> sont directement ajoutés à votre <strong>charge aiguë (7 jours)</strong> pour surveiller le risque de blessure tendineuse (ratio ACWR de Tim Gabbett) et alimentent votre fatigue ATL dans le modèle Banister.
+                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance applique des contraintes mécaniques d'impacts et de dénivelé (<strong>{sessionTrimpInfo.mechanicalKmEffort} Km-Effort</strong> selon le standard ITRA). Ces <strong>{sessionTrimpInfo.mechanicalKmEffort} Km-Effort</strong> alimentent directement votre <strong>charge aiguë mécanique (7 jours)</strong> pour surveiller le risque de blessure (ratio ACWR de Tim Gabbett), tandis que ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre condition aérobie (CTL/ATL).
                   </>
                 ) : (
                   <>
-                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance de <strong>{actualTrimpInfo ? (effectiveComparison?.actualActivity?.durationMinutes || effectiveEvent.durationMinutes) : effectiveEvent.durationMinutes} min</strong> ne génère <strong>aucune onde de choc au sol</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre fitness CTL général, mais sont <strong>totalement isolés du ratio ACWR de blessure tendineuse</strong> pour vous éviter de fausses alertes.
+                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance ne génère <strong>aucun impact articulaire au sol (0 Km-Effort)</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre système cardiovasculaire sans agresser vos tendons, et sont <strong>totalement isolés du ratio ACWR de blessure articulaire</strong> pour éviter toute fausse alerte.
                   </>
                 )}
               </div>

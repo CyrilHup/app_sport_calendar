@@ -58,6 +58,10 @@ export interface CalendarEvent {
     adaptationReason?: string;
     originalTitle?: string;
     originalDurationMinutes?: number;
+    originalElevationM?: number;
+    originalSportType?: SportType;
+    originalTargetHeartRate?: string;
+    originalTargetHeartRateRange?: [number, number];
   };
 }
 
@@ -78,6 +82,10 @@ export interface AdaptiveWorkoutOverride {
   adaptedTitle: string;
   originalDurationMinutes: number;
   adaptedDurationMinutes: number;
+  originalElevationM?: number;
+  originalSportType?: SportType;
+  originalTargetHeartRate?: string;
+  originalTargetHeartRateRange?: [number, number];
   adaptationReason: string;
   coachingCue: string;
   adaptedDescription?: string;
@@ -96,7 +104,11 @@ export interface AdaptiveWorkoutAction {
   adaptedTitle: string;
   originalDurationMinutes: number;
   adaptedDurationMinutes: number;
-  actionType: 'LIGHTEN' | 'POSTPONE' | 'MAINTAIN';
+  originalElevationM?: number;
+  originalSportType?: SportType;
+  originalTargetHeartRate?: string;
+  originalTargetHeartRateRange?: [number, number];
+  actionType: 'LIGHTEN' | 'POSTPONE' | 'MAINTAIN' | 'REST';
   reason: string;
   coachingCue: string;
   adaptedDescription?: string;

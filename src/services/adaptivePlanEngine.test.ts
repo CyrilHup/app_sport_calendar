@@ -405,5 +405,192 @@ describe('Adaptive Plan Engine', () => {
     expect(overrides['SPORT_SAT']).toBeDefined();
     expect(overrides['SPORT_SAT'].adaptedDurationMinutes).toBe(83);
   });
+
+  it('converts short secondary recovery/fatigued runs (< 50 min) to REST when ACWR > 1.5', () => {
+    const dangerTrainingLoad: TrainingLoadStats = {
+      currentCtl: 40,
+      currentAtl: 75,
+      currentTsb: -35,
+      formStatus: 'HIGH_OVERLOAD',
+      formLabel: 'Surmenage',
+      acwrRatio: 1.68,
+      acwrStatus: 'DANGER_HIGH_RISK',
+      acwrLabel: 'Danger blessure',
+      acuteLoad7d: 320,
+      chronicLoad28dWeeklyAvg: 190,
+      fitnessTrend: [],
+      trailAcwrRatio: 1.68,
+      trailAcuteLoad7d: 320,
+      trailChronicLoad28dWeeklyAvg: 190,
+      trailAcwrStatus: 'DANGER_HIGH_RISK',
+      calisthenicsAcuteLoad7d: 150,
+      calisthenicsSessionsCount7d: 3,
+      totalSystemicAcuteLoad7d: 470,
+      totalTrailChronicLoad28d: 760,
+      recentSessions7d: []
+    };
+
+    const sundayRecoveryEvent: CalendarEvent = {
+      id: 'SPORT_SUN',
+      category: 'sport',
+      sportType: 'RUN_EASY',
+      title: '🏃 Trail: Fatigued / Rolling Run (35 min)',
+      startDate: '2026-09-13T10:00:00.000Z',
+      endDate: '2026-09-13T10:35:00.000Z',
+      location: 'Mont Royal / Neighborhood',
+      description: 'Back-to-back fatigued run',
+      emoji: '🏃',
+      colorId: '5',
+      colorHex: '#4cc9f0',
+      durationMinutes: 35,
+      metadata: { targetElevationM: 90 }
+    };
+
+    const status = evaluateAdaptivePlanStatus(dangerTrainingLoad, mockBaseReadiness, [sundayRecoveryEvent]);
+    expect(status.recommendedActions.length).toBe(1);
+
+    const sunAction = status.recommendedActions[0];
+    expect(sunAction.actionType).toBe('REST');
+    expect(sunAction.adaptedDurationMinutes).toBe(0);
+    expect(sunAction.adaptedElevationM).toBe(0);
+    expect(sunAction.adaptedTitle).toContain('Repos');
+    expect(sunAction.reason).not.toContain('Réduction de 0 min');
+    expect(sunAction.reason).not.toContain('Réduction de -');
+  });
+
+  it('guarantees that an adaptation NEVER increases duration or elevation', () => {
+    const dangerTrainingLoad: TrainingLoadStats = {
+      currentCtl: 40,
+      currentAtl: 75,
+      currentTsb: -35,
+      formStatus: 'HIGH_OVERLOAD',
+      formLabel: 'Surmenage',
+      acwrRatio: 1.68,
+      acwrStatus: 'DANGER_HIGH_RISK',
+      acwrLabel: 'Danger blessure',
+      acuteLoad7d: 320,
+      chronicLoad28dWeeklyAvg: 190,
+      fitnessTrend: [],
+      trailAcwrRatio: 1.68,
+      trailAcuteLoad7d: 320,
+      trailChronicLoad28dWeeklyAvg: 190,
+      trailAcwrStatus: 'DANGER_HIGH_RISK',
+      calisthenicsAcuteLoad7d: 150,
+      calisthenicsSessionsCount7d: 3,
+      totalSystemicAcuteLoad7d: 470,
+      totalTrailChronicLoad28d: 760,
+      recentSessions7d: []
+    };
+
+    const testEvents: CalendarEvent[] = [
+      {
+        id: 'TEST_SHORT',
+        category: 'sport',
+        sportType: 'TRAIL_LONG',
+        title: 'Short Trail (30 min)',
+        startDate: '2026-09-13T10:00:00.000Z',
+        endDate: '2026-09-13T10:30:00.000Z',
+        location: 'Mont Royal',
+        description: 'Short',
+        emoji: '🏔️',
+        colorId: '6',
+        colorHex: '#ff6b35',
+        durationMinutes: 30,
+        metadata: { targetElevationM: 100 }
+      },
+      {
+        id: 'TEST_60M',
+        category: 'sport',
+        sportType: 'TRAIL_LONG',
+        title: 'Medium Trail (60 min)',
+        startDate: '2026-09-13T11:00:00.000Z',
+        endDate: '2026-09-13T12:00:00.000Z',
+        location: 'Mont Royal',
+        description: '60m',
+        emoji: '🏔️',
+        colorId: '6',
+        colorHex: '#ff6b35',
+        durationMinutes: 60,
+        metadata: { targetElevationM: 250 }
+      }
+    ];
+
+    const status = evaluateAdaptivePlanStatus(dangerTrainingLoad, mockBaseReadiness, testEvents);
+    for (const act of status.recommendedActions) {
+      expect(act.adaptedDurationMinutes).toBeLessThanOrEqual(act.originalDurationMinutes);
+      if (act.adaptedElevationM !== undefined && act.originalElevationM !== undefined) {
+        expect(act.adaptedElevationM).toBeLessThanOrEqual(act.originalElevationM);
+      }
+      expect(act.reason).not.toMatch(/Réduction de -\d+/);
+      expect(act.reason).not.toContain('Réduction de 0 min');
+    }
+  });
+
+  it('remains stable across 30 successive adaptation cycles without cascading to 0 minutes', () => {
+    const dangerLoad: TrainingLoadStats = {
+      currentCtl: 40,
+      currentAtl: 75,
+      currentTsb: -35,
+      formStatus: 'HIGH_OVERLOAD',
+      formLabel: 'Surmenage',
+      acwrRatio: 1.68,
+      acwrStatus: 'DANGER_HIGH_RISK',
+      acwrLabel: 'Danger blessure',
+      acuteLoad7d: 320,
+      chronicLoad28dWeeklyAvg: 190,
+      fitnessTrend: [],
+      trailAcwrRatio: 1.68,
+      trailAcuteLoad7d: 320,
+      trailChronicLoad28dWeeklyAvg: 190,
+      trailAcwrStatus: 'DANGER_HIGH_RISK',
+      calisthenicsAcuteLoad7d: 150,
+      calisthenicsSessionsCount7d: 3,
+      totalSystemicAcuteLoad7d: 470,
+      totalTrailChronicLoad28d: 760,
+      recentSessions7d: []
+    };
+
+    let currentEvents = [...mockWeeklySportEvents];
+    let overrides: Record<string, any> = {};
+
+    for (let pass = 0; pass < 30; pass++) {
+      const status = evaluateAdaptivePlanStatus(
+        dangerLoad,
+        mockBaseReadiness,
+        currentEvents,
+        overrides,
+        new Date('2026-09-07T09:00:00.000Z')
+      );
+
+      overrides = buildOverridesFromActions(
+        status.recommendedActions,
+        overrides,
+        '2026-09-07',
+        ['2026-09-07', '2026-09-08', '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13']
+      );
+
+      const modified = applyAdaptiveModifications(
+        [],
+        mockWeeklySportEvents,
+        overrides
+      );
+
+      currentEvents = modified.allEvents;
+
+      // Key workouts must NEVER become 0 min
+      const hillEvent = currentEvents.find(e => e.id === 'SPORT_TUE');
+      const longTrailEvent = currentEvents.find(e => e.id === 'SPORT_SAT');
+
+      expect(hillEvent).toBeDefined();
+      expect(hillEvent!.durationMinutes).toBeGreaterThanOrEqual(30);
+      expect(hillEvent!.durationMinutes).toBeLessThanOrEqual(35);
+
+      expect(longTrailEvent).toBeDefined();
+      expect(longTrailEvent!.durationMinutes).toBeGreaterThanOrEqual(70);
+      expect(longTrailEvent!.durationMinutes).toBeLessThanOrEqual(85);
+    }
+  });
 });
+
+
 

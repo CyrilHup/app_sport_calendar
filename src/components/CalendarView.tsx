@@ -367,7 +367,7 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
             📏 {group.totalDistanceKm.toFixed(1)} km
           </span>
         )}
-        {isRunning && group.totalElevationGainM > 0 && (
+        {isRunning && (group.hasValidated || group.hasUnplannedBonus) && group.totalElevationGainM > 0 && (
           <span style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '2px 5px', borderRadius: 3 }}>
             ⛰️ +{group.totalElevationGainM}m
           </span>
@@ -645,16 +645,30 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const todaySchedule = schedules.find(s => s.date === todayKey);
   const proactiveRec = getProactivePlanRecommendation(readiness, todaySchedule?.sportSession, isTodaySessionCompleted);
 
-  // Découpage en blocs de 7 jours
+  // Découpage en blocs de 7 jours pour l'affichage
   const currentWeekStartIdx = weekOffset * 7;
   const displayedDays = schedules.slice(
     Math.max(0, currentWeekStartIdx),
     Math.max(7, currentWeekStartIdx + 7)
   );
 
-  const displayedSportSessions = displayedDays
-    .map(d => d.sportSession)
-    .filter((e): e is CalendarEvent => Boolean(e));
+  const isViewingCurrentWeek = weekOffset === currentWeekOffset;
+  const isViewingNextWeek = weekOffset === currentWeekOffset + 1;
+  const isViewingActiveHorizon = isViewingCurrentWeek || isViewingNextWeek;
+
+  // Horizon d'anticipation et d'adaptation active : Semaine en cours + Semaine prochaine (14 jours)
+  // Permet notamment le dimanche et en fin de microcycle d'anticiper et d'adapter intelligemment la semaine suivante
+  const activeWindowStartIdx = Math.max(0, currentWeekOffset * 7);
+  const activeHorizonDays = schedules.slice(
+    activeWindowStartIdx,
+    Math.min(activeWindowStartIdx + 14, schedules.length)
+  );
+
+  const activeHorizonSportSessions = useMemo(() => {
+    return activeHorizonDays
+      .map(d => d.sportSession)
+      .filter((e): e is CalendarEvent => Boolean(e));
+  }, [activeHorizonDays]);
 
   const completedIds = useMemo(() => {
     const ids = new Set<string>();
@@ -666,36 +680,49 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return ids;
   }, [comparisons]);
 
-  const trainingLoad = computeTrainingLoadStats(garminActivities || [], effectiveRefDate);
-  const adaptiveStatus = evaluateAdaptivePlanStatus(
-    trainingLoad,
-    readiness,
-    displayedSportSessions,
-    adaptiveOverrides,
-    effectiveRefDate,
-    completedIds
-  );
+  const trainingLoad = useMemo(() => {
+    return computeTrainingLoadStats(garminActivities || [], effectiveRefDate);
+  }, [garminActivities, effectiveRefDate]);
 
-  const totalTrimpSavedByAdaptation = adaptiveStatus.recommendedActions.reduce((sum, act) => {
-    const orig = calculateSessionTrimp(act.originalDurationMinutes, act.originalTitle, act.originalTitle).trimp;
-    const adapt = calculateSessionTrimp(act.adaptedDurationMinutes, act.adaptedSportType || act.adaptedTitle, act.adaptedTitle).trimp;
-    return sum + Math.max(0, orig - adapt);
-  }, 0);
+  const adaptiveStatus = useMemo(() => {
+    return evaluateAdaptivePlanStatus(
+      trainingLoad,
+      readiness,
+      activeHorizonSportSessions,
+      adaptiveOverrides,
+      effectiveRefDate,
+      completedIds
+    );
+  }, [trainingLoad, readiness, activeHorizonSportSessions, adaptiveOverrides, effectiveRefDate, completedIds]);
+
+  const totalTrimpSavedByAdaptation = useMemo(() => {
+    return adaptiveStatus.recommendedActions.reduce((sum, act) => {
+      const orig = calculateSessionTrimp(act.originalDurationMinutes, act.originalTitle, act.originalTitle).trimp;
+      const adapt = calculateSessionTrimp(act.adaptedDurationMinutes, act.adaptedSportType || act.adaptedTitle, act.adaptedTitle).trimp;
+      return sum + Math.max(0, orig - adapt);
+    }, 0);
+  }, [adaptiveStatus.recommendedActions]);
 
   const formatFriendlyDateStr = formatFriendlyDay;
 
-  // Auto-Pilot permanent : application automatique continue pour maintenir le Sweet Spot
+  // Auto-Pilot permanent : application automatique continue pour maintenir le Sweet Spot sur le microcycle actif
   useEffect(() => {
-    if (
-      adaptiveStatus.recommendedActions.length > 0 &&
-      onApplyAdaptivePlan
-    ) {
-      const hasUnappliedActions = adaptiveStatus.recommendedActions.some(
-        act => !adaptiveOverrides[act.eventId] || adaptiveOverrides[act.eventId].adaptedDurationMinutes !== act.adaptedDurationMinutes
+    if (!isAutoAdaptEnabled() || !onApplyAdaptivePlan) return;
+    if (adaptiveStatus.recommendedActions.length === 0) return;
+
+    // Ne déclencher que si au moins une action recommandée n'est pas encore appliquée ou a changé
+    const hasUnappliedActions = adaptiveStatus.recommendedActions.some(act => {
+      const existing = adaptiveOverrides[act.eventId];
+      if (!existing) return true;
+      return (
+        existing.adaptedDurationMinutes !== act.adaptedDurationMinutes ||
+        existing.adaptedElevationM !== act.adaptedElevationM ||
+        existing.adaptedSportType !== act.adaptedSportType
       );
-      if (hasUnappliedActions) {
-        onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
-      }
+    });
+
+    if (hasUnappliedActions) {
+      onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
     }
   }, [adaptiveStatus.recommendedActions, adaptiveOverrides, onApplyAdaptivePlan]);
 
@@ -893,11 +920,61 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       </div>
 
       {/* 🛡️ Coach Adaptatif QMT : Anti-blessure & Progression */}
-      {adaptiveStatus.hasActiveAdaptations ? (
+      {!isViewingActiveHorizon ? (
         <div
           style={{
-            background: 'rgba(16, 185, 129, 0.08)',
-            border: '1px solid rgba(16, 185, 129, 0.35)',
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '8px 14px',
+            marginBottom: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 8,
+            fontSize: '0.78rem',
+            color: 'var(--text-secondary)'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Calendar size={14} color="#94a3b8" />
+            <span>
+              {weekOffset > currentWeekOffset + 1 ? (
+                <><strong>Semaine future :</strong> Planning nominal intact. L'Auto-Pilot module le microcycle actif et la semaine à venir.</>
+              ) : (
+                <><strong>Semaine passée :</strong> Planning historique.</>
+              )}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={handleResetToToday}
+            style={{ fontSize: '0.72rem', padding: '3px 10px', borderRadius: 4 }}
+          >
+            Revenir à cette semaine
+          </button>
+        </div>
+      ) : adaptiveStatus.hasActiveAdaptations ? (
+        <div
+          style={{
+            background: adaptiveStatus.trailAcwrRatio > 1.5
+              ? 'rgba(239, 68, 68, 0.08)'
+              : adaptiveStatus.trailAcwrRatio > 1.3
+              ? 'rgba(245, 158, 11, 0.08)'
+              : adaptiveStatus.trailAcwrRatio < 0.8
+              ? 'rgba(56, 189, 248, 0.08)'
+              : 'rgba(16, 185, 129, 0.08)',
+            border: `1px solid ${
+              adaptiveStatus.trailAcwrRatio > 1.5
+                ? 'rgba(239, 68, 68, 0.35)'
+                : adaptiveStatus.trailAcwrRatio > 1.3
+                ? 'rgba(245, 158, 11, 0.35)'
+                : adaptiveStatus.trailAcwrRatio < 0.8
+                ? 'rgba(56, 189, 248, 0.35)'
+                : 'rgba(16, 185, 129, 0.35)'
+            }`,
             borderRadius: 'var(--radius-sm)',
             padding: '10px 14px',
             marginBottom: '12px',
@@ -908,12 +985,60 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             gap: '10px'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#34d399' }}>
-            <ShieldCheck size={16} color="#10b981" />
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8rem',
+            color: adaptiveStatus.trailAcwrRatio > 1.5
+              ? '#f87171'
+              : adaptiveStatus.trailAcwrRatio > 1.3
+              ? '#fbbf24'
+              : adaptiveStatus.trailAcwrRatio < 0.8
+              ? '#38bdf8'
+              : '#34d399',
+            flex: 1
+          }}>
+            {adaptiveStatus.trailAcwrRatio > 1.3 ? (
+              <ShieldAlert size={16} color={adaptiveStatus.trailAcwrRatio > 1.5 ? '#ef4444' : '#f59e0b'} />
+            ) : (
+              <ShieldCheck size={16} color={adaptiveStatus.trailAcwrRatio < 0.8 ? '#38bdf8' : '#10b981'} />
+            )}
             <div>
-              <strong>Plan Adaptatif Actif (Auto-Pilot) :</strong> Vos sorties de trail à venir sont automatiquement modulées pour respecter votre tolérance mécanique (ACWR actuel : {adaptiveStatus.trailAcwrRatio} en Sweet Spot). Calisthénie maintenue intacte.
+              <strong>{isViewingNextWeek ? 'Plan Adaptatif — Semaine Prochaine (Anticipation) :' : 'Plan Adaptatif Actif (Auto-Pilot) :'}</strong> {
+                adaptiveStatus.trailAcwrRatio > 1.5
+                  ? <>Vos séances de trail sont allégées pour désamorcer la surcharge mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚠️ Surcharge</strong>) et vous ramener dans le Sweet Spot (&lt; 1.3). Calisthénie maintenue.</>
+                  : adaptiveStatus.trailAcwrRatio > 1.3
+                  ? <>Dénivelé modéré préventivement (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚡ Vigilance</strong>) pour sécuriser le Sweet Spot (0.8 – 1.3). Calisthénie maintenue.</>
+                  : adaptiveStatus.trailAcwrRatio < 0.8
+                  ? <>Séances calibrées pour une montée progressive (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} 🔵 Sous-charge</strong>). Calisthénie maintenue.</>
+                  : <>Vos sorties de trail sont calibrées pour respecter votre tolérance mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ✅ Sweet Spot</strong>). Calisthénie maintenue.</>
+              }
             </div>
           </div>
+          {onRevertAdaptivePlan && Object.keys(adaptiveOverrides).length > 0 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => {
+                triggerHapticFeedback('light');
+                onRevertAdaptivePlan();
+              }}
+              style={{
+                fontSize: '0.74rem',
+                padding: '4px 10px',
+                borderRadius: 4,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                color: 'var(--text-secondary)'
+              }}
+              title="Rétablir le programme nominal d'origine"
+            >
+              <RotateCcw size={12} /> Rétablir plan nominal
+            </button>
+          )}
         </div>
       ) : adaptiveStatus.injuryRiskLevel === 'HIGH' && adaptiveStatus.recommendedActions.length > 0 ? (
         <div

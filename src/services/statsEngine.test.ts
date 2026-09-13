@@ -471,7 +471,7 @@ describe('statsEngine unit tests', () => {
 
     // BUT physiological load includes August activities in the 90-day window!
     expect(report.trainingLoad.currentCtl).toBeGreaterThan(0);
-    expect(report.trainingLoad.chronicLoad28dWeeklyAvg).toBeGreaterThan(15);
+    expect(report.trainingLoad.chronicLoad28dWeeklyAvg).toBeGreaterThan(5); // In Km-Effort / sem (7.3 Km-e)
     expect(report.trainingLoad.acwrActionAdvice).toBeDefined();
   });
 
@@ -619,9 +619,12 @@ describe('statsEngine unit tests', () => {
     ];
 
     const tlStats = computeTrainingLoadStats(realActivities, new Date('2026-09-07T18:00:00'));
-    // Acute load must be 40 TRIMP (not the generic 17 TRIMP from duration without cardio!)
-    expect(tlStats.trailAcuteLoad7d).toBe(40);
+    // Charge mécanique aiguë en Km-Effort : 4.09 km + 15m D+ = 4.24 -> 4.2 Km-Effort
+    expect(tlStats.trailAcuteLoad7d).toBe(4.2);
+    // Charge interne cardio Banister : 40 TRIMP (taux 2.22 TRIMP/min x 18 min)
+    expect(tlStats.cardioAcuteLoad7d).toBe(40);
     expect(tlStats.recentSessions7d[0].trimp).toBe(40);
+    expect(tlStats.recentSessions7d[0].mechanicalKmEffort).toBe(4.2);
     expect(tlStats.recentSessions7d[0].formulaText).toContain('40 TRIMP');
   });
 
@@ -662,7 +665,7 @@ describe('statsEngine unit tests', () => {
     // and Sept 7 is 1 day prior (inside acute window)
     expect(stats1.trailAcuteLoad7d).toBe(stats2.trailAcuteLoad7d);
     expect(stats1.trailAcwrRatio).toBe(stats2.trailAcwrRatio);
-    expect(stats1.trailAcuteLoad7d).toBe(40); // Only the Sept 7 run (40 TRIMP)
+    expect(stats1.trailAcuteLoad7d).toBe(4); // Only the Sept 7 run (4.0 Km-Effort)
   });
 
   it('computes dynamic athlete base pace and filters out steep hill climbs', async () => {

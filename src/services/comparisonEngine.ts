@@ -606,11 +606,12 @@ function evaluateSingleWorkout(
 
   // 2. Évaluation de la fréquence cardiaque (FCmax = 203 bpm)
   let hrCompliance: 'OPTIMAL' | 'TOO_HIGH' | 'TOO_LOW' | 'N/A' = 'OPTIMAL';
-  const titleLower = plan.title.toLowerCase();
-  const isRecovery = plan.sportType === 'RUN_EASY' || titleLower.includes('récupération') || titleLower.includes('footing');
-  // Seuil réaliste pour l'athlète (FCmax = 203 bpm) : un footing en reprise jusqu'à 165 bpm reste dans une intensité aérobie tolérée sans pénalité
-  const effectiveMaxTarget = isRecovery ? 165 : (plan.metadata?.targetHeartRateRange?.[1] || 175);
-  const effectiveMinTarget = isRecovery ? 115 : (plan.metadata?.targetHeartRateRange?.[0] || 125);
+  const titleLower = String(plan.title || '').toLowerCase();
+  const isRecovery = plan.sportType === 'RUN_EASY' || titleLower.includes('récupération') || titleLower.includes('footing') || titleLower.includes('rolling run');
+  const isTrailRun = plan.sportType === 'TRAIL_LONG' || titleLower.includes('trail') || titleLower.includes('rando-course');
+  // Seuil physiologique réaliste pour l'athlète (FCmax = 203 bpm) : endurance fondamentale jusqu'à 168 bpm sans fausse alerte
+  const effectiveMaxTarget = (isRecovery || isTrailRun) ? Math.max(168, plan.metadata?.targetHeartRateRange?.[1] || 168) : (plan.metadata?.targetHeartRateRange?.[1] || 175);
+  const effectiveMinTarget = (isRecovery || isTrailRun) ? Math.min(135, plan.metadata?.targetHeartRateRange?.[0] || 135) : (plan.metadata?.targetHeartRateRange?.[0] || 135);
 
   if (act.avgHeartRate) {
     if (act.avgHeartRate > effectiveMaxTarget + 5) {

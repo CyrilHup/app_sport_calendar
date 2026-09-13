@@ -20,7 +20,8 @@ import {
   parsePaceToSeconds,
   formatSecondsToPace,
   getDynamicAthleteProfile,
-  getExpectedHeartRateForEvent
+  getExpectedHeartRateForEvent,
+  getAthleteHeartRateZones
 } from './garminService';
 import { CalendarEvent } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
@@ -312,6 +313,61 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
       profile
     );
     expect(easyRun).toBeLessThanOrEqual(148);
+  });
+
+  it('correctly calculates personalized Karvonen HR zones and prevents 139 bpm under-estimation on Rolling Run', () => {
+    // Cyril's actual profile (FCmax 203, Rest 50) with real Garmin runs (~164 bpm trail, ~161 bpm easy)
+    const cyrilRuns: GarminActivity[] = [
+      {
+        activityId: 'trail-montreal-1',
+        activityName: 'Montreal - [QMT] Trail: Rando-Course D+ (1h',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-12T17:35:00',
+        durationMinutes: 88,
+        distanceKm: 11.42,
+        elevationGainM: 293,
+        avgHeartRate: 160,
+        maxHeartRate: 187,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'run-montreal-2',
+        activityName: 'Montreal Running',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-10T11:47:00',
+        durationMinutes: 37,
+        distanceKm: 6.45,
+        elevationGainM: 10,
+        avgHeartRate: 162,
+        maxHeartRate: 179,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const profile = getDynamicAthleteProfile(cyrilRuns);
+    expect(profile.trailAvgHr).toBe(160);
+    expect(profile.runEasyAvgHr).toBe(162);
+
+    const zones = getAthleteHeartRateZones(profile);
+    expect(zones.zone2[0]).toBeGreaterThanOrEqual(140);
+    expect(zones.zone2[1]).toBeGreaterThanOrEqual(160);
+
+    // Test Sunday's planned session: "Trail: Fatigued / Rolling Run (30 min)"
+    const rollingRunExpectedHr = getExpectedHeartRateForEvent(
+      {
+        sportType: 'TRAIL_LONG',
+        title: 'Trail: Fatigued / Rolling Run (30 min)',
+        metadata: {
+          targetHeartRateRange: [142, 165],
+          targetHeartRate: 'Endurance fondamentale (Zone 2)'
+        }
+      },
+      profile
+    );
+
+    // Must NEVER be 139 bpm: reflects true dynamic trail average (~160 bpm)
+    expect(rollingRunExpectedHr).toBe(160);
+    expect(rollingRunExpectedHr).not.toBe(139);
   });
 });
 

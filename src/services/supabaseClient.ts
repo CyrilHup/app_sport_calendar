@@ -332,10 +332,33 @@ export async function fetchActivitiesFromCloud(userId: string): Promise<GarminAc
 }
 
 /**
+ * Circuit breaker to track if the wellness table is available in Supabase.
+ * If PostgREST returns PGRST205 (table not found in schema cache) or 404,
+ * we flag it as false to avoid spamming 404 network requests and console errors.
+ */
+let isWellnessTableAvailable: boolean | null = null;
+
+function isTableMissingError(error: any): boolean {
+  if (!error) return false;
+  return (
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    error.status === 404 ||
+    (typeof error.message === 'string' &&
+      (error.message.includes('public.wellness') || error.message.includes('schema cache')))
+  );
+}
+
+export function resetWellnessTableAvailability(): void {
+  isWellnessTableAvailable = null;
+}
+
+/**
  * Sync daily wellness data (resting HR, HRV, sleep) to Supabase
  */
 export async function syncWellnessToCloud(userId: string, wellnessList: GarminWellnessData[]): Promise<boolean> {
   if (!isSupabaseConfigured() || !userId || wellnessList.length === 0) return false;
+  if (isWellnessTableAvailable === false) return false;
   try {
     const rows = wellnessList.map(w => ({
       user_id: userId,
@@ -356,13 +379,28 @@ export async function syncWellnessToCloud(userId: string, wellnessList: GarminWe
         .from('wellness')
         .upsert(chunk, { onConflict: 'user_id,date' });
       if (error) {
-        // Table might not exist yet if user hasn't run the updated SQL schema
+        if (isTableMissingError(error)) {
+          if (isWellnessTableAvailable === null) {
+            isWellnessTableAvailable = false;
+            console.info(
+              '[Supabase] Note: Table "public.wellness" non encore créée dans Supabase. Les données de récupération (FC repos, VRC, sommeil) restent sauvegardées localement. Exécutez le script SQL (section 4 de supabase_schema.sql) pour synchroniser dans le cloud.'
+            );
+          } else {
+            isWellnessTableAvailable = false;
+          }
+          return false;
+        }
         console.warn('Note: wellness table upsert in Supabase:', error.message);
         return false;
       }
     }
+    isWellnessTableAvailable = true;
     return true;
-  } catch (err) {
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      isWellnessTableAvailable = false;
+      return false;
+    }
     console.warn('Could not sync wellness to Supabase (run supabase_schema.sql if needed):', err);
     return false;
   }
@@ -373,6 +411,7 @@ export async function syncWellnessToCloud(userId: string, wellnessList: GarminWe
  */
 export async function fetchWellnessFromCloud(userId: string): Promise<GarminWellnessData[]> {
   if (!isSupabaseConfigured() || !userId) return [];
+  if (isWellnessTableAvailable === false) return [];
   try {
     const { data, error } = await supabase
       .from('wellness')
@@ -381,9 +420,29 @@ export async function fetchWellnessFromCloud(userId: string): Promise<GarminWell
       .order('date', { ascending: false })
       .limit(1000);
 
-    if (error || !data) return [];
+    if (error) {
+      if (isTableMissingError(error)) {
+        if (isWellnessTableAvailable === null) {
+          isWellnessTableAvailable = false;
+          console.info(
+            '[Supabase] Note: Table "public.wellness" non encore créée dans Supabase. Le suivi bien-être reste conservé localement.'
+          );
+        } else {
+          isWellnessTableAvailable = false;
+        }
+        return [];
+      }
+      console.warn('Could not fetch wellness from Supabase:', error.message);
+      return [];
+    }
+    isWellnessTableAvailable = true;
+    if (!data) return [];
     return data.map(d => d.raw_payload as GarminWellnessData).filter(Boolean);
-  } catch (err) {
+  } catch (err: any) {
+    if (isTableMissingError(err)) {
+      isWellnessTableAvailable = false;
+      return [];
+    }
     console.warn('Could not fetch wellness from Supabase:', err);
     return [];
   }
@@ -429,6 +488,71 @@ export async function fetchPairsFromCloud(userId: string): Promise<Record<string
     return null;
   }
 }
+
+/**
+ * Save adaptive & postpone overrides to Supabase user_settings
+ */
+export async function syncOverridesToCloud(
+  userId: string,
+  overrides: {
+    adaptiveOverrides?: Record<string, any>;
+    postponeOverrides?: Record<string, any>;
+  }
+): Promise<boolean> {
+  if (!isSupabaseConfigured() || !userId) return false;
+  try {
+    const payload: Record<string, any> = {
+      user_id: userId,
+      updated_at: new Date().toISOString()
+    };
+    if (overrides.adaptiveOverrides !== undefined) {
+      payload.adaptive_overrides = overrides.adaptiveOverrides;
+    }
+    if (overrides.postponeOverrides !== undefined) {
+      payload.postpone_overrides = overrides.postponeOverrides;
+    }
+
+    const { error } = await supabase
+      .from('user_settings')
+      .upsert(payload, { onConflict: 'user_id' });
+
+    if (error) {
+      console.warn('Error saving overrides to cloud:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Error saving overrides to cloud:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch adaptive & postpone overrides from Supabase user_settings
+ */
+export async function fetchOverridesFromCloud(userId: string): Promise<{
+  adaptiveOverrides: Record<string, any> | null;
+  postponeOverrides: Record<string, any> | null;
+} | null> {
+  if (!isSupabaseConfigured() || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('adaptive_overrides, postpone_overrides')
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !data) return null;
+    return {
+      adaptiveOverrides: data.adaptive_overrides || null,
+      postponeOverrides: data.postpone_overrides || null
+    };
+  } catch (err) {
+    console.warn('Error fetching overrides from cloud:', err);
+    return null;
+  }
+}
+
 
 /**
  * Fetch shared public profile & activities for spectators (friends)

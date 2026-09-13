@@ -45,3 +45,6 @@ android/app/build/
 android/build/
 *.apk
 *.aab
+
+# Scratch files
+scratch/

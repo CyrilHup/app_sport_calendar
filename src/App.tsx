@@ -15,13 +15,13 @@ import { getPeriodizationContext, GLOBAL_APP_CONFIG, setAppConfigOverrides } fro
 import { loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
-import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout } from './services/postponeService';
+import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
 import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
 import { DEFAULT_WEEKLY_TARGETS, computeFullStatsReport } from './services/statsEngine';
 import { isTrailOrRunning } from './services/activityClassifier';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData } from './services/supabaseClient';
+import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData, syncOverridesToCloud, fetchOverridesFromCloud } from './services/supabaseClient';
 import { saveWellnessData, loadWellnessHistory } from './services/readinessEngine';
 import { getApiUrl } from './services/apiConfig';
 import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncService';
@@ -145,6 +145,39 @@ export const App: React.FC = () => {
           saveManualPairs(cloudPairs);
         } else if (localPairs && Object.keys(localPairs).length > 0) {
           await syncPairsToCloud(user.id, localPairs);
+        }
+
+        // Hydrate and sync overrides (adaptive + postpone) from cloud
+        try {
+          const cloudOverrides = await fetchOverridesFromCloud(user.id);
+          let loadedAdaptive: Record<string, AdaptiveWorkoutOverride> | null = null;
+          let loadedPostpone: Record<string, any> | null = null;
+
+          if (cloudOverrides) {
+            if (cloudOverrides.adaptiveOverrides && Object.keys(cloudOverrides.adaptiveOverrides).length > 0) {
+              loadedAdaptive = cloudOverrides.adaptiveOverrides;
+              setAdaptiveOverrides(loadedAdaptive);
+              saveAdaptiveOverrides(loadedAdaptive);
+            }
+            if (cloudOverrides.postponeOverrides && Object.keys(cloudOverrides.postponeOverrides).length > 0) {
+              loadedPostpone = cloudOverrides.postponeOverrides;
+              setPostponeOverrides(loadedPostpone);
+              savePostponeOverrides(loadedPostpone);
+            }
+          }
+
+          if (!cloudOverrides?.adaptiveOverrides && !cloudOverrides?.postponeOverrides) {
+            const localAdaptive = loadAdaptiveOverrides();
+            const localPostpones = loadPostponeOverrides();
+            if (Object.keys(localAdaptive).length > 0 || Object.keys(localPostpones).length > 0) {
+              await syncOverridesToCloud(user.id, {
+                adaptiveOverrides: localAdaptive,
+                postponeOverrides: localPostpones
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Could not sync cloud overrides:', e);
         }
 
         // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
@@ -452,26 +485,53 @@ export const App: React.FC = () => {
   ) => {
     const updated = postponeWorkout(postponeOverrides, eventId, originalDate, targetDate, reason, targetStartTime);
     setPostponeOverrides(updated);
+    savePostponeOverrides(updated);
     recomputeAndSyncCalendar(updated, adaptiveOverrides);
+    if (user?.id) {
+      syncOverridesToCloud(user.id, { postponeOverrides: updated });
+    }
   };
 
   const handleCancelPostpone = (eventId: string) => {
     const updated = cancelPostponeWorkout(postponeOverrides, eventId);
     setPostponeOverrides(updated);
+    savePostponeOverrides(updated);
     recomputeAndSyncCalendar(updated, adaptiveOverrides);
+    if (user?.id) {
+      syncOverridesToCloud(user.id, { postponeOverrides: updated });
+    }
   };
 
   const handleApplyAdaptivePlan = (actions: AdaptiveWorkoutAction[]) => {
-    const overrides = buildOverridesFromActions(actions, adaptiveOverrides, formatDateKey(referenceDate));
+    const currentMonday = getMondayOfWeek(referenceDate);
+    const activeWeekDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(currentMonday);
+      d.setDate(d.getDate() + i);
+      activeWeekDates.push(formatDateKey(d));
+    }
+
+    const overrides = buildOverridesFromActions(
+      actions,
+      adaptiveOverrides,
+      formatDateKey(referenceDate),
+      activeWeekDates
+    );
     setAdaptiveOverrides(overrides);
     saveAdaptiveOverrides(overrides);
     recomputeAndSyncCalendar(postponeOverrides, overrides);
+    if (user?.id) {
+      syncOverridesToCloud(user.id, { adaptiveOverrides: overrides });
+    }
   };
 
   const handleRevertAdaptivePlan = () => {
     setAdaptiveOverrides({});
     clearAdaptiveOverrides();
     recomputeAndSyncCalendar(postponeOverrides, {});
+    if (user?.id) {
+      syncOverridesToCloud(user.id, { adaptiveOverrides: {} });
+    }
   };
 
   // Compute full current week's targets for accurate microcycle telemetry progress

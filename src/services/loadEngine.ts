@@ -8,6 +8,7 @@ export interface SessionTrimpOptions {
   avgHeartRate?: number | null;
   maxHeartRate?: number | null;
   elevationGainM?: number | null;
+  targetElevationM?: number | null;
   distanceKm?: number | null;
   athleteFcMax?: number | null;
   athleteFcRest?: number | null;
@@ -20,6 +21,7 @@ export interface SessionTrimpResult {
   trimp: number;
   cardioTrimp?: number;
   isMechanicalImpact: boolean;
+  mechanicalKmEffort: number;
   isRealTelemetry: boolean;
   factor: number;
   factorLabel: string;
@@ -46,6 +48,7 @@ export interface RecentSessionLoadItem {
   durationMinutes: number;
   sportType: string;
   trimp: number;
+  mechanicalKmEffort?: number;
   isMechanicalImpact: boolean;
   categoryLabel: string;
   formulaText: string;
@@ -72,6 +75,7 @@ export interface TrainingLoadStats {
   trailAcuteLoad7d: number;
   trailChronicLoad28dWeeklyAvg: number;
   trailAcwrStatus: 'UNDERLOAD' | 'OPTIMAL' | 'MODERATE_RISK' | 'DANGER_HIGH_RISK' | 'CALIBRATING';
+  cardioAcuteLoad7d?: number;
   calisthenicsAcuteLoad7d: number;
   calisthenicsSessionsCount7d: number;
   totalSystemicAcuteLoad7d: number;
@@ -120,6 +124,22 @@ export function calculateSessionTrimp(
   const isRunningDiscipline = isTrailOrRunning(typeOrSportType, name);
   const hasRunningImpact = isRunningDiscipline && !isCalisthenics;
 
+  const isMechanicalImpact = hasRunningImpact;
+
+  // Calcul de la charge mécanique externe en Km-Effort (Standard ITRA : Distance (km) + D+ (m) / 100)
+  // Calisthénie / Renfort / Mobilité = 0 Km-Effort (zéro onde de choc articulaire au sol)
+  let mechanicalKmEffort = 0;
+  if (hasRunningImpact) {
+    let dist = typeof options?.distanceKm === 'number' && options.distanceKm > 0 ? options.distanceKm : null;
+    if (!dist && dur > 0) {
+      const isTrail = actType.includes('TRAIL') || actName.includes('trail') || (options?.elevationGainM || 0) >= 100;
+      const speedKmH = isTrail ? 8.5 : 10.0;
+      dist = Math.round((dur * (speedKmH / 60)) * 100) / 100;
+    }
+    const dPlus = Math.max(0, typeof options?.elevationGainM === 'number' ? options.elevationGainM : (options?.targetElevationM || 0));
+    mechanicalKmEffort = Math.round(((dist || 0) + (dPlus / 100)) * 10) / 10;
+  }
+
   // 1. Charge EPOC native Firstbeat de Garmin prioritaire si présente
   if (typeof garminLoad === 'number' && garminLoad > 0) {
     const isImpact = hasRunningImpact;
@@ -127,6 +147,7 @@ export function calculateSessionTrimp(
       trimp: Math.round(garminLoad),
       cardioTrimp: Math.round(garminLoad),
       isMechanicalImpact: isImpact,
+      mechanicalKmEffort,
       isRealTelemetry: true,
       factor: 1.0,
       factorLabel: 'Charge réelle Garmin (EPOC)',
@@ -134,7 +155,7 @@ export function calculateSessionTrimp(
       ratePerMin: Math.round((garminLoad / Math.max(1, durationMinutes)) * 100) / 100,
       categoryLabel: isImpact ? 'Impact Trail & Course' : (isCalisthenics ? 'Calisthénie (Sans impact)' : 'Activité générale'),
       formulaText: `Charge EPOC Garmin : ${Math.round(garminLoad)} TRIMP`,
-      details: 'Mesuré directement via le capteur cardiofréquencemètre et la consommation excessive d’oxygène post-exercice (EPOC) de la montre Garmin.'
+      details: `Mesuré via EPOC Garmin • Charge mécanique : ${mechanicalKmEffort} Km-Effort`
     };
   }
 
@@ -163,8 +184,6 @@ export function calculateSessionTrimp(
     categoryLabel = 'Récupération active & Mobilité';
   }
 
-  const isMechanicalImpact = hasRunningImpact;
-
   const profile = getDynamicAthleteProfile();
   const fcMax = options?.athleteFcMax || profile.fcMax;
   const fcRest = options?.athleteFcRest || profile.fcRest;
@@ -189,6 +208,7 @@ export function calculateSessionTrimp(
       trimp,
       cardioTrimp,
       isMechanicalImpact,
+      mechanicalKmEffort,
       isRealTelemetry: true,
       factor,
       factorLabel,
@@ -196,7 +216,7 @@ export function calculateSessionTrimp(
       ratePerMin,
       categoryLabel,
       formulaText: `${dur} min × ${ratePerMin} TRIMP/min = ${trimp} TRIMP (FC moy. ${Math.round(avgHr)} bpm${maxHrStr})`,
-      details: `Banister FC réelle (${baseRate} TRIMP/min, ${hrReservePct}% Réserve Cardiaque) × Impact ${factorLabel}`
+      details: `Banister FC réelle (${baseRate} TRIMP/min, ${hrReservePct}% Réserve Cardiaque) × Impact ${factorLabel} • Charge mécanique : ${mechanicalKmEffort} Km-Effort`
     };
   }
 
@@ -211,7 +231,7 @@ export function calculateSessionTrimp(
           metadata: {
             targetHeartRateRange: options?.targetHeartRateRange || undefined,
             targetHeartRate: options?.targetHeartRate || undefined,
-            targetElevationM: options?.elevationGainM || undefined
+            targetElevationM: options?.elevationGainM || options?.targetElevationM || undefined
           }
         },
         profile
@@ -228,6 +248,7 @@ export function calculateSessionTrimp(
     trimp,
     cardioTrimp,
     isMechanicalImpact,
+    mechanicalKmEffort,
     isRealTelemetry: false,
     factor,
     factorLabel,
@@ -235,7 +256,7 @@ export function calculateSessionTrimp(
     ratePerMin,
     categoryLabel,
     formulaText: `${dur} min × ${ratePerMin} TRIMP/min = ${trimp} TRIMP (estimé ~${Math.round(expectedHr)} bpm)`,
-    details: `Banister prévisionnel dynamique (${baseRate} TRIMP/min, FC cible ~${Math.round(expectedHr)} bpm) × Coeff. d'impact ${factorLabel}`
+    details: `Banister prévisionnel dynamique (${baseRate} TRIMP/min, FC cible ~${Math.round(expectedHr)} bpm) × Coeff. d'impact ${factorLabel} • Charge mécanique : ${mechanicalKmEffort} Km-Effort`
   };
 }
 
@@ -253,6 +274,7 @@ export function computeTrainingLoadStats(
   const profile = getDynamicAthleteProfile();
   const dailyLoads: Record<string, number> = {};
   const dailyTrailLoads: Record<string, number> = {};
+  const dailyRunningCardioLoads: Record<string, number> = {};
   const dailyCalisthenicsLoads: Record<string, number> = {};
   const calisthenicsSessionsByDay: Record<string, number> = {};
 
@@ -275,7 +297,9 @@ export function computeTrainingLoadStats(
     // Moteur de charge centré exclusivement sur la Course & le Trail (renforcement exclu)
     if (sessionInfo.isMechanicalImpact || isTrailOrRunning(act)) {
       dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
-      dailyTrailLoads[dKey] = (dailyTrailLoads[dKey] || 0) + load;
+      // CHARGE MÉCANIQUE EXTERNE EN KM-EFFORT (Standard ITRA : Distance (km) + D+ (m) / 100)
+      dailyTrailLoads[dKey] = (dailyTrailLoads[dKey] || 0) + sessionInfo.mechanicalKmEffort;
+      dailyRunningCardioLoads[dKey] = (dailyRunningCardioLoads[dKey] || 0) + load;
     } else {
       dailyCalisthenicsLoads[dKey] = (dailyCalisthenicsLoads[dKey] || 0) + load;
       calisthenicsSessionsByDay[dKey] = (calisthenicsSessionsByDay[dKey] || 0) + 1;
@@ -324,12 +348,15 @@ export function computeTrainingLoadStats(
   const currentAtl = latestPoint.atl;
   const currentTsb = latestPoint.tsb;
 
-  // Trail-specific ACWR (Gabbett model applied exclusively to mechanical ground impact)
+  // Trail-specific ACWR (Gabbett model applied exclusively to external mechanical ground impact: Km-Effort)
   let trailAcuteSum = 0;
+  let cardioAcuteSum = 0;
   for (let i = 0; i < 7; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
-    trailAcuteSum += (dailyTrailLoads[formatDateKey(d)] || 0);
+    const dKey = formatDateKey(d);
+    trailAcuteSum += (dailyTrailLoads[dKey] || 0);
+    cardioAcuteSum += (dailyRunningCardioLoads[dKey] || 0);
   }
 
   let trailChronicSum = 0;
@@ -337,12 +364,15 @@ export function computeTrainingLoadStats(
   for (let i = 0; i < 28; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
-    const dLoad = dailyTrailLoads[formatDateKey(d)] || 0;
+    const dKey = formatDateKey(d);
+    const dLoad = dailyTrailLoads[dKey] || 0;
     trailChronicSum += dLoad;
     if (dLoad > 0) trailActiveDaysInLast28++;
   }
-  const trailChronicWeeklyAvg = Math.max(15, Math.round(trailChronicSum / 4));
-  const trailAcwrRatio = Math.round((trailAcuteSum / trailChronicWeeklyAvg) * 100) / 100;
+  // Plancher minimum de 5 Km-Effort/semaine pour éviter les divisions par zéro lors de la première semaine de plan
+  const trailChronicWeeklyAvg = Math.max(5, Math.round((trailChronicSum / 4) * 10) / 10);
+  const trailAcuteLoad7d = Math.round(trailAcuteSum * 10) / 10;
+  const trailAcwrRatio = Math.round((trailAcuteLoad7d / trailChronicWeeklyAvg) * 100) / 100;
 
   // Calisthenics & Strength metrics over last 7 days (non-impact)
   let calisthenicsAcuteSum = 0;
@@ -358,27 +388,27 @@ export function computeTrainingLoadStats(
   }
 
   // Detect calibration/cold-start
-  const isCalibrating = trailActiveDaysInLast28 < 4 && trailAcuteSum > 0;
+  const isCalibrating = trailActiveDaysInLast28 < 3 && trailAcuteSum > 0;
 
   let acwrStatus: TrainingLoadStats['acwrStatus'] = 'OPTIMAL';
-  let acwrLabel = 'Zone Optimale Trail (0.8 - 1.3) : Progression saine et risque de blessure articulaire minimal. Calisthénie bien tolérée.';
-  let acwrActionAdvice = 'Charge d\'impact Trail parfaitement assimilée. Poursuivez sur cette régularité.';
+  let acwrLabel = 'Sweet Spot Mécanique (0.8 - 1.3) : Volume et dénivelé (Km-Effort) parfaitement tolérés par vos tendons et genoux. Calisthénie sans impact.';
+  let acwrActionAdvice = 'Charge d\'impact Trail parfaitement assimilée. Poursuivez sur cette régularité sans dépasser +10% de Km-Effort par semaine.';
 
   if (isCalibrating && trailAcwrRatio > 1.4) {
     acwrStatus = 'CALIBRATING';
-    acwrLabel = 'Reprise / Calibration Trail : Données chroniques de course (28j) en cours d\'accumulation suite à la reprise. Calisthénie exclue.';
+    acwrLabel = 'Reprise / Calibration Mécanique : Données d\'impacts (Km-Effort 28j) en cours d\'accumulation suite à la reprise. Calisthénie sans choc exclue.';
     acwrActionAdvice = 'Privilégiez 80% de votre volume en endurance fondamentale (Zone 2) et veillez à vos jours de repos.';
   } else if (trailAcwrRatio < 0.8) {
     acwrStatus = 'UNDERLOAD';
-    acwrLabel = 'Sous-charge Trail (< 0.8) : Stimulus mécanique de course allégé ou période de récupération active.';
+    acwrLabel = 'Sous-charge Mécanique (< 0.8) : Stimulus mécanique de course allégé ou période de récupération active.';
     acwrActionAdvice = 'Pieds et tendons frais. Profitez-en pour le renforcement postural et la mobilité.';
   } else if (trailAcwrRatio > 1.5) {
     acwrStatus = 'DANGER_HIGH_RISK';
-    acwrLabel = 'Zone Critique Trail (> 1.5) : Augmentation rapide du volume d\'impact course (+50% vs moyenne sur 4 semaines). Risque tendineux élevé.';
+    acwrLabel = 'Zone Critique Mécanique (> 1.5) : Augmentation rapide du volume d\'impact course (+50% vs moyenne sur 4 semaines). Risque tendineux élevé.';
     acwrActionAdvice = 'Allégez la prochaine séance de côtes ou écourtez la sortie longue. Maintenez la calisthénie sans chocs.';
   } else if (trailAcwrRatio > 1.3) {
     acwrStatus = 'MODERATE_RISK';
-    acwrLabel = 'Zone d\'Attention Trail (1.3 - 1.5) : Montée de charge mécanique soutenue. Surveillez mollets et tendons.';
+    acwrLabel = 'Zone d\'Attention Mécanique (1.3 - 1.5) : Montée de charge mécanique soutenue. Surveillez mollets, genoux et tendons d\'Achille.';
     acwrActionAdvice = 'Maintenez les allures d\'endurance sans forcer et surveillez les courbatures.';
   }
 
@@ -399,14 +429,14 @@ export function computeTrainingLoadStats(
   }
 
   const acwrStatusLabel = acwrStatus === 'OPTIMAL'
-    ? 'Sweet Spot Optimal (Trail)'
+    ? 'Sweet Spot Mécanique (Km-Effort)'
     : (acwrStatus === 'CALIBRATING'
-      ? 'Calibration Trail'
+      ? 'Calibration Mécanique'
       : (acwrStatus === 'UNDERLOAD'
-        ? 'Sous-charge Trail'
+        ? 'Sous-charge Mécanique'
         : (acwrStatus === 'DANGER_HIGH_RISK'
-          ? 'Pic de Charge Trail Élevé'
-          : 'Charge Trail Soutenue')));
+          ? 'Pic Critique d\'Impacts (> 1.5)'
+          : 'Charge Mécanique Soutenue (1.3 - 1.5)')));
 
   // 7-day window individual sessions
   const recentSessions7d: RecentSessionLoadItem[] = [];
@@ -436,6 +466,7 @@ export function computeTrainingLoadStats(
         durationMinutes: dur,
         sportType: actType,
         trimp: sessionInfo.trimp,
+        mechanicalKmEffort: sessionInfo.mechanicalKmEffort,
         isMechanicalImpact: sessionInfo.isMechanicalImpact,
         categoryLabel: sessionInfo.categoryLabel,
         formulaText: sessionInfo.formulaText
@@ -456,15 +487,16 @@ export function computeTrainingLoadStats(
     acwrLabel,
     acwrActionAdvice,
     isCalibrating,
-    acuteLoad7d: trailAcuteSum,
+    acuteLoad7d: trailAcuteLoad7d,
     chronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,
-    totalTrailChronicLoad28d: trailChronicSum,
+    totalTrailChronicLoad28d: Math.round(trailChronicSum * 10) / 10,
     fitnessTrend,
     fitnessHistory: fitnessTrend,
     trailAcwrRatio,
-    trailAcuteLoad7d: trailAcuteSum,
+    trailAcuteLoad7d,
     trailChronicLoad28dWeeklyAvg: trailChronicWeeklyAvg,
     trailAcwrStatus: acwrStatus,
+    cardioAcuteLoad7d: Math.round(cardioAcuteSum),
     calisthenicsAcuteLoad7d: calisthenicsAcuteSum,
     calisthenicsSessionsCount7d,
     totalSystemicAcuteLoad7d: totalSystemicAcuteSum,

@@ -244,9 +244,21 @@ export default async function handler(req: any, res: any) {
 
   // Parse stream body for Node connect middleware if not already parsed
   if (!req.body && req.method === 'POST') {
-    let raw = '';
-    for await (const chunk of req) raw += chunk;
-    try { req.body = JSON.parse(raw); } catch { req.body = {}; }
+    try {
+      const readBodyPromise = new Promise<string>((resolve) => {
+        let buf = '';
+        req.on('data', (c: any) => buf += c);
+        req.on('end', () => resolve(buf));
+        req.on('error', () => resolve(''));
+        setTimeout(() => resolve(buf), 4000);
+      });
+      const raw = await readBodyPromise;
+      if (raw) {
+        req.body = JSON.parse(raw);
+      }
+    } catch {
+      req.body = {};
+    }
   }
 
   let body = req.body || {};
@@ -349,24 +361,27 @@ export default async function handler(req: any, res: any) {
         if (st.stepType === 'WARMUP') stepType = StepType.WarmUp;
         else if (st.stepType === 'INTERVAL') stepType = (wt === WorkoutType.Running ? StepType.Run : StepType.Interval || StepType.Run);
         else if (st.stepType === 'RECOVERY') stepType = StepType.Recovery;
-        else if (st.stepType === 'REST') stepType = StepType.Rest;
-        else if (st.stepType === 'COOLDOWN') stepType = StepType.Cooldown;
+        else if (st.stepType === 'COOLDOWN') stepType = StepType.CoolDown;
 
-        let duration: any = new LapPressDuration();
-        if (st.durationSeconds && st.durationSeconds > 0) {
-          duration = TimeDuration.fromSeconds(st.durationSeconds);
-        } else if (st.distanceMeters && st.distanceMeters > 0) {
-          duration = DistanceDuration.fromMeters(st.distanceMeters);
+        let duration: any;
+        if (st.durationSeconds) {
+          duration = new TimeDuration(st.durationSeconds);
+        } else if (st.durationMeters) {
+          duration = new DistanceDuration(st.durationMeters);
+        } else {
+          duration = new LapPressDuration();
         }
 
         let target: any = new NoTarget();
-        if (st.targetType === 'PACE' && PaceTarget) {
-          const fastSec = parsePaceSeconds(st.targetPaceLowMinKm);
-          const slowSec = parsePaceSeconds(st.targetPaceHighMinKm);
-          if (fastSec > 0 && slowSec > 0) {
-            const minSpeed = 1000 / Math.max(fastSec, slowSec);
-            const maxSpeed = 1000 / Math.min(fastSec, slowSec);
-            target = new PaceTarget(minSpeed, maxSpeed);
+        if (st.targetType === 'PACE') {
+          if (st.targetPaceLowMinKm && st.targetPaceHighMinKm) {
+            const lowSec = parsePaceSeconds(st.targetPaceLowMinKm);
+            const highSec = parsePaceSeconds(st.targetPaceHighMinKm);
+            if (lowSec > 0 && highSec > 0) {
+              const fast = Math.min(lowSec, highSec);
+              const slow = Math.max(lowSec, highSec);
+              target = new PaceTarget(1000 / slow, 1000 / fast);
+            }
           } else if (st.targetPaceMinKm) {
             const baseSec = parsePaceSeconds(st.targetPaceMinKm);
             const margin = st.targetPaceMarginSeconds || 18;
@@ -458,15 +473,15 @@ export default async function handler(req: any, res: any) {
             return bId - aId;
           });
 
-          // Conserver le premier (propre et récent), supprimer tous les doublons
+          // Garder le premier (le plus propre/récent), supprimer tous les autres
           const toDelete = sorted.slice(1);
-          for (const dup of toDelete) {
+          for (const d of toDelete) {
             try {
-              await gc.deleteWorkout({ workoutId: String(dup.workoutId) });
+              await gc.deleteWorkout({ workoutId: String(d.workoutId) });
               deletedCount++;
-              deletedNames.push(`${dup.workoutName} (ID: ${dup.workoutId})`);
-            } catch (err) {
-              console.warn(`Could not delete duplicate workout ${dup.workoutId}:`, err);
+              deletedNames.push(d.workoutName);
+            } catch (delErr) {
+              console.warn(`Could not delete duplicate workout ${d.workoutId}:`, delErr);
             }
           }
         }
@@ -490,8 +505,11 @@ export default async function handler(req: any, res: any) {
     }
 
     // ----------------------------------------------------
-    // WELLNESS DATA EXTRACTION (Sleep, HRV, Resting HR, Readiness)
+    // WELLNESS & ACTIVITIES EXTRACTION (Concurrent with timeouts)
     // ----------------------------------------------------
+    const timeoutPromise = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+      Promise.race([promise, new Promise<T>(res => setTimeout(() => res(fallback), ms))]);
+
     let wellness: any = null;
     const getLocalFallbackDate = () => {
       try {
@@ -510,13 +528,14 @@ export default async function handler(req: any, res: any) {
       : getLocalFallbackDate();
     const today = new Date(todayStr + 'T12:00:00');
 
-    try {
-      let sleepSummary: any = null;
+    const syncMode = body.syncMode || body.mode || 'incremental';
+
+    const fetchSleep = async () => {
       try {
-        const sleepRes: any = await gc.getSleepData(today);
+        const sleepRes: any = await timeoutPromise(gc.getSleepData(today), 8000, null);
         if (sleepRes?.dailySleepDTO) {
           const dto = sleepRes.dailySleepDTO;
-          sleepSummary = {
+          return {
             score: dto.sleepScores?.overall?.value || dto.sleepScoreFeedback || undefined,
             totalMinutes: dto.sleepTimeSeconds ? Math.round(dto.sleepTimeSeconds / 60) : 0,
             deepMinutes: dto.deepSleepSeconds ? Math.round(dto.deepSleepSeconds / 60) : undefined,
@@ -529,23 +548,27 @@ export default async function handler(req: any, res: any) {
       } catch (sleepErr) {
         console.warn('Could not fetch sleep data:', sleepErr);
       }
+      return null;
+    };
 
-      let restingHeartRate: number | undefined = undefined;
+    const fetchHr = async () => {
       try {
-        const hrRes: any = await gc.getHeartRate(today);
+        const hrRes: any = await timeoutPromise(gc.getHeartRate(today), 8000, null);
         if (typeof hrRes?.restingHeartRate === 'number') {
-          restingHeartRate = hrRes.restingHeartRate;
+          return hrRes.restingHeartRate;
         }
       } catch (hrErr) {
         console.warn('Could not fetch HR data:', hrErr);
       }
+      return undefined;
+    };
 
-      let hrvSummary: any = null;
+    const fetchHrv = async () => {
       try {
-        const hrvRes: any = await (gc.client as any).get(`https://connectapi.garmin.com/hrv-service/hrv/${todayStr}`);
+        const hrvRes: any = await timeoutPromise((gc.client as any).get(`https://connectapi.garmin.com/hrv-service/hrv/${todayStr}`), 8000, null);
         if (hrvRes?.hrvSummary) {
           const hs = hrvRes.hrvSummary;
-          hrvSummary = {
+          return {
             lastNightAvg: hs.lastNightAvg || undefined,
             weeklyAvg: hs.weeklyAvg || undefined,
             baselineLow: hs.baseline?.lowUpper || undefined,
@@ -556,67 +579,72 @@ export default async function handler(req: any, res: any) {
       } catch (hrvErr) {
         console.warn('Could not fetch HRV data:', hrvErr);
       }
+      return null;
+    };
 
-      let trainingReadinessScore: number | undefined = undefined;
+    const fetchReadiness = async () => {
       try {
-        const trRes: any = await (gc.client as any).get(`https://connectapi.garmin.com/metrics-service/metrics/trainingreadiness/${todayStr}`);
+        const trRes: any = await timeoutPromise((gc.client as any).get(`https://connectapi.garmin.com/metrics-service/metrics/trainingreadiness/${todayStr}`), 8000, null);
         if (Array.isArray(trRes) && trRes.length > 0 && typeof trRes[0]?.score === 'number') {
-          trainingReadinessScore = trRes[0].score;
+          return trRes[0].score;
         } else if (typeof trRes?.score === 'number') {
-          trainingReadinessScore = trRes.score;
+          return trRes.score;
         }
       } catch (trErr) {
         console.warn('Could not fetch Training Readiness:', trErr);
       }
+      return undefined;
+    };
 
-      wellness = {
-        date: todayStr,
-        sleep: sleepSummary,
-        restingHeartRate,
-        hrv: hrvSummary,
-        trainingReadinessScore,
-        syncedAt: new Date().toISOString()
-      };
-    } catch (wellnessErr) {
-      console.warn('General wellness extraction failure:', wellnessErr);
-    }
+    const fetchActs = async () => {
+      if (action === 'get-wellness') return [];
+      if (syncMode === 'full') {
+        const pageSize = 100;
+        const maxActivities = 1500;
+        let offset = 0;
+        const acts: any[] = [];
+        while (offset < maxActivities) {
+          try {
+            const page: any[] = await timeoutPromise(gc.getActivities(offset, pageSize), 15000, []);
+            if (!Array.isArray(page) || page.length === 0) break;
+            acts.push(...page);
+            if (page.length < pageSize) break;
+            offset += page.length;
+          } catch (pageErr) {
+            console.warn(`[Garmin Full Sync] Error fetching activities at offset ${offset}:`, pageErr);
+            break;
+          }
+        }
+        return acts;
+      } else {
+        const limit = Math.min(100, Math.max(20, body.limit || 50));
+        return (await timeoutPromise(gc.getActivities(0, limit), 15000, [])) || [];
+      }
+    };
+
+    const [sleepSummary, restingHeartRate, hrvSummary, trainingReadinessScore, acts] = await Promise.all([
+      fetchSleep(),
+      fetchHr(),
+      fetchHrv(),
+      fetchReadiness(),
+      fetchActs()
+    ]);
+
+    wellness = {
+      date: todayStr,
+      sleep: sleepSummary,
+      restingHeartRate,
+      hrv: hrvSummary,
+      trainingReadinessScore,
+      syncedAt: new Date().toISOString()
+    };
 
     if (action === 'get-wellness') {
       res.status(200).json({ success: true, wellness });
       return;
     }
 
-    // ----------------------------------------------------
-    // ACTION: SYNC ACTIVITIES (Full History or Incremental)
-    // ----------------------------------------------------
-    const syncMode = body.syncMode || body.mode || 'incremental';
-    let rawActivities: any[] = [];
-
-    if (syncMode === 'full') {
-      const pageSize = 100;
-      const maxActivities = 1500;
-      let offset = 0;
-      while (offset < maxActivities) {
-        try {
-          const page: any[] = await gc.getActivities(offset, pageSize);
-          if (!Array.isArray(page) || page.length === 0) {
-            break;
-          }
-          rawActivities.push(...page);
-          if (page.length < pageSize) {
-            break;
-          }
-          offset += page.length;
-        } catch (pageErr) {
-          console.warn(`[Garmin Full Sync] Error fetching activities at offset ${offset}:`, pageErr);
-          break;
-        }
-      }
-    } else {
-      // Incremental mode: fetch recent activities (up to 50 or requested limit)
-      const limit = Math.min(100, Math.max(20, body.limit || 50));
-      rawActivities = (await gc.getActivities(0, limit)) || [];
-    }
+    let rawActivities: any[] = acts || [];
 
     const activities = (rawActivities || []).map((a: any) => {
       const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');

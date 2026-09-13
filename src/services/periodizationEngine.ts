@@ -340,9 +340,9 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.RUN_EASY.emoji,
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
         colorId: COLOR_MAP.RUN_EASY.colorId,
-        description: `• ${durationThursday} min strictly in conversational aerobic pace.\n• Cardio target: HR < 148 bpm (optimal 138-145 bpm, 100% nasal breathing possible).\n• Biomechanics cue: Keep high cadence (170-175 spm) with light, short steps right under the hips.`,
+        description: `• ${durationThursday} min strictement en allure aérobie fondamentale (Zone 2).\n• Cible Cardio : FC en aisance aérobie (Zone 2 personnalisée).\n• Consigne biomécanique : Cadence haute (170-175 spm) avec foulée courte et légère.`,
         targetHeartRate: "Endurance fondamentale (Zone 2)",
-        targetHeartRateRange: [130, 148],
+        targetHeartRateRange: [142, 165],
         targetCadence: "170 - 175 spm"
       };
 
@@ -365,16 +365,16 @@ export function getDailyWorkoutPlan(
       const isHomeFriday = Boolean(options?.hasOnlineClass && !options?.hasPresentialClass);
       return {
         title: "Entraînement Calisthénie",
-        duration: isDeload ? 40 : 60,
-        locName: isHomeFriday ? "Home" : "ÉTS Gym",
+        duration: isDeload ? 45 : 65,
+        locName: isHomeFriday ? "Appartement / Dips & Barre" : "ÉTS Gym",
         address: isHomeFriday ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.ETS_ADDRESS,
         chainedAfterCourse: false,
         sportType: "CALISTHENICS",
         emoji: COLOR_MAP.CALISTHENICS.emoji,
         colorHex: COLOR_MAP.CALISTHENICS.colorHex,
         colorId: COLOR_MAP.CALISTHENICS.colorId,
-        description: "Séance libre au poids du corps et renforcement musculaire.",
-        targetHeartRate: "Zone 1-2 (Équilibre & Core)"
+        description: `Séance calisthénie complète (haut du corps, gainage & stabilité lombaire). ${setsNote}`,
+        targetHeartRate: "Zone 1-2 (Force & Gainage)"
       };
 
     case 5: // Saturday (Long Run D+)
@@ -411,16 +411,16 @@ export function getDailyWorkoutPlan(
       return {
         title: `Trail: Rando-Course D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
         duration: durationSaturdayLong,
-        locName: isWinter ? "Maisonneuve Park / Plowed Trails" : "Mont Royal",
+        locName: isWinter ? "Maisonneuve Park / Plowed Paths" : "Mont Royal",
         address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
         chainedAfterCourse: false,
         sportType: "TRAIL_LONG",
         emoji: COLOR_MAP.TRAIL_LONG.emoji,
         colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
         colorId: COLOR_MAP.TRAIL_LONG.colorId,
-        description: `• Rando-Course Ultra-Trail QMT-80 : alternance marche active en côte et foulée souple.\n• Règle d'or : Dès que la pente raidit (> 7-8%), passer impérativement en marche active (power-hike avec mains sur les cuisses ou bâtons) pour brider les pulsations sous 155 bpm (Zone 2).\n• Relance immédiate en course souple sur le plat, faux-plat et descentes.\n• Cible Cardio : < 155 bpm (Zone 2 Endurance douce).\n• Nutrition : 40-50g glucides/h + 500 mL eau avec électrolytes/h.`,
-        targetHeartRate: "< 155 bpm (Zone 2 Rando-Course)",
-        targetHeartRateRange: [135, 155],
+        description: `• Rando-Course Ultra-Trail QMT-80 : alternance marche active en côte et foulée souple.\n• Règle d'or : Dès que la pente raidit (> 7-8%), passer impérativement en marche active (power-hike avec mains sur les cuisses ou bâtons) pour maintenir l'effort en Zone 2.\n• Relance immédiate en course souple sur le plat, faux-plat et descentes.\n• Cible Cardio : Zone 2 Rando-Course (~145-168 bpm).\n• Nutrition : 40-50g glucides/h + 500 mL eau avec électrolytes/h.`,
+        targetHeartRate: "Zone 2 Rando-Course",
+        targetHeartRateRange: [145, 168],
         targetElevationM: targetElevationSaturday,
         nutritionAdvice: "40-50g glucides/h + 500 mL water with electrolytes/h"
       };
@@ -452,9 +452,9 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.TRAIL_LONG.emoji,
           colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
           colorId: COLOR_MAP.TRAIL_LONG.colorId,
-          description: `• Rando-Course décalée au dimanche suite aux cours intensifs du samedi.\n• Règle d'or : Power-hike actif en montée dès > 7% de pente pour bloquer les pulses sous 155 bpm.\n• Cible Cardio : < 155 bpm (Zone 2) + nutrition 40-50g glucides/h.`,
-          targetHeartRate: "< 155 bpm (Zone 2 Rando-Course)",
-          targetHeartRateRange: [135, 155],
+          description: `• Rando-Course décalée au dimanche suite aux cours intensifs du samedi.\n• Règle d'or : Power-hike actif en montée dès > 7% de pente pour bloquer les pulses en Zone 2.\n• Cible Cardio : Zone 2 Rando-Course (~145-168 bpm) + nutrition 40-50g glucides/h.`,
+          targetHeartRate: "Zone 2 Rando-Course",
+          targetHeartRateRange: [145, 168],
           targetElevationM: targetElevationSaturday,
           nutritionAdvice: "40-50g glucides/h + 500 mL electrolytes/h"
         };
@@ -469,9 +469,10 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.RUN_EASY.emoji,
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
         colorId: COLOR_MAP.RUN_EASY.colorId,
-        description: `• ${durationSunday} min aerobic endurance on fatigue from previous day (Back-to-back effect).\n• Cardio Target: HR < 148 bpm strict. Dynamic cadence 170-175 spm.`,
+        description: `• ${durationSunday} min d'endurance aérobie sur fatigue de la veille (effet back-to-back sur sentiers vallonnés).\n• Cible Cardio : Zone 2 personnalisée en aisance respiratoire complète.\n• Cadence dynamique : 170-175 spm.`,
         targetHeartRate: "Endurance fondamentale (Zone 2)",
-        targetHeartRateRange: [130, 148],
+        targetHeartRateRange: [142, 165],
+        targetElevationM: Math.round(durationSunday * 2.5),
         targetCadence: "170 - 175 spm"
       };
 

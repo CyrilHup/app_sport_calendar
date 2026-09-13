@@ -148,7 +148,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
         >
           {topic === 'acwr' && (
             <>
-              {/* Le concept clé */}
+              {/* Le concept clé : Découplage Scientifique */}
               <div
                 style={{
                   background: 'rgba(245, 158, 11, 0.08)',
@@ -158,17 +158,20 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                 }}
               >
                 <div style={{ fontWeight: 800, color: '#f59e0b', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Info size={16} /> Qu'est-ce que le ratio ACWR ?
+                  <ShieldCheck size={18} /> Découplage Scientifique : Charge Mécanique (Tendons) vs Cardio (Cœur)
                 </div>
-                <p style={{ margin: 0, color: 'var(--text-primary)' }}>
-                  L'<strong>ACWR</strong> (<em>Acute:Chronic Workload Ratio</em>) compare ce que votre corps a encaissé récemment (les <strong>7 derniers jours</strong>) par rapport à ce à quoi vos tendons et muscles sont habitués (la moyenne des <strong>28 derniers jours</strong>).
+                <p style={{ margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
+                  En trail et ultra-running, <strong>votre cœur s'adapte en quelques semaines, mais vos tendons, genoux et périostes mettent 6 à 9 mois</strong> à se remodeler.
+                </p>
+                <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+                  Le cardio a un <strong>angle mort critique</strong> : en descente de trail ($D^-$), la fréquence cardiaque est basse (~135 bpm) alors que l'impact mécanique sur la rotule et les tendons atteint <strong>3 à 5 fois votre poids</strong> à chaque foulée. C'est pourquoi l'indicateur anti-blessure <strong>ACWR de Tim Gabbett</strong> mesure exclusivement la <strong>Charge Mécanique Externe en Km-Effort (ITRA)</strong>, tandis que le modèle <strong>Banister</strong> suit votre fatigue cardiaque.
                 </p>
               </div>
 
-              {/* Formule mathématique */}
+              {/* Formule mathématique ITRA */}
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '8px' }}>
-                  📐 Formule mathématique exacte :
+                  📐 Standard International Trail (ITRA / FFA) :
                 </div>
                 <div
                   style={{
@@ -176,13 +179,28 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                     padding: '10px 14px',
                     borderRadius: '8px',
                     fontFamily: 'monospace',
-                    fontSize: '0.9rem',
+                    fontSize: '0.86rem',
                     color: '#38bdf8',
                     textAlign: 'center',
-                    border: '1px solid rgba(56, 189, 248, 0.2)'
+                    border: '1px solid rgba(56, 189, 248, 0.2)',
+                    marginBottom: 8
                   }}
                 >
-                  ACWR = Charge Aiguë (7j d'impacts Course/Trail) / Charge Chronique Hebdo (28j)
+                  1 Km-Effort = Distance (km) + Dénivelé Positif D+ (m) / 100
+                </div>
+                <div
+                  style={{
+                    background: '#090d16',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontFamily: 'monospace',
+                    fontSize: '0.86rem',
+                    color: '#f59e0b',
+                    textAlign: 'center',
+                    border: '1px solid rgba(245, 158, 11, 0.2)'
+                  }}
+                >
+                  ACWR Mécanique = Charge Aiguë (7j de Km-Effort) ÷ Charge Chronique Hebdo (Moy. 28j)
                 </div>
               </div>
 
@@ -260,11 +278,13 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                                   fontWeight: 700
                                 }}
                               >
-                                {sess.isMechanicalImpact ? 'Impact Sol (Inclus ACWR)' : 'Force / Zéro choc (Exclu)'}
+                                {sess.isMechanicalImpact
+                                  ? `${sess.mechanicalKmEffort ?? 0} Km-Effort (Chocs & D+)`
+                                  : '0 Km-Effort (Calisthénie - Zéro choc)'}
                               </span>
-                              <strong style={{ color: sess.isMechanicalImpact ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
-                                +{sess.trimp} TRIMP
-                              </strong>
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+                                {sess.trimp} TRIMP cardio
+                              </span>
                             </div>
                           </div>
                         ))}
@@ -290,16 +310,16 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-                      <span style={{ color: 'var(--text-muted)' }}>• Charge Aiguë 7j (Somme des impacts course) :</span>
-                      <strong style={{ color: '#38bdf8' }}>{trainingLoad.trailAcuteLoad7d} TRIMP</strong>
+                      <span style={{ color: 'var(--text-muted)' }}>• Charge Aiguë 7j (Somme des Km-Effort récents) :</span>
+                      <strong style={{ color: '#38bdf8' }}>{trainingLoad.trailAcuteLoad7d} Km-Effort</strong>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-                      <span style={{ color: 'var(--text-muted)' }}>• Charge Chronique Hebdo 28j (Total 28j ÷ 4) :</span>
-                      <strong style={{ color: '#34d399' }}>{trainingLoad.trailChronicLoad28dWeeklyAvg} TRIMP / sem</strong>
+                      <span style={{ color: 'var(--text-muted)' }}>• Charge Chronique Hebdo 28j (Moyenne sur 4 semaines) :</span>
+                      <strong style={{ color: '#34d399' }}>{trainingLoad.trailChronicLoad28dWeeklyAvg} Km-Effort / sem</strong>
                     </div>
                     <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '3px 0' }} />
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-                      <span style={{ fontWeight: 700, color: '#ffffff' }}>• Résultat du Ratio ACWR :</span>
+                      <span style={{ fontWeight: 700, color: '#ffffff' }}>• Résultat du Ratio ACWR Mécanique :</span>
                       <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.9rem', color: 'var(--accent-orange)' }}>
                         {trainingLoad.trailAcuteLoad7d} ÷ {trainingLoad.trailChronicLoad28dWeeklyAvg} = {trainingLoad.trailAcwrRatio}
                       </span>
@@ -318,26 +338,26 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                 }}
               >
                 <div style={{ fontWeight: 800, color: '#34d399', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={16} /> Pourquoi cliquer sur « Simplifier mes séances » ou « Adapter » réduit la charge ?
+                  <Zap size={16} /> Pourquoi cliquer sur « Simplifier mes séances » ou « Adapter » protège vos tendons ?
                 </div>
                 <p style={{ margin: '0 0 8px 0', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  Le bouton <strong>« Simplifier » / « Appliquer l'adaptation »</strong> allège intelligemment votre programme dès qu'une surcharge ou un pic de fatigue est détecté. Voici précisément pourquoi et comment votre charge diminue mathématiquement :
+                  Le bouton <strong>« Simplifier » / « Appliquer l'adaptation »</strong> allège immédiatement vos contraintes d'impacts au sol dès qu'une surcharge est détectée :
                 </p>
                 <ol style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--text-secondary)' }}>
                   <li>
-                    <strong style={{ color: '#ffffff' }}>1. Baisse immédiate du Numérateur (Charge Aiguë 7j) :</strong>
+                    <strong style={{ color: '#ffffff' }}>1. Baisse immédiate du Numérateur Aigu (Km-Effort 7j) :</strong>
                     <br />
-                    La charge aiguë additionne directement les TRIMPs des séances de course sur les 7 jours. En remplaçant par exemple une séance intense de côtes (80 min avec facteur 1.35 = <strong>86 TRIMP</strong>) par un footing doux à plat (35 min en Zone 1 avec facteur 1.15 = <strong>32 TRIMP</strong>), vous retirez immédiatement <strong>54 TRIMP</strong> du numérateur !
+                    En remplaçant par exemple une séance de côtes sur le Mont-Royal (8 km + 450m D+ = <strong>12.5 Km-Effort</strong>) par un footing doux sur herbe ou plat (5 km + 0m D+ = <strong>5.0 Km-Effort</strong>), vous retirez immédiatement <strong>7.5 Km-Effort</strong> d'impacts traumatisants !
                   </li>
                   <li>
-                    <strong style={{ color: '#ffffff' }}>2. Stabilité du Dénominateur (Charge Chronique 28j) :</strong>
+                    <strong style={{ color: '#ffffff' }}>2. Stabilité de la Base Chronique (28j) :</strong>
                     <br />
-                    La charge chronique est la moyenne des 4 dernières semaines (28 jours). Une économie de 54 TRIMP sur une séance ne fait baisser le dénominateur que de 54 ÷ 4 = <strong>13.5 TRIMP</strong>.
+                    La charge chronique est la moyenne des 4 dernières semaines. Cette économie de 7.5 Km-Effort ne fait baisser le dénominateur que de 7.5 ÷ 4 = <strong>1.87 Km-Effort</strong>.
                   </li>
                   <li>
                     <strong style={{ color: '#ffffff' }}>3. Effet de levier immédiat sur le ratio :</strong>
                     <br />
-                    Comme le numérateur chute 4 fois plus fort que le dénominateur, le ratio ACWR plonge instantanément (ex: de <strong>1.48</strong> en zone d'alerte vers <strong>1.18</strong> en plein <strong>Sweet Spot</strong>) ! Vos tendons récupèrent sans que votre condition physique générale ne diminue.
+                    Comme le numérateur chute 4 fois plus fort que le dénominateur, le ratio ACWR plonge instantanément vers le <strong>Sweet Spot (0.8 - 1.3)</strong>. Vos tendons et genoux récupèrent immédiatement, et la calisthénie reste active pour gainer vos muscles !
                   </li>
                 </ol>
               </div>
