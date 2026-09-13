@@ -4,6 +4,7 @@ import { formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../servi
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { formatGarminActivityName, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
+import { getDynamicAthleteProfile } from '../services/garminService';
 import {
   Activity,
   AlertTriangle,
@@ -318,6 +319,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 const planId = comp.plannedEvent?.id;
                 const isManuallyPaired = Boolean(planId && manualPairs[planId]);
 
+                const profile = getDynamicAthleteProfile();
                 const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
                   comp.actualActivity.durationMinutes,
                   comp.actualActivity.activityType,
@@ -328,8 +330,8 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                     maxHeartRate: comp.actualActivity.maxHeartRate,
                     elevationGainM: comp.actualActivity.elevationGainM,
                     distanceKm: comp.actualActivity.distanceKm,
-                    athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
-                    athleteFcRest: 48
+                    athleteFcMax: profile.fcMax,
+                    athleteFcRest: profile.fcRest
                   }
                 ) : null;
 
@@ -340,8 +342,10 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                   null,
                   {
                     elevationGainM: comp.plannedEvent.metadata?.targetElevationM,
-                    athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
-                    athleteFcRest: 48
+                    targetHeartRateRange: comp.plannedEvent.metadata?.targetHeartRateRange,
+                    targetHeartRate: comp.plannedEvent.metadata?.targetHeartRate,
+                    athleteFcMax: profile.fcMax,
+                    athleteFcRest: profile.fcRest
                   }
                 ) : null;
 
@@ -841,6 +845,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             const planId = comp.plannedEvent?.id;
             const isManuallyPaired = Boolean(planId && manualPairs[planId]);
 
+            const profile = getDynamicAthleteProfile();
             const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
               comp.actualActivity.durationMinutes,
               comp.actualActivity.activityType,
@@ -851,8 +856,8 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 maxHeartRate: comp.actualActivity.maxHeartRate,
                 elevationGainM: comp.actualActivity.elevationGainM,
                 distanceKm: comp.actualActivity.distanceKm,
-                athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
-                athleteFcRest: 48
+                athleteFcMax: profile.fcMax,
+                athleteFcRest: profile.fcRest
               }
             ) : null;
 
@@ -863,8 +868,10 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
               null,
               {
                 elevationGainM: comp.plannedEvent.metadata?.targetElevationM,
-                athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
-                athleteFcRest: 48
+                targetHeartRateRange: comp.plannedEvent.metadata?.targetHeartRateRange,
+                targetHeartRate: comp.plannedEvent.metadata?.targetHeartRate,
+                athleteFcMax: profile.fcMax,
+                athleteFcRest: profile.fcRest
               }
             ) : null;
 

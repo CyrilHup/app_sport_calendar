@@ -27,6 +27,7 @@ import { formatTime, formatDateKey, toLocalDateKey, parseLocalDate, addDays } fr
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
+import { getDynamicAthleteProfile } from '../services/garminService';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -170,7 +171,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const actualStartDate = effectiveComparison?.actualActivity?.startTimeLocal ? new Date(effectiveComparison.actualActivity.startTimeLocal) : null;
   const actualDurationMinutes = effectiveComparison?.actualActivity?.durationMinutes;
-  const actualEndDate = (actualStartDate && actualDurationMinutes) ? new Date(actualStartDate.getTime() + actualDurationMinutes * 60000) : null;
+  const elapsedMinutes = effectiveComparison?.actualActivity?.elapsedDurationMinutes || actualDurationMinutes;
+  const actualEndDate = (actualStartDate && elapsedMinutes) ? new Date(actualStartDate.getTime() + elapsedMinutes * 60000) : null;
   const isDifferentDayExecution = Boolean(actualStartDate && formatDateKey(actualStartDate) !== formatDateKey(startDate));
 
   const isRecoveryFooting = isSport && !isCalisthenics && !titleLower.includes('trail') && !titleLower.includes('côte') && !titleLower.includes('hill') && (
@@ -183,18 +185,35 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     ? 'Terrain plat / Parc (évite le D+)'
     : (effectiveEvent.location || 'Garmin Connect');
 
+  const dynamicProfile = getDynamicAthleteProfile();
+  const athleteFcRest = dynamicProfile.fcRest;
+
   const plannedTrimpInfo = isSport ? calculateSessionTrimp(
     effectiveEvent.durationMinutes,
     isRecoveryFooting ? 'RUN_EASY' : effectiveEvent.sportType,
     effectiveEvent.title,
-    null
+    null,
+    {
+      elevationGainM: effectiveElevationM,
+      targetHeartRateRange: effectiveEvent.metadata?.targetHeartRateRange,
+      targetHeartRate: effectiveEvent.metadata?.targetHeartRate,
+      athleteFcMax,
+      athleteFcRest
+    }
   ) : null;
 
   const originalTrimpInfo = isSport && isAdapted ? calculateSessionTrimp(
     effectiveEvent.metadata?.originalDurationMinutes || effectiveEvent.durationMinutes,
     (effectiveEvent.metadata as any)?.originalSportType || effectiveEvent.sportType,
     effectiveEvent.metadata?.originalTitle || effectiveEvent.title,
-    null
+    null,
+    {
+      elevationGainM: (effectiveEvent.metadata as any)?.originalElevationM || effectiveElevationM,
+      targetHeartRateRange: (effectiveEvent.metadata as any)?.originalTargetHeartRateRange || effectiveEvent.metadata?.targetHeartRateRange,
+      targetHeartRate: (effectiveEvent.metadata as any)?.originalTargetHeartRate || effectiveEvent.metadata?.targetHeartRate,
+      athleteFcMax,
+      athleteFcRest
+    }
   ) : null;
 
   const actualTrimpInfo = (isSport && effectiveComparison?.actualActivity) ? calculateSessionTrimp(
@@ -207,7 +226,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       maxHeartRate: effectiveComparison.actualActivity.maxHeartRate,
       elevationGainM: effectiveComparison.actualActivity.elevationGainM,
       distanceKm: effectiveComparison.actualActivity.distanceKm,
-      athleteFcMax
+      athleteFcMax,
+      athleteFcRest
     }
   ) : null;
 
@@ -704,7 +724,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               {/* 4 Sleek Telemetry Tiles */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
                 <div style={{ background: 'rgba(0,0,0,0.28)', padding: '8px', borderRadius: 4 }}>
-                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⏱️ Durée Réelle</div>
+                  <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>⏱️ Durée Active</div>
                   <div style={{ fontWeight: 800, fontSize: '0.94rem', color: '#ffffff' }}>
                     {effectiveComparison.actualActivity.durationMinutes} min
                   </div>
@@ -790,7 +810,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   : `${formatTime(startDate)} – ${formatTime(endDate)}`}
               </div>
               <span style={{ fontSize: '0.72rem', color: actualDurationMinutes ? '#10b981' : 'var(--accent-blue)', fontWeight: 600 }}>
-                {actualDurationMinutes ? `${actualDurationMinutes} minutes (réalisées)` : `${effectiveEvent.durationMinutes} minutes`}
+                {actualDurationMinutes ? `${actualDurationMinutes} min (effort actif)` : `${effectiveEvent.durationMinutes} minutes`}
               </span>
               {actualStartDate && (actualDurationMinutes !== effectiveEvent.durationMinutes || formatTime(actualStartDate) !== formatTime(startDate)) && (
                 <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', marginTop: 2 }}>

@@ -7,8 +7,9 @@ import {
   isWalking,
   isClimbing,
   classifyGarminActivityType,
-  formatGarminActivityName
-} from './activityClassifier';
+  formatGarminActivityName,
+  getDynamicAthleteProfile
+} from './garminService';
 import { calculateSessionTrimp } from './statsEngine';
 
 export type SportDiscipline = 'RUNNING' | 'STRENGTH_TRAINING' | 'CYCLING' | 'WALKING' | 'CLIMBING' | 'OTHER';
@@ -142,20 +143,30 @@ export function buildPlannedSportItem(
 
   const actStart = act?.startTimeLocal ? new Date(act.startTimeLocal) : (event.startDate ? new Date(event.startDate) : undefined);
   const dur = act?.durationMinutes || event.durationMinutes;
-  const actEnd = actStart ? new Date(actStart.getTime() + dur * 60000) : undefined;
+  const elapsedDur = act?.elapsedDurationMinutes || act?.durationMinutes || event.durationMinutes;
+  const actEnd = actStart ? new Date(actStart.getTime() + elapsedDur * 60000) : undefined;
 
   let itemType: SportItemType = 'PLANNED_PENDING';
   if (isDone) itemType = 'PLANNED_COMPLETED';
   else if (comparison?.status === 'MISSED') itemType = 'PLANNED_MISSED';
 
+  const profile = getDynamicAthleteProfile();
   const trimpInfo = act
     ? calculateSessionTrimp(act.durationMinutes, act.activityType, act.activityName, act.trainingLoad, {
         avgHeartRate: act.avgHeartRate,
         maxHeartRate: act.maxHeartRate,
         elevationGainM: act.elevationGainM,
-        distanceKm: act.distanceKm
+        distanceKm: act.distanceKm,
+        athleteFcMax: profile.fcMax,
+        athleteFcRest: profile.fcRest
       })
-    : calculateSessionTrimp(event.durationMinutes, event.sportType, event.title, null);
+    : calculateSessionTrimp(event.durationMinutes, event.sportType, event.title, null, {
+        elevationGainM: event.metadata?.targetElevationM,
+        targetHeartRateRange: event.metadata?.targetHeartRateRange,
+        targetHeartRate: event.metadata?.targetHeartRate,
+        athleteFcMax: profile.fcMax,
+        athleteFcRest: profile.fcRest
+      });
 
   const cleanTitle = discipline === 'STRENGTH_TRAINING'
     ? 'Entraînement Calisthénie'
@@ -197,16 +208,26 @@ export function buildCatchupSportItem(comp: ActivityComparison): SportActivityIt
 
   const actStart = act?.startTimeLocal ? new Date(act.startTimeLocal) : (ev.startDate ? new Date(ev.startDate) : undefined);
   const dur = act?.durationMinutes || ev.durationMinutes;
-  const actEnd = actStart ? new Date(actStart.getTime() + dur * 60000) : undefined;
+  const elapsedDur = act?.elapsedDurationMinutes || act?.durationMinutes || ev.durationMinutes;
+  const actEnd = actStart ? new Date(actStart.getTime() + elapsedDur * 60000) : undefined;
 
+  const profile = getDynamicAthleteProfile();
   const trimpInfo = act
     ? calculateSessionTrimp(act.durationMinutes, act.activityType, act.activityName, act.trainingLoad, {
         avgHeartRate: act.avgHeartRate,
         maxHeartRate: act.maxHeartRate,
         elevationGainM: act.elevationGainM,
-        distanceKm: act.distanceKm
+        distanceKm: act.distanceKm,
+        athleteFcMax: profile.fcMax,
+        athleteFcRest: profile.fcRest
       })
-    : calculateSessionTrimp(ev.durationMinutes, ev.sportType, ev.title, null);
+    : calculateSessionTrimp(ev.durationMinutes, ev.sportType, ev.title, null, {
+        elevationGainM: ev.metadata?.targetElevationM,
+        targetHeartRateRange: ev.metadata?.targetHeartRateRange,
+        targetHeartRate: ev.metadata?.targetHeartRate,
+        athleteFcMax: profile.fcMax,
+        athleteFcRest: profile.fcRest
+      });
 
   const cleanTitle = discipline === 'STRENGTH_TRAINING'
     ? 'Entraînement Calisthénie'
@@ -246,8 +267,10 @@ export function buildUnplannedSportItem(comp: ActivityComparison): SportActivity
   const meta = getDisciplineMetadata(discipline);
 
   const actStart = act.startTimeLocal ? new Date(act.startTimeLocal) : undefined;
-  const actEnd = actStart ? new Date(actStart.getTime() + act.durationMinutes * 60000) : undefined;
+  const elapsedDur = act.elapsedDurationMinutes || act.durationMinutes;
+  const actEnd = actStart ? new Date(actStart.getTime() + elapsedDur * 60000) : undefined;
 
+  const profile = getDynamicAthleteProfile();
   const trimpInfo = calculateSessionTrimp(
     act.durationMinutes,
     act.activityType,
@@ -257,7 +280,9 @@ export function buildUnplannedSportItem(comp: ActivityComparison): SportActivity
       avgHeartRate: act.avgHeartRate,
       maxHeartRate: act.maxHeartRate,
       elevationGainM: act.elevationGainM,
-      distanceKm: act.distanceKm
+      distanceKm: act.distanceKm,
+      athleteFcMax: profile.fcMax,
+      athleteFcRest: profile.fcRest
     }
   );
 

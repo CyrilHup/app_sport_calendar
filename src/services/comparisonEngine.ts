@@ -1,6 +1,12 @@
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, ComparisonStatus, GarminActivity } from '../types/garmin';
-import { classifyGarminActivityType, inferOtherProfileCategory, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
+import {
+  classifyGarminActivityType,
+  inferOtherProfileCategory,
+  isStrengthOrCalisthenics,
+  isTrailOrRunning,
+  getDynamicAthleteProfile
+} from './garminService';
 import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay } from './dateUtils';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { calculateSessionTrimp } from './loadEngine';
@@ -501,6 +507,7 @@ export function computeWeeklyTelemetry(
         hrCount++;
       }
 
+      const profile = getDynamicAthleteProfile();
       // Calcul unifié de la charge d'entraînement (Firstbeat direct ou Banister TRIMP)
       const trimpRes = calculateSessionTrimp(
         act.durationMinutes,
@@ -512,7 +519,8 @@ export function computeWeeklyTelemetry(
           maxHeartRate: act.maxHeartRate,
           elevationGainM: act.elevationGainM,
           distanceKm: act.distanceKm,
-          athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX
+          athleteFcMax: profile.fcMax,
+          athleteFcRest: profile.fcRest
         }
       );
       totalTrimpLoad += trimpRes.trimp;
@@ -617,7 +625,8 @@ function evaluateSingleWorkout(
       );
     } else {
       hrCompliance = 'OPTIMAL';
-      const pctFcMax = Math.round((act.avgHeartRate / (GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203)) * 100);
+      const profile = getDynamicAthleteProfile();
+      const pctFcMax = Math.round((act.avgHeartRate / profile.fcMax) * 100);
       feedbackNotes.push(
         `🎯 Cardio maîtrisé : FC moy. ${act.avgHeartRate} bpm (~${pctFcMax}% FCmax, zone aérobie bien calibrée).`
       );

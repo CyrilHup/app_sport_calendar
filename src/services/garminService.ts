@@ -9,10 +9,12 @@ import {
   WorkoutStepDefinition
 } from '../types/garmin';
 import { CalendarEvent } from '../types/calendar';
-import { classifyGarminActivityType } from './activityClassifier';
+import { classifyGarminActivityType, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
+export * from './activityClassifier';
+export * from './garminDeduplication';
 import { getApiUrl } from './apiConfig';
-import { saveWellnessData } from './readinessEngine';
-import { setAppConfigOverrides } from './periodizationEngine';
+import { saveWellnessData, getBaselineRestingHeartRate } from './readinessEngine';
+import { setAppConfigOverrides, GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { formatDateKey, toLocalDateKey } from './dateUtils';
 
 
@@ -90,6 +92,226 @@ export function computeDynamicAthleteBasePace(activities?: GarminActivity[]): st
   }
 
   return '6:05';
+}
+
+export interface AthletePhysiologicalProfile {
+  fcMax: number;
+  fcRest: number;
+  fcReserve: number;
+  trailAvgHr: number;
+  runEasyAvgHr: number;
+  calisthenicsAvgHr: number;
+  basePace: string;
+}
+
+/**
+ * Extrait le profil physiologique dynamique de l'athlète à partir de ses données Garmin réelles :
+ * - FC Max : UserSettings Garmin, pic enregistré réel ou profil utilisateur
+ * - FC Repos : moyenne glissante issue de Garmin Wellness (rolling baseline)
+ * - FC moyennes réelles par discipline : calculées sur l'historique d'activités Garmin
+ * - Allure aérobie de base : calculée dynamiquement sur les footings plats
+ */
+export function getDynamicAthleteProfile(
+  activities?: GarminActivity[],
+  profileOverride?: { fcMax?: number }
+): AthletePhysiologicalProfile {
+  const acts = activities && activities.length > 0 ? activities : loadStoredGarminActivities();
+
+  // 1. FC Max dynamique
+  let fcMax = 0;
+  if (typeof profileOverride?.fcMax === 'number' && profileOverride.fcMax > 140 && profileOverride.fcMax < 240) {
+    fcMax = profileOverride.fcMax;
+  } else {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const cachedFc = localStorage.getItem('athlete_fc_max');
+        if (cachedFc) {
+          const parsed = parseInt(cachedFc, 10);
+          if (parsed > 140 && parsed < 240) fcMax = parsed;
+        }
+        if (!fcMax) {
+          const cachedProfile = localStorage.getItem('athlete_profile');
+          if (cachedProfile) {
+            const parsedProf = JSON.parse(cachedProfile);
+            if (parsedProf.fcMax && parsedProf.fcMax > 140 && parsedProf.fcMax < 240) {
+              fcMax = parsedProf.fcMax;
+            }
+          }
+        }
+      }
+    } catch {}
+
+    // Validation avec les pics réels enregistrés sur la montre
+    if (acts.length > 0) {
+      const recordedPeaks = acts
+        .map(a => a.maxHeartRate)
+        .filter((hr): hr is number => typeof hr === 'number' && hr > 150 && hr < 240);
+      if (recordedPeaks.length > 0) {
+        const peakRecorded = Math.max(...recordedPeaks);
+        if (!fcMax || peakRecorded > fcMax) {
+          fcMax = peakRecorded;
+        }
+      }
+    }
+
+    if (!fcMax) {
+      fcMax = GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+    }
+  }
+
+  // 2. FC Repos dynamique (issue de Garmin Wellness)
+  const fcRest = getBaselineRestingHeartRate();
+  const fcReserve = Math.max(40, fcMax - fcRest);
+
+  // 3. Calcul dynamique de la FC moyenne en Trail (activités avec D+ >= 80m ou type TRAIL)
+  const trailActs = acts.filter(a => {
+    const isTrail = a.activityType === 'TRAIL_RUNNING' || (isTrailOrRunning(a) && (a.elevationGainM || 0) >= 80);
+    return isTrail && typeof a.avgHeartRate === 'number' && a.avgHeartRate > 110 && a.avgHeartRate < 210;
+  });
+
+  let trailAvgHr = 0;
+  if (trailActs.length > 0) {
+    const recentTrail = trailActs.slice(0, 10);
+    let weightedSum = 0;
+    let durSum = 0;
+    for (const a of recentTrail) {
+      const dur = Math.max(10, a.durationMinutes || 30);
+      weightedSum += a.avgHeartRate! * dur;
+      durSum += dur;
+    }
+    if (durSum > 0) trailAvgHr = Math.round(weightedSum / durSum);
+  }
+  if (!trailAvgHr) {
+    trailAvgHr = Math.round(fcRest + 0.72 * fcReserve);
+  }
+
+  // 4. Calcul dynamique de la FC moyenne en Footing Plat / Récupération
+  const easyActs = acts.filter(a => {
+    const isFlatRun = a.activityType === 'RUNNING' && ((a.elevationGainM || 0) / (a.distanceKm || 1) < 35);
+    return isFlatRun && typeof a.avgHeartRate === 'number' && a.avgHeartRate > 100 && a.avgHeartRate < 200;
+  });
+
+  let runEasyAvgHr = 0;
+  if (easyActs.length > 0) {
+    const recentEasy = easyActs.slice(0, 10);
+    let weightedSum = 0;
+    let durSum = 0;
+    for (const a of recentEasy) {
+      const dur = Math.max(10, a.durationMinutes || 30);
+      weightedSum += a.avgHeartRate! * dur;
+      durSum += dur;
+    }
+    if (durSum > 0) runEasyAvgHr = Math.round(weightedSum / durSum);
+  }
+  if (!runEasyAvgHr) {
+    runEasyAvgHr = Math.round(fcRest + 0.60 * fcReserve);
+  }
+
+  // 5. Calcul dynamique de la FC moyenne en Renforcement / Calisthénie
+  const calisActs = acts.filter(a => {
+    const isCalis = isStrengthOrCalisthenics(a.activityType, a.activityName);
+    return isCalis && typeof a.avgHeartRate === 'number' && a.avgHeartRate > 80 && a.avgHeartRate < 180;
+  });
+
+  let calisthenicsAvgHr = 0;
+  if (calisActs.length > 0) {
+    const recentCalis = calisActs.slice(0, 10);
+    let weightedSum = 0;
+    let durSum = 0;
+    for (const a of recentCalis) {
+      const dur = Math.max(10, a.durationMinutes || 30);
+      weightedSum += a.avgHeartRate! * dur;
+      durSum += dur;
+    }
+    if (durSum > 0) calisthenicsAvgHr = Math.round(weightedSum / durSum);
+  }
+  if (!calisthenicsAvgHr) {
+    calisthenicsAvgHr = Math.round(fcRest + 0.45 * fcReserve);
+  }
+
+  const basePace = computeDynamicAthleteBasePace(acts);
+
+  return {
+    fcMax,
+    fcRest,
+    fcReserve,
+    trailAvgHr,
+    runEasyAvgHr,
+    calisthenicsAvgHr,
+    basePace
+  };
+}
+
+/**
+ * Détermine la fréquence cardiaque moyenne attendue pour une séance planifiée,
+ * en fonction de la discipline, du dénivelé cible, et du profil dynamique de l'athlète.
+ */
+export function getExpectedHeartRateForEvent(
+  event: {
+    sportType?: string;
+    title?: string;
+    metadata?: {
+      targetHeartRateRange?: [number, number];
+      targetHeartRate?: string;
+      targetElevationM?: number;
+    };
+  },
+  profile?: AthletePhysiologicalProfile
+): number {
+  const p = profile || getDynamicAthleteProfile();
+  const titleLower = String(event.title || '').toLowerCase();
+  const sportType = String(event.sportType || '').toUpperCase();
+  const targetElevation = event.metadata?.targetElevationM || 0;
+
+  // 1. Cible explicite par plage chiffrée
+  if (event.metadata?.targetHeartRateRange && event.metadata.targetHeartRateRange.length === 2) {
+    const [low, high] = event.metadata.targetHeartRateRange;
+    if (low > 60 && high > low) {
+      if (sportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill') || targetElevation >= 100) {
+        return Math.min(p.fcMax - 5, Math.max(low, high - 2));
+      }
+      return Math.round((low + high) / 2);
+    }
+  }
+
+  // 2. Cible chiffrée textuelle (ex: "< 155 bpm" ou "160 - 175 bpm")
+  if (event.metadata?.targetHeartRate) {
+    const text = event.metadata.targetHeartRate;
+    const matchRange = text.match(/(\d{2,3})\s*[-–]\s*(\d{2,3})/);
+    if (matchRange) {
+      const low = parseInt(matchRange[1], 10);
+      const high = parseInt(matchRange[2], 10);
+      if (low > 60 && high > low) return Math.round((low + high) / 2);
+    }
+    const matchUnder = text.match(/<\s*(\d{2,3})/);
+    if (matchUnder) {
+      const cap = parseInt(matchUnder[1], 10);
+      if (cap > 60) return Math.round(cap - 5);
+    }
+  }
+
+  // 3. Typologie de la séance
+  if (sportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill') || titleLower.includes('répétition')) {
+    return Math.round(p.fcRest + 0.80 * p.fcReserve);
+  }
+
+  if (sportType === 'TRAIL_LONG' || titleLower.includes('trail') || titleLower.includes('rando-course') || targetElevation >= 100) {
+    return p.trailAvgHr;
+  }
+
+  if (sportType === 'RUN_TEMPO' || titleLower.includes('tempo') || titleLower.includes('seuil')) {
+    return Math.round(p.fcRest + 0.75 * p.fcReserve);
+  }
+
+  if (sportType === 'RUN_EASY' || titleLower.includes('footing') || titleLower.includes('doux') || titleLower.includes('récupération')) {
+    return p.runEasyAvgHr;
+  }
+
+  if (isStrengthOrCalisthenics(sportType, event.title)) {
+    return p.calisthenicsAvgHr;
+  }
+
+  return Math.round(p.fcRest + 0.58 * p.fcReserve);
 }
 
 export function isAthleteBasePaceAuto(): boolean {

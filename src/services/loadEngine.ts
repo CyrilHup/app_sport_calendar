@@ -2,6 +2,7 @@ import { formatDateKey, getGarminLocalDateKey } from './dateUtils';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { getBaselineRestingHeartRate } from './readinessEngine';
+import { getDynamicAthleteProfile, getExpectedHeartRateForEvent } from './garminService';
 
 export interface SessionTrimpOptions {
   avgHeartRate?: number | null;
@@ -10,6 +11,9 @@ export interface SessionTrimpOptions {
   distanceKm?: number | null;
   athleteFcMax?: number | null;
   athleteFcRest?: number | null;
+  expectedAvgHr?: number | null;
+  targetHeartRateRange?: [number, number] | null;
+  targetHeartRate?: string | null;
 }
 
 export interface SessionTrimpResult {
@@ -161,10 +165,12 @@ export function calculateSessionTrimp(
 
   const isMechanicalImpact = hasRunningImpact;
 
+  const profile = getDynamicAthleteProfile();
+  const fcMax = options?.athleteFcMax || profile.fcMax;
+  const fcRest = options?.athleteFcRest || profile.fcRest;
+
   // 3. Calcul Banister physiologique si cardiofréquencemètre réel disponible
   if (typeof options?.avgHeartRate === 'number' && options.avgHeartRate > 55 && dur > 0) {
-    const fcMax = options.athleteFcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
-    const fcRest = options.athleteFcRest || getBaselineRestingHeartRate();
     const avgHr = options.avgHeartRate;
 
     // Fraction de réserve cardiaque (Heart Rate Reserve ratio)
@@ -194,14 +200,33 @@ export function calculateSessionTrimp(
     };
   }
 
-  // 4. Repli standard basé sur l'endurance aérobie théorique Z2 (séance planifiée non encore exécutée)
-  const baseRate = 0.8; // 0.80 TRIMP/min = référence aérobie Banister Z2 douce
-  const ratePerMin = Math.round(baseRate * factor * 100) / 100; // ex: 0.8 * 1.15 = 0.92 TRIMP/min
+  // 4. Estimation dynamique physiologique pour séance planifiée (non encore exécutée)
+  // Détermine la FC attendue réaliste selon la discipline, le D+ cible et le profil dynamique de l'athlète
+  const expectedHr = typeof options?.expectedAvgHr === 'number' && options.expectedAvgHr > 50
+    ? options.expectedAvgHr
+    : getExpectedHeartRateForEvent(
+        {
+          sportType: actType,
+          title: name,
+          metadata: {
+            targetHeartRateRange: options?.targetHeartRateRange || undefined,
+            targetHeartRate: options?.targetHeartRate || undefined,
+            targetElevationM: options?.elevationGainM || undefined
+          }
+        },
+        profile
+      );
+
+  const hrReserveFraction = Math.max(0.05, Math.min(1.0, (expectedHr - fcRest) / Math.max(40, fcMax - fcRest)));
+  const banisterExp = 0.64 * Math.exp(1.92 * hrReserveFraction);
+  const baseRate = Math.round(hrReserveFraction * banisterExp * 100) / 100;
+  const cardioTrimp = Math.round(dur * baseRate);
+  const ratePerMin = Math.round(baseRate * factor * 100) / 100;
   const trimp = Math.round(dur * ratePerMin);
 
   return {
     trimp,
-    cardioTrimp: Math.round(dur * baseRate),
+    cardioTrimp,
     isMechanicalImpact,
     isRealTelemetry: false,
     factor,
@@ -209,8 +234,8 @@ export function calculateSessionTrimp(
     baseRate,
     ratePerMin,
     categoryLabel,
-    formulaText: `${dur} min × ${ratePerMin} TRIMP/min = ${trimp} TRIMP`,
-    details: `Base aérobie Banister Z2 (${baseRate} TRIMP/min) × Coeff. d'impact ${factorLabel}`
+    formulaText: `${dur} min × ${ratePerMin} TRIMP/min = ${trimp} TRIMP (estimé ~${Math.round(expectedHr)} bpm)`,
+    details: `Banister prévisionnel dynamique (${baseRate} TRIMP/min, FC cible ~${Math.round(expectedHr)} bpm) × Coeff. d'impact ${factorLabel}`
   };
 }
 
@@ -225,6 +250,7 @@ export function computeTrainingLoadStats(
   asOfDate: Date = new Date(),
   daysToAnalyze: number = 60
 ): TrainingLoadStats {
+  const profile = getDynamicAthleteProfile();
   const dailyLoads: Record<string, number> = {};
   const dailyTrailLoads: Record<string, number> = {};
   const dailyCalisthenicsLoads: Record<string, number> = {};
@@ -241,7 +267,8 @@ export function computeTrainingLoadStats(
       maxHeartRate: act.maxHeartRate,
       elevationGainM: act.elevationGainM,
       distanceKm: act.distanceKm,
-      athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX
+      athleteFcMax: profile.fcMax,
+      athleteFcRest: profile.fcRest
     });
     const load = sessionInfo.trimp;
 
@@ -399,7 +426,8 @@ export function computeTrainingLoadStats(
         maxHeartRate: act.maxHeartRate,
         elevationGainM: act.elevationGainM,
         distanceKm: act.distanceKm,
-        athleteFcMax: GLOBAL_APP_CONFIG.ATHLETE_FC_MAX
+        athleteFcMax: profile.fcMax,
+        athleteFcRest: profile.fcRest
       });
       recentSessions7d.push({
         id: act.id || `${dKey}-${actName}-${recentSessions7d.length}`,

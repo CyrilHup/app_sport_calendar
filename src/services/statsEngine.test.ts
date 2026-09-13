@@ -558,14 +558,22 @@ describe('statsEngine unit tests', () => {
   it('calculates accurate Banister TRIMP with real cardio telemetry vs theoretical planned workouts', () => {
     // 1. Theoretical planned 35-min footing without telemetry (Zone 1/2 baseline)
     const plannedEasy = calculateSessionTrimp(35, 'RUN_EASY', 'Footing Aérobie Doux & Récupération Z1/Z2 (35 min)');
-    expect(plannedEasy.trimp).toBe(32);
+    expect(plannedEasy.trimp).toBe(49);
     expect(plannedEasy.isRealTelemetry).toBe(false);
-    expect(plannedEasy.ratePerMin).toBe(0.92);
+    expect(plannedEasy.ratePerMin).toBe(1.4);
 
     // 2. Theoretical planned 70-min hill workout (TRAIL_INTENSE)
     const plannedHills = calculateSessionTrimp(70, 'TRAIL_INTENSE', 'Côtes & D+ Mont-Royal');
-    expect(plannedHills.trimp).toBe(76);
+    expect(plannedHills.trimp).toBe(225);
     expect(plannedHills.factor).toBe(1.35);
+
+    // 3. Theoretical planned 85-min Trail Rando-Course with 357m D+ (Mont-Royal)
+    const plannedTrailLong = calculateSessionTrimp(85, 'TRAIL_LONG', 'Trail: Rando-Course D+ (1h25)', null, {
+      elevationGainM: 357,
+      targetHeartRateRange: [135, 155]
+    });
+    expect(plannedTrailLong.trimp).toBeGreaterThanOrEqual(175);
+    expect(plannedTrailLong.trimp).toBeLessThanOrEqual(215);
 
     // 3. Real 18-min run executed at 4:31/km with 162 bpm avg, 197 bpm peak, +15m D+
     const executedRun = calculateSessionTrimp(

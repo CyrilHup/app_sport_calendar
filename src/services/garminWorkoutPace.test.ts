@@ -18,9 +18,12 @@ import {
   getAthleteBasePace,
   setAthleteBasePace,
   parsePaceToSeconds,
-  formatSecondsToPace
+  formatSecondsToPace,
+  getDynamicAthleteProfile,
+  getExpectedHeartRateForEvent
 } from './garminService';
 import { CalendarEvent } from '../types/calendar';
+import { GarminActivity } from '../types/garmin';
 
 function createMockEvent(overrides: Partial<CalendarEvent>): CalendarEvent {
   return {
@@ -223,6 +226,92 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
     });
     const p3 = buildWorkoutPayloadFromEvent(calisthenics);
     expect(p3.steps.reduce((sum, s) => sum + (s.durationSeconds || 0), 0)).toBe(60 * 60);
+  });
+
+  it('extracts dynamic athlete physiological profile from Garmin activities history', () => {
+    const sampleActivities: GarminActivity[] = [
+      {
+        activityId: 'trail-1',
+        activityName: 'Trail Mont-Royal',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-12T17:35:00',
+        durationMinutes: 77,
+        elapsedDurationMinutes: 88,
+        distanceKm: 11.42,
+        elevationGainM: 293,
+        avgHeartRate: 160,
+        maxHeartRate: 187,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'trail-2',
+        activityName: 'Côtes & D+',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-08T18:00:00',
+        durationMinutes: 60,
+        distanceKm: 8.5,
+        elevationGainM: 310,
+        avgHeartRate: 164,
+        maxHeartRate: 190,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'run-flat-1',
+        activityName: 'Footing aérobie',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-05T09:00:00',
+        durationMinutes: 40,
+        distanceKm: 6.5,
+        elevationGainM: 20,
+        avgPaceMinKm: '6:09 /km',
+        avgHeartRate: 142,
+        maxHeartRate: 155,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const profile = getDynamicAthleteProfile(sampleActivities);
+    expect(profile.fcMax).toBeGreaterThanOrEqual(190);
+    expect(profile.fcRest).toBeGreaterThanOrEqual(40);
+    expect(profile.trailAvgHr).toBeGreaterThanOrEqual(158);
+    expect(profile.trailAvgHr).toBeLessThanOrEqual(165);
+    expect(profile.runEasyAvgHr).toBe(142);
+  });
+
+  it('determines realistic expected heart rate for planned trail and running workouts', () => {
+    const profile = getDynamicAthleteProfile([]);
+
+    const trailWithRange = getExpectedHeartRateForEvent(
+      {
+        sportType: 'TRAIL_LONG',
+        title: 'Trail: Rando-Course D+ (1h25)',
+        metadata: {
+          targetElevationM: 357,
+          targetHeartRateRange: [135, 155]
+        }
+      },
+      profile
+    );
+    expect(trailWithRange).toBeGreaterThanOrEqual(150);
+    expect(trailWithRange).toBeLessThanOrEqual(profile.fcMax);
+
+    const hillWorkout = getExpectedHeartRateForEvent(
+      {
+        sportType: 'TRAIL_INTENSE',
+        title: 'Côtes & D+ Mont-Royal'
+      },
+      profile
+    );
+    expect(hillWorkout).toBeGreaterThanOrEqual(165);
+
+    const easyRun = getExpectedHeartRateForEvent(
+      {
+        sportType: 'RUN_EASY',
+        title: 'Footing récupération'
+      },
+      profile
+    );
+    expect(easyRun).toBeLessThanOrEqual(148);
   });
 });
 
