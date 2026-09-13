@@ -53,6 +53,7 @@ export interface CalendarEvent {
     postponedToDate?: string;
     postponedReason?: string;
     isPostponedPlaceholder?: boolean;
+    isCompleted?: boolean;
     isAdapted?: boolean;
     adaptationReason?: string;
     originalTitle?: string;

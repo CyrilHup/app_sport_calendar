@@ -462,7 +462,7 @@ export const App: React.FC = () => {
   };
 
   const handleApplyAdaptivePlan = (actions: AdaptiveWorkoutAction[]) => {
-    const overrides = buildOverridesFromActions(actions);
+    const overrides = buildOverridesFromActions(actions, adaptiveOverrides, formatDateKey(referenceDate));
     setAdaptiveOverrides(overrides);
     saveAdaptiveOverrides(overrides);
     recomputeAndSyncCalendar(postponeOverrides, overrides);

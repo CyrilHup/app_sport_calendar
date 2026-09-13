@@ -313,4 +313,97 @@ describe('Adaptive Plan Engine', () => {
     expect(payload.steps[1].stepNotes || '').toContain('Rando-Course');
     expect((payload.steps[1].stepNotes || '').toLowerCase()).toContain('power-hike');
   });
+
+  it('strictly freezes past sessions and already completed sessions from re-adaptation', () => {
+    const dangerTrainingLoad: TrainingLoadStats = {
+      currentCtl: 40,
+      currentAtl: 75,
+      currentTsb: -35,
+      formStatus: 'HIGH_OVERLOAD',
+      formLabel: 'Surmenage',
+      acwrRatio: 1.68,
+      acwrStatus: 'DANGER_HIGH_RISK',
+      acwrLabel: 'Danger blessure',
+      acuteLoad7d: 320,
+      chronicLoad28dWeeklyAvg: 190,
+      fitnessTrend: [],
+      trailAcwrRatio: 1.68,
+      trailAcuteLoad7d: 320,
+      trailChronicLoad28dWeeklyAvg: 190,
+      trailAcwrStatus: 'DANGER_HIGH_RISK',
+      calisthenicsAcuteLoad7d: 150,
+      calisthenicsSessionsCount7d: 3,
+      totalSystemicAcuteLoad7d: 470,
+      totalTrailChronicLoad28d: 760,
+      recentSessions7d: []
+    };
+
+    // As of Thursday Sept 10:
+    // Tuesday Sept 8 is in the past (date < asOfDate) -> MUST be frozen, NEVER adapted
+    // Saturday Sept 12 is in the future -> CAN be adapted
+    const asOfThu = new Date('2026-09-10T12:00:00.000Z');
+    const status = evaluateAdaptivePlanStatus(
+      dangerTrainingLoad,
+      mockBaseReadiness,
+      mockWeeklySportEvents,
+      {},
+      asOfThu
+    );
+
+    // Tuesday is past, so only Saturday should be adapted!
+    expect(status.recommendedActions.some(a => a.eventId === 'SPORT_TUE')).toBe(false);
+    expect(status.recommendedActions.some(a => a.eventId === 'SPORT_SAT')).toBe(true);
+
+    // If Saturday was already completed (e.g. ran early), it must also NOT be adapted
+    const completedSet = new Set(['SPORT_SAT']);
+    const statusWithCompleted = evaluateAdaptivePlanStatus(
+      dangerTrainingLoad,
+      mockBaseReadiness,
+      mockWeeklySportEvents,
+      {},
+      asOfThu,
+      completedSet
+    );
+    expect(statusWithCompleted.recommendedActions.length).toBe(0);
+  });
+
+  it('preserves past overrides intact when generating overrides with todayKey', () => {
+    const existingPastOverride = {
+      eventId: 'SPORT_TUE',
+      date: '2026-09-08',
+      originalTitle: '⚡ Trail: Hill Repeats D+ (Mont-Royal)',
+      adaptedTitle: '🛡️ Footing Aérobie Doux & Récupération Z1/Z2 (35 min)',
+      originalDurationMinutes: 80,
+      adaptedDurationMinutes: 35,
+      adaptationReason: 'Adaptation initiale respectée',
+      coachingCue: 'Footing souple',
+      createdAt: '2026-09-08T08:00:00.000Z'
+    };
+
+    const newFutureAction = {
+      eventId: 'SPORT_SAT',
+      date: '2026-09-12',
+      originalTitle: '🏔️ Trail: Long Run D+ (1h55)',
+      adaptedTitle: '🛡️ Trail Réduit (1h23)',
+      originalDurationMinutes: 115,
+      adaptedDurationMinutes: 83,
+      actionType: 'LIGHTEN' as const,
+      reason: 'Prévention',
+      coachingCue: 'Footing souple'
+    };
+
+    const todayKey = '2026-09-10'; // Thursday
+    const overrides = buildOverridesFromActions(
+      [newFutureAction],
+      { [existingPastOverride.eventId]: existingPastOverride },
+      todayKey
+    );
+
+    // Tuesday's past override is strictly preserved
+    expect(overrides['SPORT_TUE']).toEqual(existingPastOverride);
+    // Saturday's future override is added
+    expect(overrides['SPORT_SAT']).toBeDefined();
+    expect(overrides['SPORT_SAT'].adaptedDurationMinutes).toBe(83);
+  });
 });
+

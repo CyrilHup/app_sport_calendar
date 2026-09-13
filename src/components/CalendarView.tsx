@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ActivityComparison } from '../types/garmin';
 import {
@@ -656,12 +656,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     .map(d => d.sportSession)
     .filter((e): e is CalendarEvent => Boolean(e));
 
+  const completedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of comparisons) {
+      if ((c.status === 'COMPLIANT' || c.status === 'PARTIAL' || Boolean(c.actualActivity)) && c.plannedEvent?.id) {
+        ids.add(c.plannedEvent.id);
+      }
+    }
+    return ids;
+  }, [comparisons]);
+
   const trainingLoad = computeTrainingLoadStats(garminActivities || [], effectiveRefDate);
   const adaptiveStatus = evaluateAdaptivePlanStatus(
     trainingLoad,
     readiness,
     displayedSportSessions,
-    adaptiveOverrides
+    adaptiveOverrides,
+    effectiveRefDate,
+    completedIds
   );
 
   const totalTrimpSavedByAdaptation = adaptiveStatus.recommendedActions.reduce((sum, act) => {
@@ -672,29 +684,20 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const formatFriendlyDateStr = formatFriendlyDay;
 
-  const [autoAdapt, setAutoAdapt] = useState<boolean>(() => isAutoAdaptEnabled());
-
-  const handleToggleAutoAdapt = () => {
-    const next = !autoAdapt;
-    setAutoAdapt(next);
-    setAutoAdaptEnabled(next);
-    if (next && adaptiveStatus.recommendedActions.length > 0 && onApplyAdaptivePlan) {
-      onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
-    }
-  };
-
-  // Auto-Pilot : application automatique continue pour maintenir le Sweet Spot
+  // Auto-Pilot permanent : application automatique continue pour maintenir le Sweet Spot
   useEffect(() => {
     if (
-      autoAdapt &&
-      !adaptiveStatus.hasActiveAdaptations &&
-      (adaptiveStatus.injuryRiskLevel === 'HIGH' || adaptiveStatus.injuryRiskLevel === 'MODERATE') &&
       adaptiveStatus.recommendedActions.length > 0 &&
       onApplyAdaptivePlan
     ) {
-      onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
+      const hasUnappliedActions = adaptiveStatus.recommendedActions.some(
+        act => !adaptiveOverrides[act.eventId] || adaptiveOverrides[act.eventId].adaptedDurationMinutes !== act.adaptedDurationMinutes
+      );
+      if (hasUnappliedActions) {
+        onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
+      }
     }
-  }, [autoAdapt, adaptiveStatus.hasActiveAdaptations, adaptiveStatus.injuryRiskLevel, adaptiveStatus.recommendedActions.length, onApplyAdaptivePlan]);
+  }, [adaptiveStatus.recommendedActions, adaptiveOverrides, onApplyAdaptivePlan]);
 
   const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
@@ -853,28 +856,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             🧘 Mobilité ({countMobility})
           </button>
 
-          {/* Bouton Toggle Auto-Pilot Adaptatif Sweet Spot */}
-          <button
-            type="button"
-            className="chip-btn"
-            onClick={handleToggleAutoAdapt}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              background: autoAdapt ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-              borderColor: autoAdapt ? '#10b981' : 'var(--border-color)',
-              color: autoAdapt ? '#34d399' : 'var(--text-muted)',
-              fontWeight: 600,
-              padding: '4px 10px',
-              fontSize: '0.74rem'
-            }}
-            title={autoAdapt ? "Auto-Pilot actif : le calendrier s'adapte automatiquement pour rester dans le Sweet Spot" : "Auto-Pilot désactivé : vous appliquez manuellement les adaptations recommandées"}
-          >
-            <Sparkles size={12} color={autoAdapt ? '#10b981' : 'var(--text-muted)'} />
-            <span>{autoAdapt ? 'Auto-Pilot : ON' : 'Auto-Pilot : OFF'}</span>
-          </button>
-
           {/* Bouton Synchro Semaine Garmin */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
             {garminSyncFeedback && (
@@ -930,25 +911,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: '#34d399' }}>
             <ShieldCheck size={16} color="#10b981" />
             <div>
-              <strong>Plan Adaptatif Actif {autoAdapt ? '(Auto-Pilot)' : ''} :</strong> Vos sorties de trail sont modulées pour respecter votre tolérance mécanique (ACWR actuel : {adaptiveStatus.trailAcwrRatio} en Sweet Spot). Calisthénie maintenue intacte.
+              <strong>Plan Adaptatif Actif (Auto-Pilot) :</strong> Vos sorties de trail à venir sont automatiquement modulées pour respecter votre tolérance mécanique (ACWR actuel : {adaptiveStatus.trailAcwrRatio} en Sweet Spot). Calisthénie maintenue intacte.
             </div>
           </div>
-          {onRevertAdaptivePlan && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={onRevertAdaptivePlan}
-              style={{
-                fontSize: '0.74rem',
-                padding: '4px 10px',
-                color: 'var(--text-secondary)',
-                borderColor: 'var(--border-color)'
-              }}
-              title="Rétablir le plan d'entraînement nominal"
-            >
-              <RotateCcw size={12} /> Rétablir le plan standard
-            </button>
-          )}
         </div>
       ) : adaptiveStatus.injuryRiskLevel === 'HIGH' && adaptiveStatus.recommendedActions.length > 0 ? (
         <div
@@ -1157,7 +1122,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </span>
           </div>
           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-            {autoAdapt ? '🤖 Auto-Pilot Sweet Spot Actif' : 'Mode manuel'}
+            🤖 Auto-Pilot Sweet Spot Actif
           </span>
         </div>
       )}

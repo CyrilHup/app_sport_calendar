@@ -298,8 +298,94 @@ export function computeFullStatsReport(
     }
   }
 
+  // Consolidation des sorties fractionnées ou redémarrées le même jour local
+  // (ex: montre interrompue après 3 min puis relancée pour 37 min -> 1 seule sortie cumulée de 40 min / 6.9 km)
+  const consolidatedList: NormalizedAct[] = [];
+  const dailyGroups = new Map<string, NormalizedAct[]>();
+
+  for (const act of rawList) {
+    const isRun = isTrailOrRunning(act.type, act.name);
+    const isStr = !isRun && isStrengthOrCalisthenics(act.type, act.name);
+    const discKey = isRun ? 'RUN' : (isStr ? 'STRENGTH' : `OTHER_${act.type}`);
+    const groupKey = `${act.date}_${discKey}`;
+
+    if (!dailyGroups.has(groupKey)) {
+      dailyGroups.set(groupKey, []);
+    }
+    dailyGroups.get(groupKey)!.push(act);
+  }
+
+  for (const group of dailyGroups.values()) {
+    if (group.length === 1) {
+      consolidatedList.push(group[0]);
+      continue;
+    }
+
+    const sorted = [...group].sort((a, b) => b.durationMinutes - a.durationMinutes);
+    const mainAct = sorted[0];
+
+    let totalDur = 0;
+    let totalDist = 0;
+    let totalGain = 0;
+    let totalLoss = 0;
+    let weightedHrSum = 0;
+    let hrDurSum = 0;
+    let weightedCadenceSum = 0;
+    let cadenceDurSum = 0;
+    let maxHr: number | null = null;
+    let totalLoad: number | null = null;
+
+    for (const a of sorted) {
+      totalDur += a.durationMinutes;
+      totalDist += a.distanceKm || 0;
+      totalGain += a.elevationGainM || 0;
+      totalLoss += a.elevationLossM || 0;
+
+      if (a.avgHeartRate && a.durationMinutes > 0) {
+        weightedHrSum += a.avgHeartRate * a.durationMinutes;
+        hrDurSum += a.durationMinutes;
+      }
+      if (a.maxHeartRate) {
+        maxHr = maxHr === null ? a.maxHeartRate : Math.max(maxHr, a.maxHeartRate);
+      }
+      if (a.avgCadence && a.durationMinutes > 0) {
+        weightedCadenceSum += a.avgCadence * a.durationMinutes;
+        cadenceDurSum += a.durationMinutes;
+      }
+      if (a.trainingLoad) {
+        totalLoad = (totalLoad || 0) + a.trainingLoad;
+      }
+    }
+
+    const distKm = totalDist > 0 ? Math.round(totalDist * 100) / 100 : 0;
+    let paceSec: number | null = null;
+    if (distKm > 0 && totalDur > 0) {
+      paceSec = Math.round((totalDur * 60) / distKm);
+    }
+
+    const compositeName = mainAct.name.includes('+')
+      ? mainAct.name
+      : `${mainAct.name} (+${sorted.length - 1} fragment${sorted.length > 2 ? 's' : ''})`;
+
+    consolidatedList.push({
+      ...mainAct,
+      id: `consolidated-${sorted.map(a => a.id).join('-')}`,
+      name: compositeName,
+      durationMinutes: totalDur,
+      distanceKm: distKm,
+      elevationGainM: totalGain,
+      elevationLossM: totalLoss,
+      avgHeartRate: hrDurSum > 0 ? Math.round(weightedHrSum / hrDurSum) : null,
+      maxHeartRate: maxHr,
+      avgCadence: cadenceDurSum > 0 ? Math.round(weightedCadenceSum / cadenceDurSum) : null,
+      avgPaceSecPerKm: paceSec,
+      trainingLoad: totalLoad,
+      isBonus: sorted.every(a => a.isBonus)
+    });
+  }
+
   // 1. Scoped activities based on the selected time window (default: from 1er sept. 2026)
-  const scopedList = filterItemsByScope(rawList, scope, asOfDate);
+  const scopedList = filterItemsByScope(consolidatedList, scope, asOfDate);
 
   // 2. Separate training plan activities from bonuses
   let excludedBonusCount = 0;

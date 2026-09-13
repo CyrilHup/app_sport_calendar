@@ -449,16 +449,30 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
     if (points.length === 0) return null;
     const values = points.map(p => p.value);
     const sum = values.reduce((a, b) => a + b, 0);
-    const avg = sum / values.length;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const latest = points[points.length - 1];
-    const first = points[0];
 
-    // Tendance entre le début et la fin
+    // Pour les séries où 0 représente un jour de repos sans activité (ex: volume journalier en vue semaine) :
+    // isoler les séances actives pour ne pas polluer le minimum à 0 min, la dernière séance à 0 min ou la tendance à -100%
+    const isWeeklyDailyVolume = metric === 'volume' && scope === 'week';
+    const activePoints = (metric === 'volume' || metric === 'running' || metric === 'endurance_pace')
+      ? points.filter(p => p.value > 0)
+      : points;
+
+    const effPoints = activePoints.length > 0 ? activePoints : points;
+    const effValues = effPoints.map(p => p.value);
+
+    const min = effValues.length > 0 ? Math.min(...effValues) : 0;
+    const max = effValues.length > 0 ? Math.max(...effValues) : 0;
+    const avg = effValues.length > 0
+      ? (isWeeklyDailyVolume ? sum / effValues.length : sum / values.length)
+      : 0;
+
+    const latest = effPoints[effPoints.length - 1];
+    const first = effPoints[0];
+
+    // Tendance entre la première et la dernière séance active
     let delta = 0;
     let deltaPct = 0;
-    if (points.length >= 2) {
+    if (effPoints.length >= 2) {
       delta = latest.value - first.value;
       deltaPct = first.value !== 0 ? Math.round((delta / first.value) * 100) : 0;
     }
@@ -467,17 +481,21 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
     const isNeutral = Math.abs(deltaPct) < 2;
 
     return {
-      count: points.length,
+      count: effPoints.length,
+      totalPointsCount: points.length,
+      sum,
       latest,
+      first,
       avg: Math.round(avg * 10) / 10,
       min: Math.round(min * 10) / 10,
       max: Math.round(max * 10) / 10,
       delta,
       deltaPct,
       isPositive,
-      isNeutral
+      isNeutral,
+      isWeeklyDailyVolume
     };
-  }, [points, isInverseBetter]);
+  }, [points, isInverseBetter, metric, scope]);
 
   // Dimensionnement SVG
   const svgWidth = 660;
@@ -1051,13 +1069,19 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  {metric === 'running' ? 'Kilométrage total cumulé' : 'Dernière valeur'}
+                  {metric === 'running'
+                    ? 'Kilométrage total cumulé'
+                    : (stats.isWeeklyDailyVolume ? 'Dernière sortie réalisée' : 'Dernière valeur')}
                 </div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--primary)' }}>
                   {metric === 'running' ? `${stats.latest.value.toFixed(1)} km` : stats.latest.displayValue}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {metric === 'running' ? `${stats.count} sortie${stats.count > 1 ? 's' : ''} • Dernier : ${stats.latest.label}` : stats.latest.label}
+                  {metric === 'running'
+                    ? `${stats.count} sortie${stats.count > 1 ? 's' : ''} • Dernier : ${stats.latest.label}`
+                    : (stats.isWeeklyDailyVolume
+                      ? `Sortie du ${stats.latest.label}`
+                      : stats.latest.label)}
                 </div>
               </div>
 
@@ -1070,7 +1094,9 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  {metric === 'running' ? 'Dénivelé total cumulé' : 'Moyenne sur la période'}
+                  {metric === 'running'
+                    ? 'Dénivelé total cumulé'
+                    : (stats.isWeeklyDailyVolume ? 'Moyenne par sortie' : 'Moyenne sur la période')}
                 </div>
                 <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--accent-cyan)' }}>
                   {metric === 'running'
@@ -1084,7 +1110,9 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                   {metric === 'running'
                     ? `Moy. ${(stats.latest.value / Math.max(1, stats.count)).toFixed(1)} km / sortie`
-                    : `${stats.count} point${stats.count > 1 ? 's' : ''}`}
+                    : (stats.isWeeklyDailyVolume
+                      ? `${stats.count} sortie${stats.count > 1 ? 's' : ''} (${formatMinutes(stats.sum)} au total)`
+                      : `${stats.count} point${stats.count > 1 ? 's' : ''}`)}
                 </div>
               </div>
 
@@ -1109,7 +1137,9 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                       : `${stats.min} / ${stats.max} ${unit}`)}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {metric === 'running' ? 'Sur une séance' : 'Étendue observée'}
+                  {metric === 'running'
+                    ? 'Sur une séance'
+                    : (stats.isWeeklyDailyVolume ? 'Par sortie de course' : 'Étendue observée')}
                 </div>
               </div>
 
@@ -1122,7 +1152,9 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                 }}
               >
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '2px' }}>
-                  {metric === 'running' ? 'Progression totale' : 'Tendance'}
+                  {metric === 'running'
+                    ? 'Progression totale'
+                    : (stats.isWeeklyDailyVolume ? 'Progression des sorties' : 'Tendance')}
                 </div>
                 <div
                   style={{
@@ -1161,7 +1193,11 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
                   )}
                 </div>
                 <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  {metric === 'running' ? 'Kilomètres cumulés' : (stats.isPositive ? 'Adaptation favorable' : 'À surveiller')}
+                  {metric === 'running'
+                    ? 'Kilomètres cumulés'
+                    : (stats.isWeeklyDailyVolume
+                      ? `${stats.first.label} (${stats.first.displayValue}) ➔ ${stats.latest.label} (${stats.latest.displayValue})`
+                      : (stats.isPositive ? 'Adaptation favorable' : 'À surveiller'))}
                 </div>
               </div>
             </div>

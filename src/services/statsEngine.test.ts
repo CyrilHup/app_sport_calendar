@@ -771,6 +771,61 @@ describe('statsEngine unit tests', () => {
     expect(report.global.weeklyTrend[0].sessionCount).toBe(2); // 2 sorties de course
     expect(report.global.weeklyTrend[0].strengthMinutes).toBe(60); // 60 min renfort indicatif
   });
+
+  it('consolidates fragmented same-day running activities (e.g. watch restart 3m + 37m) into 1 session', () => {
+    const activities: GarminActivity[] = [
+      // Lundi 7 sept
+      {
+        activityId: 'act-mon',
+        activityName: 'Footing lundi',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-07 16:07:00',
+        durationMinutes: 18,
+        distanceKm: 4.1,
+        source: 'GARMIN_CONNECT'
+      },
+      // Jeudi 10 sept: split run (montre stoppée puis relancée)
+      {
+        activityId: 'act-thu-part1',
+        activityName: 'Course jeudi (partie 1)',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-10 11:44:00',
+        durationMinutes: 3,
+        distanceKm: 0.47,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'act-thu-part2',
+        activityName: 'Course jeudi (partie 2)',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-10 11:48:00',
+        durationMinutes: 36,
+        distanceKm: 6.45,
+        source: 'GARMIN_CONNECT'
+      },
+      // Samedi 12 sept
+      {
+        activityId: 'act-sat',
+        activityName: 'Trail samedi',
+        activityType: 'TRAIL_RUNNING',
+        startTimeLocal: '2026-09-12 17:35:00',
+        durationMinutes: 77,
+        distanceKm: 11.4,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const report = computeFullStatsReport(activities, [], [], 'week', new Date('2026-09-13T18:00:00'));
+
+    // Strictly 3 running outings counted, NOT 4
+    expect(report.global.sportBreakdown.running.count).toBe(3);
+    // Total duration: 18 + (3 + 36) + 77 = 134 minutes (2h14)
+    expect(report.running.totalDurationMinutes).toBe(134);
+    // Total distance: 4.1 + (0.47 + 6.45) + 11.4 = 22.42 km
+    expect(Math.round(report.running.totalDistanceKm * 10) / 10).toBe(22.4);
+    // Global weekly trend has exactly 3 outings
+    expect(report.global.weeklyTrend[0].sessionCount).toBe(3);
+  });
 });
 
 

@@ -266,7 +266,9 @@ export function compareWorkoutsWithGarmin(
         const actWeek = getMondayWeekKey(executedDate);
 
         // Appartenance au même microcycle hebdomadaire (Lundi ➔ Dimanche)
-        if (planWeek === actWeek) {
+        // RÈGLE : Un rattrapage ne peut se faire que le jour même ou POSTÉRIEUREMENT (executedDate >= scheduledDate).
+        // Une séance future (ex: Dimanche) ne peut JAMAIS être liée à une sortie déjà passée (ex: Lundi).
+        if (planWeek === actWeek && executedDate >= scheduledDate) {
           const score = scoreActivityMatch(plan, act);
           if (score >= 50) {
             crossCandidates.push({
