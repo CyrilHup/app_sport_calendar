@@ -234,18 +234,21 @@ export const App: React.FC = () => {
 
     setBaseCalendar({ schedules: builtSchedules, allEvents: builtEvents });
 
+    const activePostpones = loadPostponeOverrides();
+    const activeAdaptive = loadAdaptiveOverrides();
+
     // 1. Appliquer les reports de séances enregistrés
     const { schedules: postponedSchedules, allEvents: postponedEvents } = applyPostponements(
       builtSchedules,
       builtEvents,
-      postponeOverrides
+      activePostpones
     );
 
     // 2. Appliquer les adaptations intelligentes anti-blessure
     const { schedules: transformedSchedules, allEvents: transformedEvents } = applyAdaptiveModifications(
       postponedSchedules,
       postponedEvents,
-      adaptiveOverrides
+      activeAdaptive
     );
 
     setSchedules(transformedSchedules);
@@ -505,7 +508,8 @@ export const App: React.FC = () => {
   const handleApplyAdaptivePlan = (actions: AdaptiveWorkoutAction[]) => {
     const currentMonday = getMondayOfWeek(referenceDate);
     const activeWeekDates: string[] = [];
-    for (let i = 0; i < 7; i++) {
+    // Couvre l'ensemble de l'horizon actif de 14 jours (semaine courante + semaine suivante)
+    for (let i = 0; i < 14; i++) {
       const d = new Date(currentMonday);
       d.setDate(d.getDate() + i);
       activeWeekDates.push(formatDateKey(d));

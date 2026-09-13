@@ -705,15 +705,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   const formatFriendlyDateStr = formatFriendlyDay;
 
-  // Auto-Pilot permanent : application automatique continue pour maintenir le Sweet Spot sur le microcycle actif
+  // Auto-Pilot permanent : application automatique continue pour maintenir le Sweet Spot sur le microcycle actif et la semaine prochaine
   useEffect(() => {
     if (!isAutoAdaptEnabled() || !onApplyAdaptivePlan) return;
     if (adaptiveStatus.recommendedActions.length === 0) return;
 
-    // Ne déclencher que si au moins une action recommandée n'est pas encore appliquée ou a changé
+    // Ne déclencher que si au moins une action recommandée n'est pas encore appliquée dans les overrides OU dans les schedules
     const hasUnappliedActions = adaptiveStatus.recommendedActions.some(act => {
       const existing = adaptiveOverrides[act.eventId];
       if (!existing) return true;
+
+      // Vérifier si la séance dans schedules n'est pas encore transformée
+      const currentSession = activeHorizonSportSessions.find(s => s.id === act.eventId);
+      if (currentSession && currentSession.durationMinutes !== act.adaptedDurationMinutes) {
+        return true;
+      }
+
       return (
         existing.adaptedDurationMinutes !== act.adaptedDurationMinutes ||
         existing.adaptedElevationM !== act.adaptedElevationM ||
@@ -724,7 +731,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     if (hasUnappliedActions) {
       onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
     }
-  }, [adaptiveStatus.recommendedActions, adaptiveOverrides, onApplyAdaptivePlan]);
+  }, [adaptiveStatus.recommendedActions, adaptiveOverrides, activeHorizonSportSessions, onApplyAdaptivePlan]);
 
   const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
