@@ -369,5 +369,33 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
     expect(rollingRunExpectedHr).toBe(160);
     expect(rollingRunExpectedHr).not.toBe(139);
   });
+
+  it('distinguishes warmup pace from corps de séance (interval) pace for target display', () => {
+    setGarminWorkoutTargetMode('SMART_PACE_AND_TRAIL_FREE');
+    const flatEasyEvent = createMockEvent({
+      id: 'event-run-easy-2',
+      title: 'Footing Aérobie Doux & Récupération Z1/Z2 (35 min)',
+      sportType: 'RUN_EASY',
+      durationMinutes: 35
+    });
+
+    const payload = buildWorkoutPayloadFromEvent(flatEasyEvent);
+    const warmupStep = payload.steps.find(s => s.stepType === 'WARMUP');
+    const mainStep = payload.steps.find(s => s.stepType === 'INTERVAL');
+
+    expect(warmupStep?.targetPaceLowMinKm).toBeDefined();
+    expect(mainStep?.targetPaceLowMinKm).toBeDefined();
+    // Warmup pace must be different and slower than main corps de séance pace
+    expect(warmupStep?.targetPaceLowMinKm).not.toBe(mainStep?.targetPaceLowMinKm);
+
+    // Resolution prioritizes INTERVAL over WARMUP
+    const resolvedPaceStep =
+      payload.steps.find(s => s.stepType === 'INTERVAL' && s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm) ||
+      payload.steps.find(s => s.stepType !== 'WARMUP' && s.stepType !== 'COOLDOWN' && s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm) ||
+      payload.steps.find(s => s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm);
+
+    expect(resolvedPaceStep).toBe(mainStep);
+    expect(resolvedPaceStep?.stepType).toBe('INTERVAL');
+  });
 });
 

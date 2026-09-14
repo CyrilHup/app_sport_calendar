@@ -241,8 +241,12 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const unifiedTargetInfo = React.useMemo(() => {
     if (!isSport || isCalisthenics) return null;
 
-    // Check if any workout step has a PACE target
-    const paceStep = workoutPreview?.steps.find(s => s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm);
+    // Priorité au corps de séance (INTERVAL) pour afficher l'allure cible principale
+    const paceStep =
+      workoutPreview?.steps.find(s => s.stepType === 'INTERVAL' && s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm) ||
+      workoutPreview?.steps.find(s => s.stepType !== 'WARMUP' && s.stepType !== 'COOLDOWN' && s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm) ||
+      workoutPreview?.steps.find(s => s.targetType === 'PACE' && s.targetPaceLowMinKm && s.targetPaceHighMinKm);
+
     if (paceStep && paceStep.targetPaceLowMinKm && paceStep.targetPaceHighMinKm) {
       return {
         badgeTitle: 'Cible Allure (Plat)',
@@ -273,7 +277,12 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       };
     }
 
-    const hrStep = workoutPreview?.steps.find(s => s.targetType === 'HR_RANGE' && s.targetHrLow && s.targetHrHigh);
+    // Priorité au corps de séance (INTERVAL) pour la cible cardio
+    const hrStep =
+      workoutPreview?.steps.find(s => s.stepType === 'INTERVAL' && s.targetType === 'HR_RANGE' && s.targetHrLow && s.targetHrHigh) ||
+      workoutPreview?.steps.find(s => s.stepType !== 'WARMUP' && s.stepType !== 'COOLDOWN' && s.targetType === 'HR_RANGE' && s.targetHrLow && s.targetHrHigh) ||
+      workoutPreview?.steps.find(s => s.targetType === 'HR_RANGE' && s.targetHrLow && s.targetHrHigh);
+
     if (hrStep && hrStep.targetHrLow && hrStep.targetHrHigh) {
       return {
         badgeTitle: 'Cible Cardio',
