@@ -342,8 +342,18 @@ export const App: React.FC = () => {
     setGarminState(updatedGarminState);
     saveGarminSyncState(updatedGarminState);
 
-    // Automatically ensure current week workouts are synced to Garmin (signature checks prevent duplicates)
-    syncCurrentWeekWorkoutsToGarmin(transformedEvents, referenceDate).catch(() => {});
+    // Ensure current week workouts are really created AND scheduled before marking them synced.
+    const workoutSyncResult = await syncCurrentWeekWorkoutsToGarmin(transformedEvents, referenceDate);
+    if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
+      console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
+      if (isManualTrigger) {
+        setSyncError({
+          title: 'Séances non synchronisées avec Garmin',
+          message: 'Garmin Connect n’a pas confirmé la programmation de toutes les séances.',
+          details: workoutSyncResult.error || 'Réessayez la synchronisation depuis l’application.'
+        });
+      }
+    }
 
     setIsRecharging(false);
   };

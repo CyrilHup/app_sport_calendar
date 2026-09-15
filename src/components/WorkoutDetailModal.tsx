@@ -28,6 +28,7 @@ import { calculateSessionTrimp } from '../services/statsEngine';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { getDynamicAthleteProfile } from '../services/garminService';
+import { isWorkoutSyncedToGarmin } from '../services/garminAutoSyncService';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -116,6 +117,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [reasonInput, setReasonInput] = useState<string>(effectiveEvent.metadata?.postponedReason || 'Déplacée / Reportée');
   const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(effectiveEvent.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
+  const [, setGarminSyncRevision] = useState(0);
+
+  useEffect(() => {
+    const refreshGarminStatus = () => setGarminSyncRevision(revision => revision + 1);
+    window.addEventListener('garmin_auto_sync_status', refreshGarminStatus);
+    return () => window.removeEventListener('garmin_auto_sync_status', refreshGarminStatus);
+  }, []);
 
   const selectedWatch = 'FORERUNNER_55';
   const workoutPreview = effectiveEvent.category === 'sport' ? buildWorkoutPayloadFromEvent(effectiveEvent, toLocalDateKey(effectiveEvent.startDate), selectedWatch) : null;
@@ -157,6 +165,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const isSport = effectiveEvent.category === 'sport';
   const isAdapted = Boolean(effectiveEvent.metadata?.isAdapted);
+  const plannedEventsForSync = isMultiMerged && activeItemIndex === 'global'
+    ? (unifiedGroup?.items.flatMap(item => item.plannedEvent ? [item.plannedEvent] : []) || [])
+    : [effectiveEvent];
+  const garminSyncedCount = plannedEventsForSync.filter(isWorkoutSyncedToGarmin).length;
+  const isGarminWorkoutSynced = plannedEventsForSync.length > 0 && garminSyncedCount === plannedEventsForSync.length;
 
   const titleLower = effectiveEvent.title.toLowerCase();
 
@@ -1257,6 +1270,33 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {isSport && (
+              <div
+                role="status"
+                title={isGarminWorkoutSynced
+                  ? 'Garmin Connect a confirmé la création et la programmation de cette séance.'
+                  : 'Cette version de la séance n’a pas encore été confirmée par Garmin Connect.'}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 10px',
+                  borderRadius: 999,
+                  border: `1px solid ${isGarminWorkoutSynced ? 'rgba(34, 197, 94, 0.45)' : 'rgba(245, 158, 11, 0.45)'}`,
+                  background: isGarminWorkoutSynced ? 'rgba(34, 197, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+                  color: isGarminWorkoutSynced ? '#4ade80' : '#fbbf24',
+                  fontSize: '0.74rem',
+                  fontWeight: 700
+                }}
+              >
+                {isGarminWorkoutSynced ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                <span>
+                  {isGarminWorkoutSynced
+                    ? 'Synchronisée avec Garmin'
+                    : 'Non synchronisée avec Garmin'}
+                </span>
+              </div>
+            )}
             {/* Bouton Alarme & Rappel */}
             <button
               type="button"

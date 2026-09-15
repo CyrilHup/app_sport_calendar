@@ -7,6 +7,8 @@ import {
   isGarminAutoSyncEnabled,
   setGarminAutoSyncEnabled,
   GARMIN_AUTO_SYNC_ENABLED_KEY,
+  GARMIN_SYNCED_SIGNATURES_KEY,
+  isWorkoutSyncedToGarmin,
   syncCurrentWeekWorkoutsToGarmin
 } from './garminAutoSyncService';
 import { CalendarEvent } from '../types/calendar';
@@ -226,5 +228,40 @@ describe('Garmin Auto-Sync Service', () => {
     const res3 = await syncCurrentWeekWorkoutsToGarmin(modifiedEvents, refDate);
     expect(res3.pushedCount).toBe(1);
     expect(pushSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('marks a workout as synced only after Garmin confirms scheduling', async () => {
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com',
+      password: 'password123'
+    });
+
+    const workout = createMockEvent({
+      id: 'garmin_confirmation_test',
+      startDate: '2026-09-09T08:00:00Z',
+      endDate: '2026-09-09T09:00:00Z'
+    });
+    const refDate = new Date('2026-09-09T12:00:00Z');
+
+    vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValueOnce({
+      success: false,
+      error: 'Garmin refused calendar scheduling'
+    });
+
+    const failedResult = await syncCurrentWeekWorkoutsToGarmin([workout], refDate);
+    expect(failedResult.success).toBe(false);
+    expect(failedResult.reason).toBe('ERROR');
+    expect(isWorkoutSyncedToGarmin(workout)).toBe(false);
+    expect(JSON.parse(localStorage.getItem(GARMIN_SYNCED_SIGNATURES_KEY) || '{}')).toEqual({});
+
+    vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValueOnce({
+      success: true,
+      workoutId: 'garmin_456',
+      scheduledDate: '2026-09-09'
+    });
+
+    const successResult = await syncCurrentWeekWorkoutsToGarmin([workout], refDate);
+    expect(successResult.success).toBe(true);
+    expect(isWorkoutSyncedToGarmin(workout)).toBe(true);
   });
 });

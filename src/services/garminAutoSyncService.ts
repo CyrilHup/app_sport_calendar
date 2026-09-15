@@ -4,7 +4,9 @@ import { loadGarminCredentials, loadGarminCredentialsAsync, pushWorkoutToGarmin,
 
 
 export const GARMIN_AUTO_SYNC_ENABLED_KEY = 'sport_calendar_garmin_auto_sync_enabled';
-export const GARMIN_SYNCED_SIGNATURES_KEY = 'sport_calendar_garmin_synced_week_signatures';
+// v2 deliberately invalidates the previous cache, which could contain false positives:
+// the API used to report success even when Garmin rejected calendar scheduling.
+export const GARMIN_SYNCED_SIGNATURES_KEY = 'sport_calendar_garmin_synced_week_signatures_v2';
 
 export interface AutoSyncResult {
   success: boolean;
@@ -87,6 +89,12 @@ export function saveSyncedWeekWorkoutSignatures(signatures: Record<string, strin
   } catch (err) {
     console.warn('Could not save garmin synced signatures:', err);
   }
+}
+
+/** Returns true only when the current version of this exact workout was confirmed by Garmin. */
+export function isWorkoutSyncedToGarmin(event: CalendarEvent): boolean {
+  const signatures = getSyncedWeekWorkoutSignatures();
+  return signatures[event.id] === computeWorkoutSyncSignature(event);
 }
 
 /**
@@ -242,13 +250,17 @@ export async function syncCurrentWeekWorkoutsToGarmin(
     // Nettoyer en arrière-plan les anciens doublons résiduels sur Garmin Connect
     cleanDuplicateGarminWorkouts().catch(() => {});
 
+    const failedResults = results.filter(result => !result.success);
     const res: AutoSyncResult = {
-      success: pushedCount > 0 || toPush.length === 0,
+      success: failedResults.length === 0,
       pushedCount,
       totalWeekWorkouts: weekWorkouts.length,
       alreadyUpToDate: false,
       results,
-      reason: 'SUCCESS',
+      reason: failedResults.length === 0 ? 'SUCCESS' : 'ERROR',
+      error: failedResults.length > 0
+        ? failedResults.map(result => result.error || 'Échec Garmin inconnu').join(' | ')
+        : undefined,
       lastSyncTimestamp: new Date().toISOString()
     };
 

@@ -405,20 +405,29 @@ export default async function handler(req: any, res: any) {
       const builtWorkout = wb.build();
       const createdWorkout: any = await gc.createWorkout(builtWorkout);
 
-      let scheduledDateResult = workout.scheduledDate;
-      if (workout.scheduledDate && createdWorkout?.workoutId) {
-        try {
-          await gc.scheduleWorkout({ workoutId: String(createdWorkout.workoutId) }, workout.scheduledDate);
-        } catch (schedErr) {
-          console.warn('Could not schedule workout to calendar:', schedErr);
-        }
+      const createdWorkoutId = createdWorkout?.workoutId ? String(createdWorkout.workoutId) : '';
+      if (!createdWorkoutId) {
+        throw new Error('Garmin Connect a créé la séance sans retourner son identifiant. La programmation a été annulée.');
+      }
+
+      if (!workout.scheduledDate) {
+        throw new Error('La date de programmation Garmin est manquante.');
+      }
+
+      try {
+        await gc.scheduleWorkout({ workoutId: createdWorkoutId }, workout.scheduledDate);
+      } catch (schedErr: any) {
+        console.error('Could not schedule workout to calendar:', schedErr);
+        throw new Error(
+          `Séance créée mais non programmée dans le calendrier Garmin pour le ${workout.scheduledDate}: ${schedErr?.message || 'erreur Garmin inconnue'}`
+        );
       }
 
       res.status(200).json({
         success: true,
-        workoutId: createdWorkout?.workoutId ? String(createdWorkout.workoutId) : undefined,
+        workoutId: createdWorkoutId,
         workoutName: workout.title,
-        scheduledDate: scheduledDateResult,
+        scheduledDate: workout.scheduledDate,
         sportType: workout.sportType,
         message: `Séance "${workout.title}" créée et programmée avec succès sur votre Garmin !`
       });
