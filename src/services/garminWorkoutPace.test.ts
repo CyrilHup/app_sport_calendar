@@ -145,6 +145,27 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
     }
   });
 
+  it('uses the app recovery duration of 2 minutes for every hill repeat', () => {
+    setGarminWorkoutTargetMode('SMART_PACE_AND_TRAIL_FREE');
+
+    const progressiveHillsEvent = createMockEvent({
+      id: 'event-progressive-hills-40',
+      title: 'Côtes Progressives Anti-pic (1 série douce - 40 min)',
+      startDate: '2026-09-15T17:00:00',
+      endDate: '2026-09-15T17:40:00',
+      sportType: 'TRAIL_INTENSE',
+      durationMinutes: 40,
+      location: 'Mont-Royal'
+    });
+
+    const payload = buildWorkoutPayloadFromEvent(progressiveHillsEvent);
+    const recoveries = payload.steps.filter(step => step.stepType === 'RECOVERY');
+
+    expect(recoveries.length).toBe(6);
+    expect(recoveries.every(step => step.durationSeconds === 2 * 60)).toBe(true);
+    expect(payload.steps.reduce((sum, step) => sum + (step.durationSeconds || 0), 0)).toBe(40 * 60);
+  });
+
   it('generates targetType NONE for ALL runs when targetMode is ALL_FREE', () => {
     setGarminWorkoutTargetMode('ALL_FREE');
 
@@ -398,4 +419,3 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
     expect(resolvedPaceStep?.stepType).toBe('INTERVAL');
   });
 });
-

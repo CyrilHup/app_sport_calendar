@@ -953,14 +953,18 @@ export function buildWorkoutPayloadFromEvent(
       }
     ];
 
-    // Standard rep = 60s montée tonique + 90s descente trot très souple = 150s (2.5 min)
+    const hillRepEffortSec = 60;
+    const hillRepRecoverySec = 2 * 60;
+    const hillRepCycleSec = hillRepEffortSec + hillRepRecoverySec;
+
+    // Standard rep = 60s montée tonique + 120s descente très souple = 180s (3 min)
     if (hillBlockSec >= 1200) {
       // 2 séries de côtes avec pause inter-séries
-      // Série 1: 4 répétitions (4 * 150s = 600s = 10 min)
+      // Série 1: 4 répétitions (4 * 180s = 720s = 12 min)
       for (let i = 1; i <= 4; i++) {
         hillSteps.push({
           stepType: 'INTERVAL',
-          durationSeconds: 60,
+          durationSeconds: hillRepEffortSec,
           targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
           targetHrLow: isTargetFree ? undefined : 172,
           targetHrHigh: isTargetFree ? undefined : 190,
@@ -968,7 +972,7 @@ export function buildWorkoutPayloadFromEvent(
         });
         hillSteps.push({
           stepType: 'RECOVERY',
-          durationSeconds: 90,
+          durationSeconds: hillRepRecoverySec,
           targetType: 'NONE',
           stepNotes: 'Descente trot très souple ou marche'
         });
@@ -982,11 +986,11 @@ export function buildWorkoutPayloadFromEvent(
         stepNotes: 'Récupération inter-séries (marche & hydratation)'
       });
 
-      // Série 2: 4 répétitions (4 * 150s = 600s = 10 min)
+      // Série 2: 4 répétitions (4 * 180s = 720s = 12 min)
       for (let i = 1; i <= 4; i++) {
         hillSteps.push({
           stepType: 'INTERVAL',
-          durationSeconds: 60,
+          durationSeconds: hillRepEffortSec,
           targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
           targetHrLow: isTargetFree ? undefined : 172,
           targetHrHigh: isTargetFree ? undefined : 190,
@@ -994,14 +998,14 @@ export function buildWorkoutPayloadFromEvent(
         });
         hillSteps.push({
           stepType: 'RECOVERY',
-          durationSeconds: 90,
+          durationSeconds: hillRepRecoverySec,
           targetType: 'NONE',
           stepNotes: i < 4 ? 'Descente trot très souple ou marche' : 'Descente finale souple'
         });
       }
 
-      // Remainder of hill block (e.g. 1500 - 600 - 180 - 600 = 120s / 2 min) added as transition trot
-      const allocatedHillSec = 600 + 180 + 600;
+      // Remaining hill-block time is added as a transition trot when available.
+      const allocatedHillSec = 4 * hillRepCycleSec + 180 + 4 * hillRepCycleSec;
       const remainHillSec = hillBlockSec - allocatedHillSec;
       if (remainHillSec > 30) {
         hillSteps.push({
@@ -1017,7 +1021,7 @@ export function buildWorkoutPayloadFromEvent(
       for (let i = 1; i <= numReps; i++) {
         hillSteps.push({
           stepType: 'INTERVAL',
-          durationSeconds: 60,
+          durationSeconds: hillRepEffortSec,
           targetType: isTargetFree ? 'NONE' : 'HR_RANGE',
           targetHrLow: isTargetFree ? undefined : 172,
           targetHrHigh: isTargetFree ? undefined : 190,
@@ -1025,12 +1029,12 @@ export function buildWorkoutPayloadFromEvent(
         });
         hillSteps.push({
           stepType: 'RECOVERY',
-          durationSeconds: 90,
+          durationSeconds: hillRepRecoverySec,
           targetType: 'NONE',
           stepNotes: 'Descente marchée très souple'
         });
       }
-      const allocatedHillSec = numReps * 150;
+      const allocatedHillSec = numReps * hillRepCycleSec;
       const remainHillSec = hillBlockSec - allocatedHillSec;
       if (remainHillSec > 30) {
         hillSteps.push({
@@ -1401,5 +1405,3 @@ export async function cleanDuplicateGarminWorkouts(): Promise<{
     };
   }
 }
-
-
