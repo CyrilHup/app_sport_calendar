@@ -28,7 +28,7 @@ import { calculateSessionTrimp } from '../services/statsEngine';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { getDynamicAthleteProfile } from '../services/garminService';
-import { isWorkoutSyncedToGarmin } from '../services/garminAutoSyncService';
+import { isWorkoutSyncedToGarmin, syncCurrentWeekWorkoutsToGarmin } from '../services/garminAutoSyncService';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -118,6 +118,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(effectiveEvent.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
   const [, setGarminSyncRevision] = useState(0);
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
+  const [forceSyncError, setForceSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     const refreshGarminStatus = () => setGarminSyncRevision(revision => revision + 1);
@@ -170,6 +172,36 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     : [effectiveEvent];
   const garminSyncedCount = plannedEventsForSync.filter(isWorkoutSyncedToGarmin).length;
   const isGarminWorkoutSynced = plannedEventsForSync.length > 0 && garminSyncedCount === plannedEventsForSync.length;
+  const unsyncedPlannedEvents = plannedEventsForSync.filter(plannedEvent => !isWorkoutSyncedToGarmin(plannedEvent));
+
+  const handleForceGarminSync = async () => {
+    if (isForceSyncing || unsyncedPlannedEvents.length === 0) return;
+
+    setIsForceSyncing(true);
+    setForceSyncError(null);
+    triggerHapticFeedback('light');
+
+    try {
+      const result = await syncCurrentWeekWorkoutsToGarmin(
+        unsyncedPlannedEvents,
+        new Date(effectiveEvent.startDate),
+        { force: true }
+      );
+
+      if (!result.success) {
+        setForceSyncError(result.error || 'Garmin Connect n’a pas confirmé la programmation de cette séance.');
+        triggerHapticFeedback('error');
+      } else {
+        setGarminSyncRevision(revision => revision + 1);
+        triggerHapticFeedback('success');
+      }
+    } catch (error: any) {
+      setForceSyncError(error?.message || 'Impossible de contacter Garmin Connect.');
+      triggerHapticFeedback('error');
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
 
   const titleLower = effectiveEvent.title.toLowerCase();
 
@@ -1271,11 +1303,14 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {isSport && (
-              <div
+              <button
+                type="button"
                 role="status"
+                onClick={isGarminWorkoutSynced ? undefined : handleForceGarminSync}
+                disabled={isGarminWorkoutSynced || isForceSyncing || unsyncedPlannedEvents.length === 0}
                 title={isGarminWorkoutSynced
                   ? 'Garmin Connect a confirmé la création et la programmation de cette séance.'
-                  : 'Cette version de la séance n’a pas encore été confirmée par Garmin Connect.'}
+                  : 'Cliquer pour forcer l’envoi et la programmation de cette séance sur Garmin Connect.'}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -1286,15 +1321,28 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   background: isGarminWorkoutSynced ? 'rgba(34, 197, 94, 0.12)' : 'rgba(245, 158, 11, 0.12)',
                   color: isGarminWorkoutSynced ? '#4ade80' : '#fbbf24',
                   fontSize: '0.74rem',
-                  fontWeight: 700
+                  fontWeight: 700,
+                  cursor: isGarminWorkoutSynced || isForceSyncing ? 'default' : 'pointer',
+                  opacity: isForceSyncing ? 0.75 : 1
                 }}
               >
-                {isGarminWorkoutSynced ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
+                {isGarminWorkoutSynced
+                  ? <CheckCircle2 size={14} />
+                  : isForceSyncing
+                    ? <RotateCcw size={14} />
+                    : <AlertCircle size={14} />}
                 <span>
                   {isGarminWorkoutSynced
                     ? 'Synchronisée avec Garmin'
+                    : isForceSyncing
+                      ? 'Synchronisation avec Garmin…'
                     : 'Non synchronisée avec Garmin'}
                 </span>
+              </button>
+            )}
+            {forceSyncError && (
+              <div style={{ width: '100%', color: '#f87171', fontSize: '0.7rem', lineHeight: 1.35 }}>
+                {forceSyncError}
               </div>
             )}
             {/* Bouton Alarme & Rappel */}
