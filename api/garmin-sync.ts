@@ -359,15 +359,23 @@ export default async function handler(req: any, res: any) {
       for (const st of workout.steps) {
         let stepType = StepType.Run;
         if (st.stepType === 'WARMUP') stepType = StepType.WarmUp;
-        else if (st.stepType === 'INTERVAL') stepType = (wt === WorkoutType.Running ? StepType.Run : StepType.Interval || StepType.Run);
+        else if (st.stepType === 'INTERVAL') stepType = wt === WorkoutType.Running ? StepType.Run : (StepType.Exercise || StepType.Run);
         else if (st.stepType === 'RECOVERY') stepType = StepType.Recovery;
-        else if (st.stepType === 'COOLDOWN') stepType = StepType.CoolDown;
+        else if (st.stepType === 'REST') stepType = StepType.Rest;
+        // @flow-js/garmin-connect exposes `Cooldown` (lowercase d), not `CoolDown`.
+        // The old property was undefined and made Step.build() crash on every workout
+        // containing a cooldown with: "Cannot read properties of undefined (reading 'build')".
+        else if (st.stepType === 'COOLDOWN') stepType = StepType.Cooldown;
+
+        if (!stepType || typeof stepType.build !== 'function') {
+          throw new Error(`Type d’étape Garmin non supporté: ${st.stepType || 'inconnu'}`);
+        }
 
         let duration: any;
         if (st.durationSeconds) {
           duration = new TimeDuration(st.durationSeconds);
-        } else if (st.durationMeters) {
-          duration = new DistanceDuration(st.durationMeters);
+        } else if (st.distanceMeters) {
+          duration = new DistanceDuration(st.distanceMeters);
         } else {
           duration = new LapPressDuration();
         }
