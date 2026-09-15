@@ -177,6 +177,11 @@ describe('Garmin Auto-Sync Service', () => {
     expect(sigInitial).not.toBe(sigAdapted);
   });
 
+  it('includes the Garmin workout definition version in sync signatures', () => {
+    const event = createMockEvent({ id: 'versioned-workout' });
+    expect(computeWorkoutSyncSignature(event)).toContain('recovery-2min-v1::versioned-workout');
+  });
+
   it('syncs only changed workouts and skips already synced ones', async () => {
     // Mock credentials
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({

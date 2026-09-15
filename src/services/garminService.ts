@@ -26,6 +26,8 @@ const GARMIN_STATE_KEY = STORAGE_KEYS.GARMIN_STATE;
 const GARMIN_CREDS_KEY = STORAGE_KEYS.GARMIN_CREDS;
 export const GARMIN_WORKOUT_TARGET_MODE_KEY = 'garmin_workout_target_mode';
 export const GARMIN_ATHLETE_BASE_PACE_KEY = 'garmin_athlete_base_pace';
+// Bump when the generated Garmin step structure changes so existing workouts are re-synced.
+export const GARMIN_WORKOUT_DEFINITION_VERSION = 'recovery-2min-v1';
 
 export function getGarminWorkoutTargetMode(): GarminWorkoutTargetMode {
   try {

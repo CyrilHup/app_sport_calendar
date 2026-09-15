@@ -1,6 +1,12 @@
 import { CalendarEvent } from '../types/calendar';
 import { WorkoutPushResult } from '../types/garmin';
-import { loadGarminCredentials, loadGarminCredentialsAsync, pushWorkoutToGarmin, cleanDuplicateGarminWorkouts } from './garminService';
+import {
+  GARMIN_WORKOUT_DEFINITION_VERSION,
+  loadGarminCredentials,
+  loadGarminCredentialsAsync,
+  pushWorkoutToGarmin,
+  cleanDuplicateGarminWorkouts
+} from './garminService';
 
 
 export const GARMIN_AUTO_SYNC_ENABLED_KEY = 'sport_calendar_garmin_auto_sync_enabled';
@@ -61,7 +67,7 @@ export function computeWorkoutSyncSignature(event: CalendarEvent): string {
   const adapted = event.metadata?.isAdapted ? '1' : '0';
   const elev = event.metadata?.targetElevationM || 0;
   const originalDate = event.metadata?.originalDate || '';
-  return `${event.id}::${dateStr}::${dur}::${sport}::${adapted}::${elev}::${originalDate}`;
+  return `${GARMIN_WORKOUT_DEFINITION_VERSION}::${event.id}::${dateStr}::${dur}::${sport}::${adapted}::${elev}::${originalDate}`;
 }
 
 /**
