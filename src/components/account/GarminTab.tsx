@@ -8,7 +8,6 @@ import {
   parseGPXString,
   saveGarminCredentials,
   syncWithGarminAPI,
-  cleanDuplicateGarminWorkouts,
   getGarminWorkoutTargetMode,
   setGarminWorkoutTargetMode
 } from '../../services/garminService';
@@ -22,7 +21,6 @@ import {
   FileUp,
   Gauge,
   RefreshCw,
-  Trash2,
   Watch
 } from 'lucide-react';
 import { useManagedTimeout } from '../../hooks/useManagedTimeout';
@@ -64,8 +62,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.password);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => isGarminAutoSyncEnabled());
   const [targetMode, setTargetMode] = useState<GarminWorkoutTargetMode>(() => getGarminWorkoutTargetMode());
-  const [isCleaningDuplicates, setIsCleaningDuplicates] = useState<boolean>(false);
-  const [cleanDuplicatesMsg, setCleanDuplicatesMsg] = useState<{ text: string; isError?: boolean } | null>(null);
 
   useEffect(() => {
     if (user?.user_metadata?.garmin_email) {
@@ -159,28 +155,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       text: 'Identifiants Garmin dissociés.',
       isError: false
     });
-  };
-
-  const handleCleanDuplicates = async () => {
-    setIsCleaningDuplicates(true);
-    setCleanDuplicatesMsg(null);
-    try {
-      const res = await cleanDuplicateGarminWorkouts();
-      if (res.success) {
-        setCleanDuplicatesMsg({
-          text: res.deletedCount > 0
-            ? `✅ ${res.deletedCount} entraînement(s) en double supprimé(s) sur Garmin Connect !`
-            : '✨ Aucun doublon sur votre compte Garmin.'
-        });
-      } else {
-        setCleanDuplicatesMsg({ text: res.error || res.message, isError: true });
-      }
-    } catch (err: any) {
-      setCleanDuplicatesMsg({ text: err.message || 'Erreur lors du nettoyage.', isError: true });
-    } finally {
-      setIsCleaningDuplicates(false);
-      scheduleTimeout(() => setCleanDuplicatesMsg(null), 5000);
-    }
   };
 
   const handleGPXUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -540,7 +514,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
         </div>
       </div>
 
-      {/* Outils & Entretien (Nettoyage des doublons & Import GPX) */}
+      {/* Import manuel d’activité GPX */}
       <div
         style={{
           background: 'rgba(255, 255, 255, 0.02)',
@@ -553,50 +527,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
-              Nettoyage des entraînements
-            </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-              Supprime les doublons éventuels sur Garmin Connect
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={handleCleanDuplicates}
-            disabled={isCleaningDuplicates || isGarminProcessing}
-            className="btn-secondary"
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.74rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              color: '#fca5a5',
-              borderColor: 'rgba(239, 68, 68, 0.35)',
-              background: 'rgba(239, 68, 68, 0.08)'
-            }}
-          >
-            <Trash2 size={12} className={isCleaningDuplicates ? 'spin-animation' : ''} />
-            <span>{isCleaningDuplicates ? 'Nettoyage...' : 'Purger les doublons'}</span>
-          </button>
-        </div>
-
-        {cleanDuplicatesMsg && (
-          <div
-            style={{
-              fontSize: '0.74rem',
-              color: cleanDuplicatesMsg.isError ? '#f87171' : '#34d399',
-              background: cleanDuplicatesMsg.isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-              padding: '6px 10px',
-              borderRadius: 4
-            }}
-          >
-            {cleanDuplicatesMsg.text}
-          </div>
-        )}
-
-        <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
               Import manuel d'activité

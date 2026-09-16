@@ -4,11 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { classifyGarminActivityType } from '../src/services/activityClassifier';
-import {
-  areWorkoutsEquivalent,
-  hasGarminEmojiOrSpecialSymbols,
-  normalizeWorkoutTitleForMatching
-} from '../src/services/garminDeduplication';
 import { sanitizeGarminText } from '../src/services/garminText';
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
 import { validateGarminRequest } from '../src/server/garminRequest';
@@ -322,85 +317,6 @@ export default async function handler(req: any, res: any) {
         message: `Séance "${workout.title}" créée et programmée avec succès sur votre Garmin !`
       });
       return;
-    }
-
-    // ----------------------------------------------------
-    // ACTION: CLEAN DUPLICATE WORKOUTS ON GARMIN CONNECT
-    // ----------------------------------------------------
-    if (action === 'clean-duplicates') {
-      try {
-        const workouts: any[] = await gc.getWorkouts(1, 100);
-        if (!Array.isArray(workouts) || workouts.length === 0) {
-          res.status(200).json({
-            success: true,
-            deletedCount: 0,
-            deletedNames: [],
-            message: 'Aucun entraînement trouvé sur votre compte Garmin.'
-          });
-          return;
-        }
-
-        const groups: Array<{ canonicalTitle: string; workouts: any[] }> = [];
-        for (const w of workouts) {
-          const title = w.workoutName || '';
-          const matchGroup = groups.find(g => areWorkoutsEquivalent(g.canonicalTitle, title));
-          if (matchGroup) {
-            matchGroup.workouts.push(w);
-          } else {
-            groups.push({ canonicalTitle: title, workouts: [w] });
-          }
-        }
-
-        let deletedCount = 0;
-        const deletedNames: string[] = [];
-
-        for (const group of groups) {
-          if (group.workouts.length <= 1) continue;
-
-          // Trier: sans émojis d'abord, puis date la plus récente, puis ID le plus élevé
-          const sorted = [...group.workouts].sort((a, b) => {
-            const aEmoji = hasGarminEmojiOrSpecialSymbols(a.workoutName);
-            const bEmoji = hasGarminEmojiOrSpecialSymbols(b.workoutName);
-            if (aEmoji !== bEmoji) return aEmoji ? 1 : -1;
-
-            const aTime = a.updateDate ? new Date(a.updateDate).getTime() : 0;
-            const bTime = b.updateDate ? new Date(b.updateDate).getTime() : 0;
-            if (aTime !== bTime) return bTime - aTime;
-
-            const aId = parseInt(String(a.workoutId) || '0', 10);
-            const bId = parseInt(String(b.workoutId) || '0', 10);
-            return bId - aId;
-          });
-
-          // Garder le premier (le plus propre/récent), supprimer tous les autres
-          const toDelete = sorted.slice(1);
-          for (const d of toDelete) {
-            try {
-              await gc.deleteWorkout({ workoutId: String(d.workoutId) });
-              deletedCount++;
-              deletedNames.push(d.workoutName);
-            } catch (delErr) {
-              console.warn(`Could not delete duplicate workout ${d.workoutId}:`, delErr);
-            }
-          }
-        }
-
-        res.status(200).json({
-          success: true,
-          deletedCount,
-          deletedNames,
-          message: deletedCount > 0
-            ? `${deletedCount} entraînement${deletedCount > 1 ? 's' : ''} en double supprimé${deletedCount > 1 ? 's' : ''} de votre compte Garmin Connect !`
-            : 'Aucun doublon détecté sur votre compte Garmin.'
-        });
-        return;
-      } catch (cleanErr: any) {
-        res.status(500).json({
-          success: false,
-          error: cleanErr?.message || 'Erreur lors du nettoyage des doublons Garmin.'
-        });
-        return;
-      }
     }
 
     // ----------------------------------------------------

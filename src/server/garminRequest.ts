@@ -1,6 +1,6 @@
 import { MAX_FULL_SYNC_ACTIVITIES } from './garminPagination';
 
-export type GarminAction = 'sync' | 'push-workout' | 'get-wellness' | 'clean-duplicates';
+export type GarminAction = 'sync' | 'push-workout' | 'get-wellness';
 export type GarminSyncMode = 'full' | 'incremental';
 
 export interface ValidatedGarminRequest {
@@ -28,7 +28,7 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
   }
   const body = input as Record<string, unknown>;
   const action = body.action ?? 'sync';
-  if (action !== 'sync' && action !== 'push-workout' && action !== 'get-wellness' && action !== 'clean-duplicates') {
+  if (action !== 'sync' && action !== 'push-workout' && action !== 'get-wellness') {
     throw new Error('Action Garmin non reconnue.');
   }
   const syncMode = body.syncMode ?? body.mode ?? 'incremental';

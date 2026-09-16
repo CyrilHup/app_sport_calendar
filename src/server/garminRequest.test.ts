@@ -33,4 +33,8 @@ describe('validateGarminRequest', () => {
     expect(validateGarminRequest({ ...request, workout: { ...request.workout, replaceWorkoutId: '123' } }).workout?.replaceWorkoutId).toBe('123');
     expect(() => validateGarminRequest({ ...request, workout: { ...request.workout, replaceWorkoutId: 'old-workout' } })).toThrow('Identifiant');
   });
+
+  it('rejects the retired fuzzy duplicate-cleanup action', () => {
+    expect(() => validateGarminRequest({ action: 'clean-duplicates' })).toThrow('Action Garmin');
+  });
 });

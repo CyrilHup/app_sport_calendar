@@ -42,6 +42,14 @@ in `src/services/garminAutoSyncService.ts`.
 - Garmin passwords are session-only. The server caches user-scoped OAuth tokens
   for at most 24 hours in owner-readable files. It never automatically deletes
   older Garmin workouts by fuzzy title matching during a push.
+- Confirmed workout pushes store the exact Garmin workout ID. If the workout
+  definition changes, the server verifies that ID and its app prefix, schedules
+  the replacement, then deletes only that previous ID. If deletion fails it
+  rolls back the new workout; ambiguous failures stop automatic retries for
+  manual review. Older sync records without an ID are left untouched.
+- The former manual duplicate-purge button and title-similarity deletion
+  endpoint were removed. Duplicate prevention belongs to the ID-based sync
+  path, not a separate destructive cleanup path.
 - Garmin activity synchronization no longer sends workouts from a potentially
   stale calendar in the account tab. The central refresh rebuilds the plan first,
   then passes the same athlete profile used for the UI preview into workout push.
@@ -64,11 +72,8 @@ in `src/services/garminAutoSyncService.ts`.
 - `api/garmin-sync.ts`, `CalendarView.tsx`, `StatsDashboard.tsx`, and several other
   views are still large and need feature-level decomposition with integration tests.
 - Garmin Connect's installed client library has create/delete/schedule operations
-  but no supported update operation. Definition changes now invalidate local
-  signatures. Automatic replacement of legacy scheduled workouts is suspended
-  because their sync records do not store a Garmin ID; re-creating them would
-  make duplicates. A safe ID-based replacement and migration of old records
-  remain to be designed; do not use fuzzy-name deletion as a substitute.
+  but no supported update operation. Legacy scheduled workouts without an exact
+  stored Garmin ID still need manual handling; they are never guessed by title.
 - The QMT training prescription, simulator, and several physiological thresholds
   remain race/athlete-specific. They must be separated from reusable scheduling
   logic before claiming the app is configurable for arbitrary races or athletes.

@@ -13,7 +13,6 @@ import { sanitizeGarminText } from './garminText';
 import { AthleteHeartRateZones, calculateHeartRateZones } from './heartRateZones';
 export type { AthleteHeartRateZones } from './heartRateZones';
 export * from './activityClassifier';
-export * from './garminDeduplication';
 export * from './garminText';
 export { parseGPXString } from './gpxParser';
 import { getApiUrl } from './apiConfig';
@@ -1221,66 +1220,6 @@ export async function fetchGarminWellness(): Promise<{ success: boolean; wellnes
     return {
       success: false,
       error: err.message || 'Erreur réseau lors de la récupération des données santé Garmin.'
-    };
-  }
-}
-
-/**
- * Nettoie les entraînements en double sur Garmin Connect (anciennes versions avec émojis ou doublons de synchronisation).
- */
-export async function cleanDuplicateGarminWorkouts(): Promise<{
-  success: boolean;
-  deletedCount: number;
-  deletedNames?: string[];
-  message: string;
-  error?: string;
-}> {
-  try {
-    const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
-    const response = await fetch(getApiUrl('/api/garmin-sync'), {
-      method: 'POST',
-      headers: await getGarminApiHeaders(),
-      body: JSON.stringify({
-        email: creds?.email,
-        password: creds?.password,
-        action: 'clean-duplicates'
-      })
-    });
-
-    let data: any;
-    const responseText = await response.text();
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      return {
-        success: false,
-        deletedCount: 0,
-        message: 'Réponse non-JSON reçue du serveur.',
-        error: `Code HTTP ${response.status}`
-      };
-    }
-
-    if (!response.ok || !data?.success) {
-      return {
-        success: false,
-        deletedCount: 0,
-        message: data?.error || 'Erreur lors du nettoyage des doublons Garmin.',
-        error: data?.error
-      };
-    }
-
-    return {
-      success: true,
-      deletedCount: data.deletedCount || 0,
-      deletedNames: data.deletedNames || [],
-      message: data.message || `${data.deletedCount || 0} doublons supprimés.`
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      deletedCount: 0,
-      message: err?.message || 'Erreur réseau lors du nettoyage des doublons Garmin.',
-      error: err?.message
     };
   }
 }
