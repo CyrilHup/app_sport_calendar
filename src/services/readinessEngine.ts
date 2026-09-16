@@ -13,12 +13,45 @@ export function loadWellnessHistory(): Record<string, GarminWellnessData> {
   return storageGet<Record<string, GarminWellnessData>>(WELLNESS_STORAGE_KEY, {});
 }
 
+function definedFields<T extends object>(value: T | undefined): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value || {}).filter(([, field]) => field !== undefined && field !== null)
+  ) as Partial<T>;
+}
+
+/** Resolve cloud/local copies by sync time without losing fields from a partial response. */
+export function mergeWellnessData(
+  existing: GarminWellnessData,
+  incoming: GarminWellnessData
+): GarminWellnessData {
+  if (existing.date !== incoming.date) {
+    throw new Error('Cannot merge wellness records from different dates.');
+  }
+  const existingTime = Date.parse(existing.syncedAt) || 0;
+  const incomingTime = Date.parse(incoming.syncedAt) || 0;
+  const [older, newer] = incomingTime >= existingTime
+    ? [existing, incoming]
+    : [incoming, existing];
+  return {
+    ...definedFields(older),
+    ...definedFields(newer),
+    sleep: older.sleep || newer.sleep
+      ? { ...definedFields(older.sleep), ...definedFields(newer.sleep) } as GarminWellnessData['sleep']
+      : undefined,
+    hrv: older.hrv || newer.hrv
+      ? { ...definedFields(older.hrv), ...definedFields(newer.hrv) } as GarminWellnessData['hrv']
+      : undefined,
+    date: existing.date,
+    syncedAt: newer.syncedAt
+  };
+}
+
 /**
  * Persists a day's Garmin wellness data.
  */
 export function saveWellnessData(data: GarminWellnessData): void {
   const history = loadWellnessHistory();
-  history[data.date] = data;
+  history[data.date] = history[data.date] ? mergeWellnessData(history[data.date], data) : data;
   storageSet(WELLNESS_STORAGE_KEY, history);
 }
 
