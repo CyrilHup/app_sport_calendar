@@ -20,13 +20,15 @@ import { WeeklyStatsSummary } from '../services/comparisonEngine';
 import { AccountModalTab } from './AccountModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { getWellnessForDate, calculateReadinessScore } from '../services/readinessEngine';
-import { formatDateKey, getGarminLocalDateKey } from '../services/dateUtils';
-import { loadStoredGarminActivities } from '../services/garminService';
+import { formatDateKey } from '../services/dateUtils';
+import { selectDayActivityContext } from '../services/daySelectors';
 import { GarminActivity } from '../types/garmin';
 
 export type MainNavTab = 'calendar' | 'compare' | 'stats' | 'periodization';
 
 interface SidebarProps {
+  raceName: string;
+  raceDate: string;
   currentTab: MainNavTab;
   onChangeTab: (tab: MainNavTab) => void;
   periodContext: PeriodizationContext;
@@ -46,13 +48,15 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  raceName,
+  raceDate,
   currentTab,
   onChangeTab,
   periodContext,
   garminState,
   weeklyStats,
   comparisons = [],
-  garminActivities,
+  garminActivities = [],
   referenceDate,
   referenceDateStr,
   onOpenAccountModal,
@@ -63,26 +67,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userAvatarUrl,
   isLoggedIn
 }) => {
+  const raceLabel = raceName.match(/\(([^)]+)\)/)?.[1] || raceName;
+  const formattedRaceDate = new Date(`${raceDate}T12:00:00`).toLocaleDateString('fr-CA', {
+    day: 'numeric', month: 'long', year: 'numeric'
+  });
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
     : 'Direct';
 
   const todayStr = referenceDateStr || (referenceDate ? formatDateKey(referenceDate) : formatDateKey(new Date()));
   const todayWellness = getWellnessForDate(todayStr);
-  const todayComparisons = comparisons.filter(c => c.date === todayStr);
-  const isTodaySessionCompleted = todayComparisons.some(
-    c => (c.status === 'COMPLIANT' || c.status === 'PARTIAL') && c.plannedEvent?.category === 'sport'
+  const todayContext = selectDayActivityContext(todayStr, garminActivities, comparisons);
+  const readiness = calculateReadinessScore(
+    todayWellness,
+    undefined,
+    todayContext.activities,
+    todayContext.isPlannedSessionCompleted
   );
-
-  const allStoredActs = (garminActivities && garminActivities.length > 0)
-    ? garminActivities
-    : loadStoredGarminActivities();
-  const todayGarminActs = allStoredActs.filter(a => getGarminLocalDateKey(a) === todayStr);
-  const todayActs = todayGarminActs.length > 0
-    ? todayGarminActs
-    : todayComparisons.filter(c => Boolean(c.actualActivity)).map(c => c.actualActivity!);
-
-  const readiness = calculateReadinessScore(todayWellness, undefined, todayActs, isTodaySessionCompleted);
 
   const formatHoursMin = (mins: number) => {
     const h = Math.floor(mins / 60);
@@ -109,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'periodization',
-      label: 'Plan QMT-80',
+      label: `Plan ${raceLabel}`,
       icon: <TrendingUp size={18} />
     }
   ];
@@ -124,12 +125,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <div className="sidebar-brand-text">
             <div className="sidebar-brand-row">
-              <span className="sidebar-brand-title">QMT-80</span>
-              <span className="sidebar-countdown-chip" title={`Départ le 3 Juillet 2027 (${periodContext.daysToRace} jours restants)`}>
+              <span className="sidebar-brand-title">{raceLabel}</span>
+              <span className="sidebar-countdown-chip" title={`Départ le ${formattedRaceDate} (${periodContext.daysToRace} jours restants)`}>
                 <Flame size={12} /> J-{periodContext.daysToRace}
               </span>
             </div>
-            <span className="sidebar-brand-specs">77 KM • +3 370M D+</span>
+            <span className="sidebar-brand-specs">{raceName}</span>
           </div>
         </div>
       </div>

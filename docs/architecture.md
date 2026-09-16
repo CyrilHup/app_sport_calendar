@@ -1,0 +1,73 @@
+# Data flow and ownership
+
+The application has three external inputs: an academic iCal feed, Garmin Connect,
+and Supabase. A calendar refresh is coordinated by `src/services/asyncCoordinator.ts`
+and `src/App.tsx`; simultaneous refresh triggers coalesce into one active run and
+one latest rerun. Garmin workout pushes have their own latest-request coordinator
+in `src/services/garminAutoSyncService.ts`.
+
+## Calendar
+
+1. `api/ets-ical.ts` fetches the configured or authenticated user's iCal URL.
+   `src/server/icalFeedClient.ts` validates the URL and redirects.
+2. `src/services/icsParser.ts` parses courses and builds the base academic/training
+   calendar using an immutable `AppConfig` snapshot from
+   `src/services/periodizationEngine.ts`.
+3. `src/App.tsx` derives the visible calendar by applying postponements and
+   adaptive changes to the base calendar. These derived events are not stored as
+   a second mutable React state.
+4. The same window helper and iCal serializer serve UI downloads and the public
+   subscription endpoint. The subscription endpoint uses server configuration,
+   not an individual user's profile URL.
+
+## Activities and comparisons
+
+1. Garmin and GPX records merge through `src/services/activityRepository.ts`.
+   `activityId` is the identity key; richer records win, with the later source
+   breaking ties.
+2. `garminActivities` in `App.tsx` is the UI's canonical activity collection.
+   Components receive that collection and use `daySelectors.ts` for day views.
+3. Workout comparisons and transformed schedules are derived from the canonical
+   inputs. Local/cloud settings use per-domain update timestamps to decide which
+   copy wins, including when the winning value is empty.
+4. Pure physiological calculations accept activities and athlete parameters.
+   `getStoredAthleteProfile()` is the storage-facing Garmin adapter. The plan
+   and Garmin workout builder share Karvonen zone boundaries from
+   `heartRateZones.ts`; the app feeds the plan its latest resting-HR baseline.
+   Comparisons, weekly telemetry, day cards, and workout details receive the
+   same athlete parameters instead of independently choosing a default FCmax.
+
+## Boundaries and operational notes
+
+- Garmin passwords are session-only. The server caches user-scoped OAuth tokens
+  for at most 24 hours in owner-readable files. It never automatically deletes
+  older Garmin workouts by fuzzy title matching during a push.
+- A full Garmin history sync requests bounded batches of up to two 100-activity
+  pages per server call. The client follows `nextOffset`, persists each successful
+  page, and reports an error instead of silently treating a timed-out page as
+  complete history. A 5,000-activity safety limit is reported as incomplete,
+  never as a successful full sync.
+- `ICAL_FEED_URL` is a server-only variable; do not use a `VITE_` prefix for a URL
+  containing a private calendar token.
+- `api/calendar.ts` is a public feed. It should not be used to publish a private
+  academic schedule unless that exposure is intentional.
+- Supabase settings migration is in `supabase_schema.sql`. The API and browser
+  code have separate TypeScript checks via `npm run typecheck`.
+
+## Remaining work
+
+- Local activity, wellness, and override storage is intentionally shared on one
+  device because this is a personal-use app, not a multi-account product.
+- `api/garmin-sync.ts`, `CalendarView.tsx`, `StatsDashboard.tsx`, and several other
+  views are still large and need feature-level decomposition with integration tests.
+- Garmin Connect's installed client library has create/delete/schedule operations
+  but no supported update operation. Definition changes now invalidate local
+  signatures. Automatic replacement of legacy scheduled workouts is suspended
+  because their sync records do not store a Garmin ID; re-creating them would
+  make duplicates. A safe ID-based replacement and migration of old records
+  remain to be designed; do not use fuzzy-name deletion as a substitute.
+- The QMT training prescription, simulator, and several physiological thresholds
+  remain race/athlete-specific. They must be separated from reusable scheduling
+  logic before claiming the app is configurable for arbitrary races or athletes.
+- The public subscription feed does not mirror per-user profile settings; a
+  user-specific subscription model needs an explicit privacy design.

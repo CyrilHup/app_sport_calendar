@@ -10,10 +10,9 @@ import {
 } from '../services/statsEngine';
 import { StatsMetricModal, StatsMetricTopic } from './StatsMetricModal';
 import { StatsEvolutionModal, EvolutionMetricType } from './StatsEvolutionModal';
-import { useAuth } from '../contexts/AuthContext';
-import { getBaselineRestingHeartRate, getLatestWellnessData, loadWellnessHistory } from '../services/readinessEngine';
+import { getLatestWellnessData, loadWellnessHistory } from '../services/readinessEngine';
 import { computeDynamicAthleteBasePace } from '../services/garminService';
-import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
+import { AppConfig, GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import {
   Activity,
   Award,
@@ -44,13 +43,15 @@ interface StatsDashboardProps {
   allEvents: CalendarEvent[];
   referenceDate?: Date;
   onOpenGarminSync?: () => void;
+  config?: Readonly<AppConfig>;
 }
 
 export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   garminActivities,
   comparisons,
   allEvents,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  config = GLOBAL_APP_CONFIG
 }) => {
   // Timeline scope selector: 'plan' (default 1er sept.), '4w' (28j glissants), 'all' (historique complet)
   const [scope, setScope] = useState<TimeRangeScope>('plan');
@@ -61,10 +62,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   const [evolutionMetric, setEvolutionMetric] = useState<EvolutionMetricType | null>(null);
   const weeklyChartCardRef = useRef<HTMLDivElement>(null);
 
-  const { profile } = useAuth();
-  const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+  const athleteFcMax = config.ATHLETE_FC_MAX;
+  const raceName = config.RACE_NAME;
+  const planStartLabel = new Date(`${config.SPORT_START_DATE}T00:00:00`)
+    .toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' });
   const latestWellness = getLatestWellnessData();
-  const baselineRhr = getBaselineRestingHeartRate();
+  const baselineRhr = config.ATHLETE_FC_REST;
   const restingHrValue = latestWellness?.restingHeartRate || baselineRhr;
   const dynamicBasePace = computeDynamicAthleteBasePace(garminActivities);
   const wellnessHistory = loadWellnessHistory();
@@ -77,7 +80,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
     allEvents,
     scope,
     referenceDate,
-    true
+    true,
+    { fcMax: athleteFcMax, fcRest: baselineRhr }
   );
 
   const { global, running, strength, heartRate, trainingLoad, trailSpecific, qmtPrediction } = report;
@@ -140,7 +144,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               {scope === 'week'
                 ? '📅 Microcycle actif (Cette semaine)'
                 : (scope === 'plan'
-                  ? '🎯 Plan QMT actif (Depuis le 1er sept.)'
+                  ? `🎯 Plan ${raceName} actif (depuis le ${planStartLabel})`
                   : (scope === '4w' ? '📅 4 dernières semaines glissantes' : '🌐 Tout l\'historique'))}
             </span>
           </div>
@@ -151,7 +155,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             {scope === 'week'
               ? `Sur la semaine en cours : ${global.totalSessionsCount} sortie${global.totalSessionsCount > 1 ? 's' : ''} de course réalisée${global.totalSessionsCount > 1 ? 's' : ''} (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
               : (scope === 'plan'
-                ? `Sur le plan QMT : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
+                ? `Sur le plan ${raceName} : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
                 : (scope === '4w'
                   ? `Sur les 28 derniers jours : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
                   : `Cumul historique complet : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`))}
@@ -199,9 +203,9 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               color: scope === 'plan' ? '#ffffff' : 'var(--text-secondary)',
               transition: 'all 0.15s ease'
             }}
-            title="Focalisé sur la préparation officielle démarrée le 1er septembre 2026"
+            title={`Focalisé sur la préparation démarrée le ${planStartLabel}`}
           >
-            🎯 Plan QMT (1er sept.)
+            🎯 Plan {raceName}
           </button>
           <button
             onClick={() => setScope('4w')}
@@ -259,7 +263,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Volume Course & Trail</span>
               <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
-                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique'))}
+                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? `Plan ${raceName}` : (scope === '4w' ? '4 sem.' : 'Historique'))}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -323,7 +327,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span className="kpi-title">Course à Pied & Sentiers</span>
               <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
-                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? 'Plan QMT' : (scope === '4w' ? '4 sem.' : 'Historique'))}
+                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? `Plan ${raceName}` : (scope === '4w' ? '4 sem.' : 'Historique'))}
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

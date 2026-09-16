@@ -83,8 +83,20 @@ CREATE POLICY "Spectators can read public activities"
 CREATE TABLE IF NOT EXISTS public.user_settings (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
   manual_pairs JSONB DEFAULT '{}'::jsonb,
+  adaptive_overrides JSONB DEFAULT '{}'::jsonb,
+  postpone_overrides JSONB DEFAULT '{}'::jsonb,
+  manual_pairs_updated_at TIMESTAMPTZ,
+  adaptive_overrides_updated_at TIMESTAMPTZ,
+  postpone_overrides_updated_at TIMESTAMPTZ,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Idempotent migration for databases created by earlier releases.
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS adaptive_overrides JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS postpone_overrides JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS manual_pairs_updated_at TIMESTAMPTZ;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS adaptive_overrides_updated_at TIMESTAMPTZ;
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS postpone_overrides_updated_at TIMESTAMPTZ;
 
 -- Activation RLS sur user_settings
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;

@@ -1,5 +1,8 @@
 import { CalendarEvent } from '../types/calendar';
-import { STORAGE_KEYS } from './storageService';
+import { STORAGE_KEYS, storageGet, storageGetRaw, storageSet, storageSetRaw } from './storageService';
+import { generateICSContent } from './icsSerializer';
+
+export { generateICSContent } from './icsSerializer';
 
 const GCAL_STORAGE_MAP_KEY = STORAGE_KEYS.GCAL_EVENT_MAP;
 const GCAL_CLIENT_ID_KEY = STORAGE_KEYS.GCAL_CLIENT_ID;
@@ -9,70 +12,6 @@ export interface GCalSyncProgress {
   current: number;
   status: 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR';
   message: string;
-}
-
-// Generate RFC 5545 compliant iCalendar string for 1-click import or subscription
-export function generateICSContent(events: CalendarEvent[]): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-
-  const formatICSDate = (isoStr: string): string => {
-    const d = new Date(isoStr);
-    return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`;
-  };
-
-  const lines: string[] = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//QMT-80 Ultra-Trail Hub//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'X-WR-CALNAME:QMT-80 & ÉTS Schedule',
-    'X-WR-TIMEZONE:America/Toronto',
-    'X-WR-CALDESC:Dynamic Ultra-Trail training and ÉTS schedule synced from QMT-80 Performance Hub'
-  ];
-
-  const nowStamp = formatICSDate(new Date().toISOString());
-
-  for (const ev of events) {
-    lines.push('BEGIN:VEVENT');
-    lines.push(`UID:${ev.id.replace(/[^a-zA-Z0-9_-]/g, '_')}@qmt80-hub`);
-    lines.push(`DTSTAMP:${nowStamp}`);
-    lines.push(`DTSTART:${formatICSDate(ev.startDate)}`);
-    lines.push(`DTEND:${formatICSDate(ev.endDate)}`);
-    lines.push(`SUMMARY:${escapeICS(ev.title)}`);
-
-    let fullDesc = ev.description || '';
-    if (ev.metadata?.targetHeartRate) {
-      fullDesc += `\nTarget HR: ${ev.metadata.targetHeartRate}`;
-    }
-    if (ev.metadata?.targetElevationM) {
-      fullDesc += `\nTarget Elevation D+: +${ev.metadata.targetElevationM}m`;
-    }
-    if (ev.metadata?.nutritionAdvice) {
-      fullDesc += `\nFueling: ${ev.metadata.nutritionAdvice}`;
-    }
-    if (ev.metadata?.room) {
-      fullDesc += `\nRoom: ${ev.metadata.room}`;
-    }
-
-    lines.push(`DESCRIPTION:${escapeICS(fullDesc)}`);
-    lines.push(`LOCATION:${escapeICS(ev.location)}`);
-    lines.push(`CATEGORIES:${ev.category.toUpperCase()}`);
-    lines.push('STATUS:CONFIRMED');
-    lines.push('TRANSP:OPAQUE');
-    lines.push('END:VEVENT');
-  }
-
-  lines.push('END:VCALENDAR');
-  return lines.join('\r\n');
-}
-
-function escapeICS(str: string): string {
-  return str
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r?\n/g, '\\n');
 }
 
 // 1-Click download of .ics file
@@ -97,8 +36,7 @@ export async function syncDirectToGoogleCalendar(
   onProgress?: (p: GCalSyncProgress) => void
 ): Promise<{ success: boolean; count: number; error?: string }> {
   // Load existing mapped event IDs to update instead of duplicating
-  const storedMapRaw = localStorage.getItem(GCAL_STORAGE_MAP_KEY);
-  const eventMap: Record<string, string> = storedMapRaw ? JSON.parse(storedMapRaw) : {};
+  const eventMap = storageGet<Record<string, string>>(GCAL_STORAGE_MAP_KEY, {});
 
   const total = events.length;
   let synced = 0;
@@ -179,7 +117,7 @@ export async function syncDirectToGoogleCalendar(
       }
     }
 
-    localStorage.setItem(GCAL_STORAGE_MAP_KEY, JSON.stringify(eventMap));
+    storageSet(GCAL_STORAGE_MAP_KEY, eventMap);
 
     if (onProgress) {
       onProgress({
@@ -204,15 +142,13 @@ export async function syncDirectToGoogleCalendar(
   }
 }
 
-const DEFAULT_GOOGLE_CLIENT_ID = '327072674404-1h805jh4loejfkqjgbjpma8gdcep1iaq.apps.googleusercontent.com';
-
 export function getStoredGCalClientId(): string {
-  const envKey = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || (globalThis as any).process?.env?.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID;
-  return localStorage.getItem(GCAL_CLIENT_ID_KEY) || envKey;
+  const envKey = (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || (globalThis as any).process?.env?.VITE_GOOGLE_CLIENT_ID || '';
+  return storageGetRaw(GCAL_CLIENT_ID_KEY) || envKey;
 }
 
 export function saveGCalClientId(clientId: string): void {
-  localStorage.setItem(GCAL_CLIENT_ID_KEY, clientId.trim());
+  storageSetRaw(GCAL_CLIENT_ID_KEY, clientId.trim());
 }
 
 /**
@@ -285,4 +221,3 @@ export async function triggerGoogleCalendarOAuthSync(
     }
   });
 }
-

@@ -134,7 +134,8 @@ export function getDisciplineMetadata(discipline: SportDiscipline): { label: str
  */
 export function buildPlannedSportItem(
   event: CalendarEvent,
-  comparison?: ActivityComparison | null
+  comparison?: ActivityComparison | null,
+  athlete?: { fcMax?: number; fcRest?: number }
 ): SportActivityItem {
   const isDone = Boolean(comparison?.actualActivity && (comparison.status === 'COMPLIANT' || comparison.status === 'PARTIAL'));
   const act = isDone ? comparison?.actualActivity : undefined;
@@ -150,7 +151,7 @@ export function buildPlannedSportItem(
   if (isDone) itemType = 'PLANNED_COMPLETED';
   else if (comparison?.status === 'MISSED') itemType = 'PLANNED_MISSED';
 
-  const profile = getDynamicAthleteProfile();
+  const profile = getDynamicAthleteProfile(act ? [act] : [], athlete);
   const trimpInfo = act
     ? calculateSessionTrimp(act.durationMinutes, act.activityType, act.activityName, act.trainingLoad, {
         avgHeartRate: act.avgHeartRate,
@@ -198,7 +199,10 @@ export function buildPlannedSportItem(
 /**
  * Construit un item standardisé pour une séance reportée et réalisée (catchup).
  */
-export function buildCatchupSportItem(comp: ActivityComparison): SportActivityItem | null {
+export function buildCatchupSportItem(
+  comp: ActivityComparison,
+  athlete?: { fcMax?: number; fcRest?: number }
+): SportActivityItem | null {
   const ev = comp.plannedEvent;
   const act = comp.actualActivity;
   if (!ev) return null;
@@ -211,7 +215,7 @@ export function buildCatchupSportItem(comp: ActivityComparison): SportActivityIt
   const elapsedDur = act?.elapsedDurationMinutes || act?.durationMinutes || ev.durationMinutes;
   const actEnd = actStart ? new Date(actStart.getTime() + elapsedDur * 60000) : undefined;
 
-  const profile = getDynamicAthleteProfile();
+  const profile = getDynamicAthleteProfile(act ? [act] : [], athlete);
   const trimpInfo = act
     ? calculateSessionTrimp(act.durationMinutes, act.activityType, act.activityName, act.trainingLoad, {
         avgHeartRate: act.avgHeartRate,
@@ -259,7 +263,10 @@ export function buildCatchupSportItem(comp: ActivityComparison): SportActivityIt
 /**
  * Construit un item standardisé pour une activité Garmin non planifiée (Bonus).
  */
-export function buildUnplannedSportItem(comp: ActivityComparison): SportActivityItem | null {
+export function buildUnplannedSportItem(
+  comp: ActivityComparison,
+  athlete?: { fcMax?: number; fcRest?: number }
+): SportActivityItem | null {
   const act = comp.actualActivity;
   if (!act) return null;
 
@@ -270,7 +277,7 @@ export function buildUnplannedSportItem(comp: ActivityComparison): SportActivity
   const elapsedDur = act.elapsedDurationMinutes || act.durationMinutes;
   const actEnd = actStart ? new Date(actStart.getTime() + elapsedDur * 60000) : undefined;
 
-  const profile = getDynamicAthleteProfile();
+  const profile = getDynamicAthleteProfile([act], athlete);
   const trimpInfo = calculateSessionTrimp(
     act.durationMinutes,
     act.activityType,
@@ -314,7 +321,8 @@ export function buildUnplannedSportItem(comp: ActivityComparison): SportActivity
 export function groupDaySportWorkouts(
   daySportEvents: CalendarEvent[],
   comparisons: ActivityComparison[],
-  dayDate: string
+  dayDate: string,
+  athlete?: { fcMax?: number; fcRest?: number }
 ): UnifiedDayWorkoutGroup[] {
   const rawItems: SportActivityItem[] = [];
 
@@ -330,20 +338,20 @@ export function groupDaySportWorkouts(
       continue;
     }
 
-    rawItems.push(buildPlannedSportItem(ev, comp));
+    rawItems.push(buildPlannedSportItem(ev, comp, athlete));
   }
 
   // 2. Séances de rattrapage exécutées ce jour
   const catchupComps = comparisons.filter(c => c.isPostponedCatchup && c.executedDate === dayDate);
   for (const comp of catchupComps) {
-    const item = buildCatchupSportItem(comp);
+    const item = buildCatchupSportItem(comp, athlete);
     if (item) rawItems.push(item);
   }
 
   // 3. Activités bonus non planifiées ce jour
   const unplannedComps = comparisons.filter(c => c.status === 'UNPLANNED' && c.date === dayDate);
   for (const comp of unplannedComps) {
-    const item = buildUnplannedSportItem(comp);
+    const item = buildUnplannedSportItem(comp, athlete);
     if (item) rawItems.push(item);
   }
 

@@ -12,12 +12,16 @@ export const STORAGE_KEYS = {
   GARMIN_MANUAL_PAIRS: 'garmin_manual_pairs',
   GARMIN_PUSHED_WORKOUTS: 'garmin_pushed_workouts',
   GARMIN_AUTO_SYNC_ENABLED: 'sport_calendar_garmin_auto_sync_enabled',
-  GARMIN_SYNCED_SIGNATURES: 'sport_calendar_garmin_synced_week_signatures',
+  GARMIN_SYNCED_SIGNATURES: 'sport_calendar_garmin_synced_week_signatures_v2',
+  GARMIN_WORKOUT_TARGET_MODE: 'garmin_workout_target_mode',
+  GARMIN_ATHLETE_BASE_PACE: 'garmin_athlete_base_pace',
+  ATHLETE_FC_MAX: 'athlete_fc_max',
 
   // Entraînement et Calendrier
   POSTPONE_OVERRIDES: 'sport_calendar_postponed_workouts',
   ADAPTIVE_OVERRIDES: 'sport_calendar_adaptive_overrides',
   CACHED_ETS_ICS: 'cached_ets_ics',
+  SYNC_METADATA: 'sport_calendar_sync_metadata_v1',
 
   // Télémétrie et Bien-être
   WELLNESS_HISTORY: 'garmin_wellness_history',

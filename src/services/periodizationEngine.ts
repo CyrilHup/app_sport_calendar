@@ -1,39 +1,60 @@
 import { CalendarEvent, PeriodizationContext, SportType } from '../types/calendar';
+import { calculateHeartRateZones } from './heartRateZones';
 
 const getEnvVal = (key: string, fallback: string = ''): string => {
   return (import.meta as any).env?.[key] || (globalThis as any).process?.env?.[key] || fallback;
 };
 
-export const GLOBAL_APP_CONFIG = {
+const getHeartRateEnv = (key: string, fallback: number, min: number, max: number): number => {
+  const value = Number(getEnvVal(key, String(fallback)));
+  return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
+};
+
+export interface AppConfig {
+  HOME_ADDRESS: string;
+  ETS_ADDRESS: string;
+  MOUNT_ROYAL_ADDRESS: string;
+  TRAIL_LOCATION: string;
+  SPORT_START_DATE: string;
+  PLAN_START_DATE: string;
+  RACE_NAME: string;
+  RACE_DATE: string;
+  ATHLETE_FC_MAX: number;
+  ATHLETE_FC_REST: number;
+  TARGET_HOME_RETURN_HOUR: number;
+  TARGET_HOME_RETURN_MIN: number;
+  BUFFER_BEFORE_CLASS_MIN: number;
+  BUFFER_AFTER_CLASS_MIN: number;
+  BUFFER_BETWEEN_CLASS_AND_SPORT_MIN: number;
+  BUFFER_AFTER_CONFLICT_MIN: number;
+  TRANSIT_TIMES: Readonly<{
+    HOME_TO_ETS: number;
+    ETS_TO_HOME: number;
+    HOME_TO_MONT_ROYAL: number;
+    MONT_ROYAL_TO_HOME: number;
+    ETS_TO_MONT_ROYAL: number;
+    MONT_ROYAL_TO_ETS: number;
+    DEFAULT: number;
+  }>;
+}
+
+const DEFAULT_APP_CONFIG: AppConfig = {
   HOME_ADDRESS: getEnvVal('VITE_HOME_ADDRESS', 'Domicile'),
   ETS_ADDRESS: getEnvVal('VITE_CAMPUS_ADDRESS', 'Campus ÉTS'),
   MOUNT_ROYAL_ADDRESS: getEnvVal('VITE_TRAIL_ADDRESS', 'Parc du Mont-Royal'),
   TRAIL_LOCATION: getEnvVal('VITE_TRAIL_LOCATION', 'Mont-Royal'),
   SPORT_START_DATE: getEnvVal('VITE_SPORT_START_DATE', '2026-09-01'),
   PLAN_START_DATE: getEnvVal('VITE_PLAN_START_DATE', '2027-01-11'),
+  RACE_NAME: getEnvVal('VITE_TARGET_RACE_NAME', 'Québec Mega Trail 80 km (QMT-80)'),
   RACE_DATE: getEnvVal('VITE_TARGET_RACE_DATE', '2027-07-03'),
-  ATHLETE_FC_MAX: (() => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const cachedFc = localStorage.getItem('athlete_fc_max');
-        if (cachedFc) {
-          const parsed = parseInt(cachedFc, 10);
-          if (parsed > 140 && parsed < 240) return parsed;
-        }
-        const cachedProfile = localStorage.getItem('athlete_profile');
-        if (cachedProfile) {
-          const parsedProf = JSON.parse(cachedProfile);
-          if (parsedProf.fcMax && parsedProf.fcMax > 140 && parsedProf.fcMax < 240) return parsedProf.fcMax;
-        }
-      }
-    } catch {}
-    return parseInt(getEnvVal('VITE_ATHLETE_FC_MAX', '203'), 10) || 203;
-  })(),
+  ATHLETE_FC_MAX: getHeartRateEnv('VITE_ATHLETE_FC_MAX', 203, 140, 240),
+  ATHLETE_FC_REST: getHeartRateEnv('VITE_ATHLETE_FC_REST', 48, 30, 120),
   TARGET_HOME_RETURN_HOUR: 13,
   TARGET_HOME_RETURN_MIN: 0,
   BUFFER_BEFORE_CLASS_MIN: 10,
   BUFFER_AFTER_CLASS_MIN: 10,
   BUFFER_BETWEEN_CLASS_AND_SPORT_MIN: 10,
+  BUFFER_AFTER_CONFLICT_MIN: 20,
   TRANSIT_TIMES: {
     HOME_TO_ETS: 35,
     ETS_TO_HOME: 35,
@@ -45,16 +66,35 @@ export const GLOBAL_APP_CONFIG = {
   }
 };
 
-export function setAppConfigOverrides(overrides: {
+export const GLOBAL_APP_CONFIG: Readonly<AppConfig> = Object.freeze({
+  ...DEFAULT_APP_CONFIG,
+  TRANSIT_TIMES: Object.freeze({ ...DEFAULT_APP_CONFIG.TRANSIT_TIMES })
+});
+
+export function createAppConfig(overrides: {
   homeAddress?: string;
   campusAddress?: string;
   trailAddress?: string;
   fcMax?: number;
-}): void {
-  if (overrides.homeAddress) GLOBAL_APP_CONFIG.HOME_ADDRESS = overrides.homeAddress;
-  if (overrides.campusAddress) GLOBAL_APP_CONFIG.ETS_ADDRESS = overrides.campusAddress;
-  if (overrides.trailAddress) GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS = overrides.trailAddress;
-  if (overrides.fcMax) GLOBAL_APP_CONFIG.ATHLETE_FC_MAX = overrides.fcMax;
+  fcRest?: number;
+  raceName?: string;
+  raceDate?: string;
+} = {}): Readonly<AppConfig> {
+  const fcMax = typeof overrides.fcMax === 'number' && overrides.fcMax >= 140 && overrides.fcMax <= 240
+    ? overrides.fcMax : GLOBAL_APP_CONFIG.ATHLETE_FC_MAX;
+  const fcRest = typeof overrides.fcRest === 'number' && overrides.fcRest >= 30 && overrides.fcRest <= 120 && overrides.fcRest < fcMax
+    ? overrides.fcRest : GLOBAL_APP_CONFIG.ATHLETE_FC_REST;
+  return Object.freeze({
+    ...GLOBAL_APP_CONFIG,
+    HOME_ADDRESS: overrides.homeAddress || GLOBAL_APP_CONFIG.HOME_ADDRESS,
+    ETS_ADDRESS: overrides.campusAddress || GLOBAL_APP_CONFIG.ETS_ADDRESS,
+    MOUNT_ROYAL_ADDRESS: overrides.trailAddress || GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
+    ATHLETE_FC_MAX: fcMax,
+    ATHLETE_FC_REST: fcRest,
+    RACE_NAME: overrides.raceName || GLOBAL_APP_CONFIG.RACE_NAME,
+    RACE_DATE: overrides.raceDate || GLOBAL_APP_CONFIG.RACE_DATE,
+    TRANSIT_TIMES: GLOBAL_APP_CONFIG.TRANSIT_TIMES
+  });
 }
 
 export const COLOR_MAP = {
@@ -71,18 +111,32 @@ export const COLOR_MAP = {
   EXAM: { emoji: "📝", colorHex: "#ef4444", colorId: "11" }
 };
 
-export function getPeriodizationContext(date: Date): PeriodizationContext {
-  const planStart = new Date(GLOBAL_APP_CONFIG.PLAN_START_DATE + "T00:00:00");
-  const raceDay = new Date(GLOBAL_APP_CONFIG.RACE_DATE + "T00:00:00");
+function localCalendarDayNumber(date: Date): number {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000);
+}
 
-  const diffFromStartDays = Math.floor((date.getTime() - planStart.getTime()) / (24 * 3600 * 1000));
-  const daysToRace = Math.floor((raceDay.getTime() - date.getTime()) / (24 * 3600 * 1000));
+export function getPeriodizationContext(
+  date: Date,
+  config: Readonly<AppConfig> = GLOBAL_APP_CONFIG
+): PeriodizationContext {
+  const planStart = new Date(config.PLAN_START_DATE + "T00:00:00");
+  const raceDay = new Date(config.RACE_DATE + "T00:00:00");
+  const sportStart = new Date(config.SPORT_START_DATE + "T00:00:00");
 
-  // --- FALL 2026 (Foundation Phase & September Ramp-up) ---
+  const diffFromStartDays = localCalendarDayNumber(date) - localCalendarDayNumber(planStart);
+  const daysToRace = localCalendarDayNumber(raceDay) - localCalendarDayNumber(date);
+
+  // --- Foundation phase and three-week ramp-up derived from SPORT_START_DATE ---
   if (diffFromStartDays < 0) {
-    const ramp1End = new Date("2026-09-07T00:00:00");
-    const ramp2End = new Date("2026-09-14T00:00:00");
-    const ramp3End = new Date("2026-09-21T00:00:00");
+    const foundationWeekStart = Number.isNaN(sportStart.getTime()) ? new Date(date) : new Date(sportStart);
+    const weekdayFromMonday = (foundationWeekStart.getDay() + 6) % 7;
+    foundationWeekStart.setDate(foundationWeekStart.getDate() - weekdayFromMonday);
+    const ramp1End = new Date(foundationWeekStart);
+    const ramp2End = new Date(foundationWeekStart);
+    const ramp3End = new Date(foundationWeekStart);
+    ramp1End.setDate(ramp1End.getDate() + 7);
+    ramp2End.setDate(ramp2End.getDate() + 14);
+    ramp3End.setDate(ramp3End.getDate() + 21);
 
     if (date < ramp1End) {
       return {
@@ -122,7 +176,7 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
       weekNumber: 0,
       isDeload: false,
       volumeFactor: 0.85,
-      label: "Phase Fondations (Automne 2026)",
+      label: `Phase Fondations (${sportStart.getFullYear() || date.getFullYear()})`,
       daysToRace,
       description: "Moteur aérobie solide, calisthénie au Gym ÉTS et dénivelé régulier au Mont-Royal."
     };
@@ -132,10 +186,10 @@ export function getPeriodizationContext(date: Date): PeriodizationContext {
   if (daysToRace <= 6 && daysToRace >= 0) {
     return {
       phase: "RACE_WEEK",
-      weekNumber: 24,
+      weekNumber: Math.floor(diffFromStartDays / 7) + 1,
       isDeload: true,
       volumeFactor: 0.30,
-      label: "Semaine de Course — QMT-80 🏁",
+      label: `Semaine de Course — ${config.RACE_NAME} 🏁`,
       daysToRace,
       description: "Récupération active, pic de fraîcheur, recharge glucidique et validation finale du sac de course."
     };
@@ -219,12 +273,18 @@ export function getDailyWorkoutPlan(
   options?: {
     hasPresentialClass?: boolean;
     hasOnlineClass?: boolean;
-  }
+  },
+  config: Readonly<AppConfig> = GLOBAL_APP_CONFIG
 ): WorkoutTemplate {
+  const GLOBAL_APP_CONFIG = config;
   const isDeload = ctx.isDeload;
   const setsNote = isDeload ? "(Deload: 2 maintenance sets, 0 failure)" : "(Build: 4 working sets)";
   const month = date.getMonth();
   const isWinter = (month === 0 || month === 1 || month === 2);
+  const heartRateZones = calculateHeartRateZones(config.ATHLETE_FC_MAX, config.ATHLETE_FC_REST);
+  const easyRange = heartRateZones.zone2;
+  const hillRange: [number, number] = [heartRateZones.zone4[0], heartRateZones.zone5[0]];
+  const recoveryCeiling = heartRateZones.zone2[0] + 1;
 
   let durationTuesday = Math.round(55 + (ctx.weekNumber * 1.5) * ctx.volumeFactor);
   let durationThursday = Math.round(45 * ctx.volumeFactor);
@@ -292,9 +352,9 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.TRAIL_INTENSE.emoji,
           colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
           colorId: COLOR_MAP.TRAIL_INTENSE.colorId,
-          description: `❄️ WINTER SAFETY (Incline treadmill):\n• 15' flat warm-up\n• Hill intervals 12-15% incline (5.5 - 6.5 km/h) — Target HR: 172-190 bpm (Zone 4/5)\n• Post-hill leg strength (${renfoTuesdayMin} min):\n  - Tempo squats (3s descent): ${isDeload ? '2x8' : '4x8'}\n  - Bulgarian split squats: ${isDeload ? '2x8' : '3x10'}\n  - Unilateral calf raises: ${isDeload ? '2x12' : '4x15'}`,
+          description: `❄️ WINTER SAFETY (Incline treadmill):\n• 15' flat warm-up\n• Hill intervals 12-15% incline (5.5 - 6.5 km/h) — Target HR: ${hillRange[0]}-${hillRange[1]} bpm (Zone 4/5)\n• Post-hill leg strength (${renfoTuesdayMin} min):\n  - Tempo squats (3s descent): ${isDeload ? '2x8' : '4x8'}\n  - Bulgarian split squats: ${isDeload ? '2x8' : '3x10'}\n  - Unilateral calf raises: ${isDeload ? '2x12' : '4x15'}`,
           targetHeartRate: "Effort tonique en côte (Zone 4/5)",
-          targetHeartRateRange: [172, 190],
+          targetHeartRateRange: hillRange,
           targetElevationM: 400
         };
       }
@@ -308,9 +368,9 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.TRAIL_INTENSE.emoji,
         colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
         colorId: COLOR_MAP.TRAIL_INTENSE.colorId,
-        description: `• 15' warm-up + ${isDeload ? '1 set of 5x 1\' hill' : '2 sets of (5x 1\' hill, easy jog descent)'} + 10' cool-down.\n• Uphill target: HR 172-190 bpm (Zone 4/5).\n• Post-hill leg strength (${renfoTuesdayMin} min): Bulgarian split squats, tempo squats and calf raises for eccentric quad resistance.`,
+        description: `• 15' warm-up + ${isDeload ? '1 set of 5x 1\' hill' : '2 sets of (5x 1\' hill, easy jog descent)'} + 10' cool-down.\n• Uphill target: HR ${hillRange[0]}-${hillRange[1]} bpm (Zone 4/5).\n• Post-hill leg strength (${renfoTuesdayMin} min): Bulgarian split squats, tempo squats and calf raises for eccentric quad resistance.`,
         targetHeartRate: "Effort tonique en côte (Zone 4/5)",
-        targetHeartRateRange: [172, 190],
+        targetHeartRateRange: hillRange,
         targetElevationM: 380
       };
 
@@ -342,7 +402,7 @@ export function getDailyWorkoutPlan(
         colorId: COLOR_MAP.RUN_EASY.colorId,
         description: `• ${durationThursday} min strictement en allure aérobie fondamentale (Zone 2).\n• Cible Cardio : FC en aisance aérobie (Zone 2 personnalisée).\n• Consigne biomécanique : Cadence haute (170-175 spm) avec foulée courte et légère.`,
         targetHeartRate: "Endurance fondamentale (Zone 2)",
-        targetHeartRateRange: [142, 165],
+        targetHeartRateRange: easyRange,
         targetCadence: "170 - 175 spm"
       };
 
@@ -390,8 +450,8 @@ export function getDailyWorkoutPlan(
             emoji: COLOR_MAP.RUN_EASY.emoji,
             colorHex: COLOR_MAP.RUN_EASY.colorHex,
             colorId: COLOR_MAP.RUN_EASY.colorId,
-            description: "• 30-35 min light flush on treadmill at ÉTS gym right after class (Zone 1 easy, HR < 142 bpm).",
-            targetHeartRate: "< 142 bpm (Zone 1 recovery)"
+            description: `• 30-35 min light flush on treadmill at ÉTS gym right after class (Zone 1 easy, HR < ${recoveryCeiling} bpm).`,
+            targetHeartRate: `< ${recoveryCeiling} bpm (Zone 1 recovery)`
           };
         }
         return {
@@ -404,8 +464,8 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.RUN_EASY.emoji,
           colorHex: COLOR_MAP.RUN_EASY.colorHex,
           colorId: COLOR_MAP.RUN_EASY.colorId,
-          description: "• 30-35 min light recovery jog in conversational pace starting from home post-class (Zone 1 easy, HR < 142 bpm).",
-          targetHeartRate: "< 142 bpm (Zone 1 recovery)"
+          description: `• 30-35 min light recovery jog in conversational pace starting from home post-class (Zone 1 easy, HR < ${recoveryCeiling} bpm).`,
+          targetHeartRate: `< ${recoveryCeiling} bpm (Zone 1 recovery)`
         };
       }
       return {
@@ -418,9 +478,9 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.TRAIL_LONG.emoji,
         colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
         colorId: COLOR_MAP.TRAIL_LONG.colorId,
-        description: `• Rando-Course Ultra-Trail QMT-80 : alternance marche active en côte et foulée souple.\n• Règle d'or : Dès que la pente raidit (> 7-8%), passer impérativement en marche active (power-hike avec mains sur les cuisses ou bâtons) pour maintenir l'effort en Zone 2.\n• Relance immédiate en course souple sur le plat, faux-plat et descentes.\n• Cible Cardio : Zone 2 Rando-Course (~145-168 bpm).\n• Nutrition : 40-50g glucides/h + 500 mL eau avec électrolytes/h.`,
+        description: `• Rando-Course Ultra-Trail QMT-80 : alternance marche active en côte et foulée souple.\n• Règle d'or : Dès que la pente raidit (> 7-8%), passer impérativement en marche active (power-hike avec mains sur les cuisses ou bâtons) pour maintenir l'effort en Zone 2.\n• Relance immédiate en course souple sur le plat, faux-plat et descentes.\n• Cible Cardio : Zone 2 Rando-Course (~${easyRange[0]}-${easyRange[1]} bpm).\n• Nutrition : 40-50g glucides/h + 500 mL eau avec électrolytes/h.`,
         targetHeartRate: "Zone 2 Rando-Course",
-        targetHeartRateRange: [145, 168],
+        targetHeartRateRange: easyRange,
         targetElevationM: targetElevationSaturday,
         nutritionAdvice: "40-50g glucides/h + 500 mL water with electrolytes/h"
       };
@@ -452,9 +512,9 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.TRAIL_LONG.emoji,
           colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
           colorId: COLOR_MAP.TRAIL_LONG.colorId,
-          description: `• Rando-Course décalée au dimanche suite aux cours intensifs du samedi.\n• Règle d'or : Power-hike actif en montée dès > 7% de pente pour bloquer les pulses en Zone 2.\n• Cible Cardio : Zone 2 Rando-Course (~145-168 bpm) + nutrition 40-50g glucides/h.`,
+          description: `• Rando-Course décalée au dimanche suite aux cours intensifs du samedi.\n• Règle d'or : Power-hike actif en montée dès > 7% de pente pour bloquer les pulses en Zone 2.\n• Cible Cardio : Zone 2 Rando-Course (~${easyRange[0]}-${easyRange[1]} bpm) + nutrition 40-50g glucides/h.`,
           targetHeartRate: "Zone 2 Rando-Course",
-          targetHeartRateRange: [145, 168],
+          targetHeartRateRange: easyRange,
           targetElevationM: targetElevationSaturday,
           nutritionAdvice: "40-50g glucides/h + 500 mL electrolytes/h"
         };
@@ -471,7 +531,7 @@ export function getDailyWorkoutPlan(
         colorId: COLOR_MAP.RUN_EASY.colorId,
         description: `• ${durationSunday} min d'endurance aérobie sur fatigue de la veille (effet back-to-back sur sentiers vallonnés).\n• Cible Cardio : Zone 2 personnalisée en aisance respiratoire complète.\n• Cadence dynamique : 170-175 spm.`,
         targetHeartRate: "Endurance fondamentale (Zone 2)",
-        targetHeartRateRange: [142, 165],
+        targetHeartRateRange: easyRange,
         targetElevationM: Math.round(durationSunday * 2.5),
         targetCadence: "170 - 175 spm"
       };

@@ -1,32 +1,37 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarEvent, DailySchedule, PeriodizationContext, WorkoutPostponeOverride, AdaptiveWorkoutOverride, AdaptiveWorkoutAction } from './types/calendar';
-import { GarminActivity, GarminSyncState, ActivityComparison } from './types/garmin';
+import { GarminActivity, GarminSyncState } from './types/garmin';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
-import { CalendarView } from './components/CalendarView';
-import { ComparisonDashboard } from './components/ComparisonDashboard';
 import { AccountModal, AccountModalTab } from './components/AccountModal';
-import { QMTPlanOverview } from './components/QMTPlanOverview';
-import { StatsDashboard } from './components/StatsDashboard';
 import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
-import { formatDateKey, getMondayOfWeek } from './services/dateUtils';
-import { getPeriodizationContext, GLOBAL_APP_CONFIG, setAppConfigOverrides } from './services/periodizationEngine';
+import { formatDateKey, getMondayOfWeek, parseLocalDate } from './services/dateUtils';
+import { createAppConfig, getPeriodizationContext } from './services/periodizationEngine';
 import { loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
 import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
-import { DEFAULT_WEEKLY_TARGETS, computeFullStatsReport } from './services/statsEngine';
+import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
 import { isTrailOrRunning } from './services/activityClassifier';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData, syncOverridesToCloud, fetchOverridesFromCloud } from './services/supabaseClient';
-import { saveWellnessData, loadWellnessHistory } from './services/readinessEngine';
+import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData, syncOverridesToCloud, fetchOverridesFromCloud, getSupabaseAccessToken } from './services/supabaseClient';
+import { saveWellnessData, loadWellnessHistory, getBaselineRestingHeartRate } from './services/readinessEngine';
 import { getApiUrl } from './services/apiConfig';
+import { getCalendarBuildWindow } from './services/calendarWindow';
+import { mergeGarminActivities } from './services/activityRepository';
+import { getLocalSyncTimestamp, markLocalSyncUpdated, setLocalSyncTimestamp, shouldAdoptCloudValue } from './services/syncMetadata';
 import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncService';
 import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } from './services/storageService';
 import { SyncErrorModal, SyncErrorInfo } from './components/SyncErrorModal';
+import { createLatestRerunCoordinator, LatestRerunCoordinator } from './services/asyncCoordinator';
+
+const CalendarView = React.lazy(() => import('./components/CalendarView').then(module => ({ default: module.CalendarView })));
+const ComparisonDashboard = React.lazy(() => import('./components/ComparisonDashboard').then(module => ({ default: module.ComparisonDashboard })));
+const StatsDashboard = React.lazy(() => import('./components/StatsDashboard').then(module => ({ default: module.StatsDashboard })));
+const PeriodizationTab = React.lazy(() => import('./components/PeriodizationTab').then(module => ({ default: module.PeriodizationTab })));
 
 function loadManualPairs(): Record<string, string> {
   return storageGet<Record<string, string>>(STORAGE_KEYS.GARMIN_MANUAL_PAIRS, {});
@@ -36,18 +41,35 @@ function saveManualPairs(pairs: Record<string, string>): void {
   storageSet(STORAGE_KEYS.GARMIN_MANUAL_PAIRS, pairs);
 }
 
-
+function transformCalendar(
+  baseCalendar: { schedules: DailySchedule[]; allEvents: CalendarEvent[] },
+  postpones: Record<string, WorkoutPostponeOverride>,
+  adaptations: Record<string, AdaptiveWorkoutOverride>
+): { schedules: DailySchedule[]; allEvents: CalendarEvent[] } {
+  const postponed = applyPostponements(
+    baseCalendar.schedules,
+    baseCalendar.allEvents,
+    postpones
+  );
+  return applyAdaptiveModifications(
+    postponed.schedules,
+    postponed.allEvents,
+    adaptations
+  );
+}
 
 export const App: React.FC = () => {
+  const shareSlug = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('share') || '';
+  }, []);
   const [baseCalendar, setBaseCalendar] = useState<{ schedules: DailySchedule[]; allEvents: CalendarEvent[] }>({ schedules: [], allEvents: [] });
-  const [schedules, setSchedules] = useState<DailySchedule[]>([]);
-  const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [postponeOverrides, setPostponeOverrides] = useState<Record<string, WorkoutPostponeOverride>>(loadPostponeOverrides());
   const [adaptiveOverrides, setAdaptiveOverrides] = useState<Record<string, AdaptiveWorkoutOverride>>(loadAdaptiveOverrides());
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
+  const [baselineFcRest, setBaselineFcRest] = useState(getBaselineRestingHeartRate());
   const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
-  const [comparisons, setComparisons] = useState<ActivityComparison[]>([]);
   const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization' | 'stats'>('calendar');
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
@@ -57,162 +79,246 @@ export const App: React.FC = () => {
     tab: 'profile'
   });
   const [spectatorData, setSpectatorData] = useState<{ profile: any; activities: GarminActivity[] } | null>(null);
-
+  const referenceDateKey = formatDateKey(new Date());
+  const referenceDate = useMemo(() => parseLocalDate(referenceDateKey), [referenceDateKey]);
+  const { schedules, allEvents } = useMemo(
+    () => transformCalendar(baseCalendar, postponeOverrides, adaptiveOverrides),
+    [baseCalendar, postponeOverrides, adaptiveOverrides]
+  );
+  const baseCalendarRef = useRef(baseCalendar);
+  baseCalendarRef.current = baseCalendar;
   const handleOpenAccountModal = (tab: AccountModalTab = 'profile') => {
     setAccountModal({ isOpen: true, tab });
   };
 
   const { user, profile, saveCloudGarminCredentials } = useAuth();
+  const effectiveProfile = shareSlug ? spectatorData?.profile : profile;
+  const appConfig = useMemo(() => createAppConfig({
+    homeAddress: effectiveProfile?.homeAddress,
+    campusAddress: effectiveProfile?.campusAddress,
+    trailAddress: effectiveProfile?.trailAddress,
+    fcMax: effectiveProfile?.fcMax,
+    fcRest: baselineFcRest,
+    raceName: effectiveProfile?.raceName,
+    raceDate: effectiveProfile?.raceDate
+  }), [effectiveProfile, baselineFcRest]);
+  const athleteVitals = useMemo(() => ({
+    fcMax: appConfig.ATHLETE_FC_MAX,
+    fcRest: appConfig.ATHLETE_FC_REST
+  }), [appConfig]);
+  const comparisons = useMemo(
+    () => compareWorkoutsWithGarmin(allEvents, garminActivities, manualPairs, referenceDate, athleteVitals),
+    [allEvents, garminActivities, manualPairs, referenceDate, athleteVitals]
+  );
+  const appStateRef = useRef({
+    user,
+    profile,
+    garminActivities,
+    garminState,
+    manualPairs,
+    postponeOverrides,
+    adaptiveOverrides
+  });
+  appStateRef.current = {
+    user,
+    profile,
+    garminActivities,
+    garminState,
+    manualPairs,
+    postponeOverrides,
+    adaptiveOverrides
+  };
 
-  // Apply user profile overrides to periodization & transit engine
-  useEffect(() => {
-    if (profile) {
-      setAppConfigOverrides({
-        homeAddress: profile.homeAddress,
-        campusAddress: profile.campusAddress,
-        trailAddress: profile.trailAddress,
-        fcMax: profile.fcMax
-      });
-    }
-  }, [profile]);
+  const refreshCoordinatorRef = useRef<LatestRerunCoordinator | null>(null);
+  if (!refreshCoordinatorRef.current) {
+    refreshCoordinatorRef.current = createLatestRerunCoordinator(async () => {}, {
+      onRunningChange: setIsRecharging,
+      onError: error => {
+        console.error('[Refresh Coordinator Error]', error);
+        setSyncError({
+          title: 'Erreur de mise à jour',
+          message: "L'actualisation des données n'a pas pu se terminer.",
+          details: error instanceof Error ? error.message : 'Erreur inconnue.'
+        });
+      }
+    });
+  }
+  const cloudMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const enqueueCloudMutation = useCallback((mutation: () => Promise<unknown>): Promise<void> => {
+    const queued = cloudMutationQueueRef.current
+      .catch(() => undefined)
+      .then(async () => { await mutation(); });
+    cloudMutationQueueRef.current = queued.catch(error => {
+      console.warn('[Cloud Mutation Error]', error);
+    });
+    return cloudMutationQueueRef.current;
+  }, []);
+
+  const autoRechargeAll = useCallback((isManualTrigger = false): Promise<void> => {
+    return refreshCoordinatorRef.current!.run(isManualTrigger);
+  }, []);
 
   // Check for spectator share mode in URL (?share=slug)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const shareSlug = params.get('share');
+    let cancelled = false;
     if (shareSlug) {
       fetchPublicSharedData(shareSlug).then(data => {
+        if (cancelled) return;
         if (data) {
           setSpectatorData(data);
           if (data.activities.length > 0) {
-            setGarminActivities(data.activities);
+            const sharedActivities = mergeGarminActivities(data.activities);
+            appStateRef.current.garminActivities = sharedActivities;
+            setGarminActivities(sharedActivities);
           }
         }
-      });
+      }).catch(error => console.warn('Could not load shared data:', error));
     }
-  }, []);
+    return () => { cancelled = true; };
+  }, [shareSlug]);
 
   // Bidirectional sync for activities, credentials, and manual pairs when user logs in with Google / Supabase
   useEffect(() => {
-    if (user?.id) {
-      (async () => {
-        // Auto-link cloud Garmin credentials if present in user Google account
+    let cancelled = false;
+    if (user?.id && !shareSlug) {
+      void (async () => {
+        // Keep only the non-sensitive Garmin account email in cloud metadata.
+        // The password is session-only and must be entered again after a full restart.
         const cloudGarminEmail = user.user_metadata?.garmin_email;
-        const cloudGarminPassword = user.user_metadata?.garmin_password;
         const localCreds = await loadGarminCredentialsAsync();
+        if (cancelled) return;
 
-        if (cloudGarminEmail && cloudGarminPassword) {
-          if (!localCreds?.email || !localCreds?.password || localCreds.email !== cloudGarminEmail) {
-            saveGarminCredentials({ email: cloudGarminEmail, password: cloudGarminPassword });
-          }
-        } else if (localCreds?.email && localCreds?.password) {
-          // Automatically save existing local credentials to user's Google cloud account
-          saveCloudGarminCredentials(localCreds.email, localCreds.password);
+        if (localCreds?.email && localCreds.email !== cloudGarminEmail) {
+          await saveCloudGarminCredentials(localCreds.email);
         }
 
         const localActs = loadStoredGarminActivities();
         const cloudActs = await fetchActivitiesFromCloud(user.id);
-        const actMap = new Map<string, GarminActivity>();
-        for (const a of (cloudActs || [])) actMap.set(a.activityId, a);
-        for (const a of (localActs || [])) actMap.set(a.activityId, a);
-        const mergedActs = Array.from(actMap.values()).sort(
-          (a, b) => new Date(b.startTimeLocal).getTime() - new Date(a.startTimeLocal).getTime()
-        );
+        if (cancelled) return;
+        const mergedActs = mergeGarminActivities(cloudActs || [], localActs || []);
 
         if (mergedActs.length > 0) {
+          appStateRef.current.garminActivities = mergedActs;
           setGarminActivities(mergedActs);
           saveGarminActivities(mergedActs);
           // Push any merged activities that weren't yet on cloud
-          await syncActivitiesToCloud(user.id, mergedActs);
+          await enqueueCloudMutation(() => syncActivitiesToCloud(user.id, mergedActs));
         }
 
         // Synchronize wellness history (resting HR, HRV, sleep)
         try {
           const cloudWellness = await fetchWellnessFromCloud(user.id);
+          if (cancelled) return;
           if (cloudWellness && cloudWellness.length > 0) {
             for (const cw of cloudWellness) saveWellnessData(cw);
           }
           const localWellness = Object.values(loadWellnessHistory());
+          setBaselineFcRest(getBaselineRestingHeartRate());
           if (localWellness.length > 0) {
-            syncWellnessToCloud(user.id, localWellness);
+            await enqueueCloudMutation(() => syncWellnessToCloud(user.id, localWellness));
           }
         } catch {}
 
         const localPairs = loadManualPairs();
         const cloudPairs = await fetchPairsFromCloud(user.id);
-        if (cloudPairs && Object.keys(cloudPairs).length > 0) {
-          setManualPairs(cloudPairs);
-          saveManualPairs(cloudPairs);
-        } else if (localPairs && Object.keys(localPairs).length > 0) {
-          await syncPairsToCloud(user.id, localPairs);
+        if (cancelled) return;
+        const localPairsUpdatedAt = getLocalSyncTimestamp('manualPairs');
+        if (cloudPairs && shouldAdoptCloudValue(cloudPairs.updatedAt, localPairsUpdatedAt)) {
+          appStateRef.current.manualPairs = cloudPairs.value;
+          setManualPairs(cloudPairs.value);
+          saveManualPairs(cloudPairs.value);
+          if (cloudPairs.updatedAt) setLocalSyncTimestamp('manualPairs', cloudPairs.updatedAt);
+        } else if (Object.keys(localPairs).length > 0 || localPairsUpdatedAt) {
+          const updatedAt = localPairsUpdatedAt || markLocalSyncUpdated('manualPairs');
+          await enqueueCloudMutation(() => syncPairsToCloud(user.id, localPairs, updatedAt));
         }
 
         // Hydrate and sync overrides (adaptive + postpone) from cloud
         try {
           const cloudOverrides = await fetchOverridesFromCloud(user.id);
-          let loadedAdaptive: Record<string, AdaptiveWorkoutOverride> | null = null;
-          let loadedPostpone: Record<string, any> | null = null;
+          if (cancelled) return;
+          const localAdaptive = loadAdaptiveOverrides();
+          const localPostpones = loadPostponeOverrides();
+          const localAdaptiveUpdatedAt = getLocalSyncTimestamp('adaptiveOverrides');
+          const localPostponeUpdatedAt = getLocalSyncTimestamp('postponeOverrides');
 
-          if (cloudOverrides) {
-            if (cloudOverrides.adaptiveOverrides && Object.keys(cloudOverrides.adaptiveOverrides).length > 0) {
-              loadedAdaptive = cloudOverrides.adaptiveOverrides;
-              setAdaptiveOverrides(loadedAdaptive);
-              saveAdaptiveOverrides(loadedAdaptive);
+          if (cloudOverrides && shouldAdoptCloudValue(cloudOverrides.adaptiveOverrides.updatedAt, localAdaptiveUpdatedAt)) {
+            const value = cloudOverrides.adaptiveOverrides.value as Record<string, AdaptiveWorkoutOverride>;
+            appStateRef.current.adaptiveOverrides = value;
+            setAdaptiveOverrides(value);
+            saveAdaptiveOverrides(value);
+            if (cloudOverrides.adaptiveOverrides.updatedAt) {
+              setLocalSyncTimestamp('adaptiveOverrides', cloudOverrides.adaptiveOverrides.updatedAt);
             }
-            if (cloudOverrides.postponeOverrides && Object.keys(cloudOverrides.postponeOverrides).length > 0) {
-              loadedPostpone = cloudOverrides.postponeOverrides;
-              setPostponeOverrides(loadedPostpone);
-              savePostponeOverrides(loadedPostpone);
-            }
+          } else if (Object.keys(localAdaptive).length > 0 || localAdaptiveUpdatedAt) {
+            const updatedAt = localAdaptiveUpdatedAt || markLocalSyncUpdated('adaptiveOverrides');
+            await enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+              adaptiveOverrides: localAdaptive,
+              adaptiveUpdatedAt: updatedAt
+            }));
           }
 
-          if (!cloudOverrides?.adaptiveOverrides && !cloudOverrides?.postponeOverrides) {
-            const localAdaptive = loadAdaptiveOverrides();
-            const localPostpones = loadPostponeOverrides();
-            if (Object.keys(localAdaptive).length > 0 || Object.keys(localPostpones).length > 0) {
-              await syncOverridesToCloud(user.id, {
-                adaptiveOverrides: localAdaptive,
-                postponeOverrides: localPostpones
-              });
+          if (cloudOverrides && shouldAdoptCloudValue(cloudOverrides.postponeOverrides.updatedAt, localPostponeUpdatedAt)) {
+            const value = cloudOverrides.postponeOverrides.value as Record<string, WorkoutPostponeOverride>;
+            appStateRef.current.postponeOverrides = value;
+            setPostponeOverrides(value);
+            savePostponeOverrides(value);
+            if (cloudOverrides.postponeOverrides.updatedAt) {
+              setLocalSyncTimestamp('postponeOverrides', cloudOverrides.postponeOverrides.updatedAt);
             }
+          } else if (Object.keys(localPostpones).length > 0 || localPostponeUpdatedAt) {
+            const updatedAt = localPostponeUpdatedAt || markLocalSyncUpdated('postponeOverrides');
+            await enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+              postponeOverrides: localPostpones,
+              postponeUpdatedAt: updatedAt
+            }));
           }
         } catch (e) {
           console.warn('Could not sync cloud overrides:', e);
         }
 
         // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
-        await autoRechargeAll();
-      })();
+        if (!cancelled) await autoRechargeAll();
+      })().catch(error => {
+        if (!cancelled) console.warn('Could not hydrate account data:', error);
+      });
     }
-  }, [user?.id]);
+    return () => { cancelled = true; };
+  }, [user?.id, shareSlug]);
 
-  // Live real date (always current)
-  const referenceDate = new Date();
-  const currentPeriodContext = getPeriodizationContext(referenceDate);
+  const currentPeriodContext = getPeriodizationContext(referenceDate, appConfig);
 
   // Function to recharge both ÉTS iCal and Garmin Connect (Mobile & Web)
-  const autoRechargeAll = async (isManualTrigger = false) => {
-    setIsRecharging(true);
+  refreshCoordinatorRef.current.setWorker(async (isManualTrigger = false) => {
+    const snapshot = appStateRef.current;
+    const referenceDate = new Date();
+    const { user, profile, garminActivities } = snapshot;
     let rawCourses: RawIcsEvent[] = [];
 
     // 1. Fetch ÉTS iCal feed via proxy (custom profile URL or default proxy)
-    try {
-      const customUrlParam = profile?.icalUrl ? `?url=${encodeURIComponent(profile.icalUrl)}` : '';
-      const endpoint = getApiUrl(`/api/ets-ical${customUrlParam}`);
-      const res = await fetch(endpoint);
-      if (res.ok) {
-        const icsText = await res.text();
-        if (icsText && icsText.includes('BEGIN:VCALENDAR')) {
-          storageSetRaw(STORAGE_KEYS.CACHED_ETS_ICS, icsText);
-          rawCourses = parseICSString(icsText);
+    if (!shareSlug) {
+      try {
+        const customUrlParam = profile?.icalUrl ? `?url=${encodeURIComponent(profile.icalUrl)}` : '';
+        const endpoint = getApiUrl(`/api/ets-ical${customUrlParam}`);
+        const accessToken = await getSupabaseAccessToken();
+        const res = await fetch(endpoint, {
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
+        });
+        if (res.ok) {
+          const icsText = await res.text();
+          if (icsText && icsText.includes('BEGIN:VCALENDAR')) {
+            storageSetRaw(STORAGE_KEYS.CACHED_ETS_ICS, icsText);
+            rawCourses = parseICSString(icsText);
+          }
         }
+      } catch (err) {
+        console.warn("Could not fetch ÉTS iCal from proxy, checking local cache", err);
       }
-    } catch (err) {
-      console.warn("Could not fetch ÉTS iCal from proxy, checking local cache", err);
     }
 
     // Offline / Network fallback for calendar courses
-    if (rawCourses.length === 0) {
+    if (!shareSlug && rawCourses.length === 0) {
       const cachedIcs = storageGetRaw(STORAGE_KEYS.CACHED_ETS_ICS, '');
       if (cachedIcs) {
         try {
@@ -223,51 +329,32 @@ export const App: React.FC = () => {
 
     // Start calendar on Monday of the training plan start week (2026-08-31)
     // to preserve Week 1 (from 1er sept.), past microcycles, history, and telemetry reconciliation
-    const planStartMonday = getMondayOfWeek(new Date(GLOBAL_APP_CONFIG.SPORT_START_DATE + 'T00:00:00'));
-    const currentMonday = getMondayOfWeek(referenceDate);
-    const calendarStartMonday = planStartMonday.getTime() < currentMonday.getTime() ? planStartMonday : currentMonday;
+    const calendarWindow = getCalendarBuildWindow(referenceDate, appConfig.SPORT_START_DATE);
     const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
       rawCourses,
-      calendarStartMonday,
-      84 // 12 full weeks (covers Week 1 to late November)
+      calendarWindow.startMonday,
+      calendarWindow.daysCount,
+      appConfig
     );
 
-    setBaseCalendar({ schedules: builtSchedules, allEvents: builtEvents });
-
-    const activePostpones = loadPostponeOverrides();
-    const activeAdaptive = loadAdaptiveOverrides();
-
-    // 1. Appliquer les reports de séances enregistrés
-    const { schedules: postponedSchedules, allEvents: postponedEvents } = applyPostponements(
-      builtSchedules,
-      builtEvents,
-      activePostpones
+    const freshBaseCalendar = { schedules: builtSchedules, allEvents: builtEvents };
+    baseCalendarRef.current = freshBaseCalendar;
+    setBaseCalendar(freshBaseCalendar);
+    const { allEvents: transformedEvents } = transformCalendar(
+      freshBaseCalendar,
+      appStateRef.current.postponeOverrides,
+      appStateRef.current.adaptiveOverrides
     );
-
-    // 2. Appliquer les adaptations intelligentes anti-blessure
-    const { schedules: transformedSchedules, allEvents: transformedEvents } = applyAdaptiveModifications(
-      postponedSchedules,
-      postponedEvents,
-      activeAdaptive
-    );
-
-    setSchedules(transformedSchedules);
-    setAllEvents(transformedEvents);
 
     // 2. Synchronisation Incrémentielle Garmin Connect
-    let loadedActivities = loadStoredGarminActivities();
-    const asyncLocalCreds = await loadGarminCredentialsAsync();
-    const creds = asyncLocalCreds || (
-      user?.user_metadata?.garmin_email && user?.user_metadata?.garmin_password
-        ? { email: user.user_metadata.garmin_email, password: user.user_metadata.garmin_password }
-        : null
-    );
+    let loadedActivities = shareSlug ? garminActivities : mergeGarminActivities(garminActivities, loadStoredGarminActivities());
+    const creds = shareSlug ? null : await loadGarminCredentialsAsync();
 
     if (creds?.email && creds?.password) {
       saveGarminCredentials(creds);
     }
 
-    if (!creds?.email || !creds?.password) {
+    if (!shareSlug && (!creds?.email || !creds?.password)) {
       // Si aucun identifiant n'est renseigné et que l'utilisateur a cliqué sur Synchro
       if (isManualTrigger) {
         setSyncError({
@@ -277,16 +364,16 @@ export const App: React.FC = () => {
           isMissingCreds: true
         });
       }
-    } else {
+    } else if (!shareSlug) {
       try {
         // Synchronisation incrémentielle systématique des activités récentes et wellness
-        const result = await syncWithGarminAPI(creds, { mode: 'incremental' });
+        const result = await syncWithGarminAPI(creds || undefined, { mode: 'incremental' });
+        if (result.activities.length > 0) {
+          loadedActivities = mergeGarminActivities(loadedActivities, result.activities);
+        }
         if (result.success) {
           // Succès : effacement d'un éventuel message d'erreur antérieur
           setSyncError(null);
-          if (result.activities && result.activities.length > 0) {
-            loadedActivities = result.activities;
-          }
         } else {
           // Échec de la synchronisation retourné par le serveur Garmin Connect
           console.warn('[Garmin Sync Error]', result.error);
@@ -311,56 +398,59 @@ export const App: React.FC = () => {
       loadedActivities = garminActivities;
     }
 
+    loadedActivities = mergeGarminActivities(loadedActivities, appStateRef.current.garminActivities);
+    setBaselineFcRest(getBaselineRestingHeartRate());
+    appStateRef.current.garminActivities = loadedActivities;
     setGarminActivities(loadedActivities);
 
     // Automatically persist fresh activities and wellness to Supabase cloud if authenticated
-    if (user?.id && loadedActivities.length > 0) {
-      syncActivitiesToCloud(user.id, loadedActivities);
+    if (!shareSlug && user?.id && loadedActivities.length > 0) {
+      await enqueueCloudMutation(() => syncActivitiesToCloud(user.id, loadedActivities));
       try {
         const localWellness = Object.values(loadWellnessHistory());
         if (localWellness.length > 0) {
-          syncWellnessToCloud(user.id, localWellness);
+          await enqueueCloudMutation(() => syncWellnessToCloud(user.id, localWellness));
         }
       } catch {}
     }
-
-    const compResults = compareWorkoutsWithGarmin(transformedEvents, loadedActivities, manualPairs, referenceDate);
-    setComparisons(compResults);
 
     const nowIso = new Date().toISOString();
     setLastSyncTime(nowIso);
 
     const isGarminConnected = loadedActivities.length > 0 || Boolean(creds?.email);
-    const updatedGarminState: GarminSyncState = {
-      ...garminState,
-      connected: isGarminConnected,
-      accountEmail: creds?.email || garminState.accountEmail || (user ? 'Compte Garmin lié à Google' : 'Compte Garmin'),
-      lastSyncTime: loadedActivities.length > 0 ? nowIso : (garminState.lastSyncTime || nowIso),
-      activitiesCount: loadedActivities.length,
-      isSyncing: false
-    };
-    setGarminState(updatedGarminState);
-    saveGarminSyncState(updatedGarminState);
+    setGarminState(previousState => {
+      const updatedState: GarminSyncState = {
+        ...previousState,
+        connected: isGarminConnected,
+        accountEmail: creds?.email || previousState.accountEmail || (user ? 'Compte Garmin lié' : 'Compte Garmin'),
+        lastSyncTime: loadedActivities.length > 0 ? nowIso : (previousState.lastSyncTime || nowIso),
+        activitiesCount: loadedActivities.length,
+        isSyncing: false
+      };
+      saveGarminSyncState(updatedState);
+      return updatedState;
+    });
 
-    // Ensure current week workouts are really created AND scheduled before marking them synced.
-    const workoutSyncResult = await syncCurrentWeekWorkoutsToGarmin(transformedEvents, referenceDate);
-    if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
-      console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
-      if (isManualTrigger) {
-        setSyncError({
-          title: 'Séances non synchronisées avec Garmin',
-          message: 'Garmin Connect n’a pas confirmé la programmation de toutes les séances.',
-          details: workoutSyncResult.error || 'Réessayez la synchronisation depuis l’application.'
-        });
+    if (!shareSlug) {
+      // Ensure current week workouts are really created AND scheduled before marking them synced.
+      const workoutSyncResult = await syncCurrentWeekWorkoutsToGarmin(transformedEvents, referenceDate);
+      if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
+        console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
+        if (isManualTrigger) {
+          setSyncError({
+            title: 'Séances non synchronisées avec Garmin',
+            message: 'Garmin Connect n’a pas confirmé la programmation de toutes les séances.',
+            details: workoutSyncResult.error || 'Réessayez la synchronisation depuis l’application.'
+          });
+        }
       }
     }
 
-    setIsRecharging(false);
-  };
+  });
 
   useEffect(() => {
     autoRechargeAll();
-  }, [profile?.icalUrl]);
+  }, [profile?.icalUrl, appConfig, spectatorData]);
 
   // Automatic sync on mobile app resume, tab visibility change, focus, and periodic interval
   useEffect(() => {
@@ -419,74 +509,49 @@ export const App: React.FC = () => {
   };
 
   const handleActivitiesSynced = (newActivities: GarminActivity[]) => {
-    setGarminActivities(newActivities);
-    saveGarminActivities(newActivities);
+    const mergedActivities = mergeGarminActivities(appStateRef.current.garminActivities, newActivities);
+    appStateRef.current.garminActivities = mergedActivities;
+    setGarminActivities(mergedActivities);
+    saveGarminActivities(mergedActivities);
     if (user?.id) {
-      syncActivitiesToCloud(user.id, newActivities);
-    }
-    if (allEvents.length > 0) {
-      setComparisons(compareWorkoutsWithGarmin(allEvents, newActivities, manualPairs, referenceDate));
+      void enqueueCloudMutation(() => syncActivitiesToCloud(user.id, mergedActivities));
     }
   };
 
   const handleManualPair = (planId: string, garminActivityId: string) => {
-    const updated = { ...manualPairs, [planId]: garminActivityId };
+    const updated = { ...appStateRef.current.manualPairs, [planId]: garminActivityId };
+    appStateRef.current.manualPairs = updated;
     setManualPairs(updated);
     saveManualPairs(updated);
+    const updatedAt = markLocalSyncUpdated('manualPairs');
     if (user?.id) {
-      syncPairsToCloud(user.id, updated);
-    }
-    if (allEvents.length > 0) {
-      setComparisons(compareWorkoutsWithGarmin(allEvents, garminActivities, updated, referenceDate));
+      void enqueueCloudMutation(() => syncPairsToCloud(user.id, updated, updatedAt));
     }
   };
 
   const handleManualUnpair = (planId: string) => {
-    const updated = { ...manualPairs };
+    const updated = { ...appStateRef.current.manualPairs };
     delete updated[planId];
+    appStateRef.current.manualPairs = updated;
     setManualPairs(updated);
     saveManualPairs(updated);
+    const updatedAt = markLocalSyncUpdated('manualPairs');
     if (user?.id) {
-      syncPairsToCloud(user.id, updated);
-    }
-    if (allEvents.length > 0) {
-      setComparisons(compareWorkoutsWithGarmin(allEvents, garminActivities, updated, referenceDate));
+      void enqueueCloudMutation(() => syncPairsToCloud(user.id, updated, updatedAt));
     }
   };
 
-  const applyAllTransforms = (
-    baseSched: DailySchedule[],
-    baseEv: CalendarEvent[],
+  const syncTransformedCalendar = (
     postpones: Record<string, WorkoutPostponeOverride>,
     adaptations: Record<string, AdaptiveWorkoutOverride>
   ) => {
-    const { schedules: postponedSched, allEvents: postponedEv } = applyPostponements(
-      baseSched,
-      baseEv,
-      postpones
-    );
-    return applyAdaptiveModifications(
-      postponedSched,
-      postponedEv,
-      adaptations
-    );
-  };
-
-  const recomputeAndSyncCalendar = (
-    postpones: Record<string, WorkoutPostponeOverride>,
-    adaptations: Record<string, AdaptiveWorkoutOverride>
-  ) => {
-    if (baseCalendar.schedules.length === 0) return;
-    const { schedules: newSched, allEvents: newEv } = applyAllTransforms(
-      baseCalendar.schedules,
-      baseCalendar.allEvents,
+    if (baseCalendarRef.current.schedules.length === 0) return;
+    const { allEvents: newEvents } = transformCalendar(
+      baseCalendarRef.current,
       postpones,
       adaptations
     );
-    setSchedules(newSched);
-    setAllEvents(newEv);
-    setComparisons(compareWorkoutsWithGarmin(newEv, garminActivities, manualPairs, referenceDate));
-    syncCurrentWeekWorkoutsToGarmin(newEv, referenceDate).catch(() => {});
+    void syncCurrentWeekWorkoutsToGarmin(newEvents, referenceDate);
   };
 
   const handlePostponeWorkout = (
@@ -496,22 +561,32 @@ export const App: React.FC = () => {
     reason?: string,
     targetStartTime?: string
   ) => {
-    const updated = postponeWorkout(postponeOverrides, eventId, originalDate, targetDate, reason, targetStartTime);
+    const updated = postponeWorkout(appStateRef.current.postponeOverrides, eventId, originalDate, targetDate, reason, targetStartTime);
+    appStateRef.current.postponeOverrides = updated;
     setPostponeOverrides(updated);
     savePostponeOverrides(updated);
-    recomputeAndSyncCalendar(updated, adaptiveOverrides);
+    const updatedAt = markLocalSyncUpdated('postponeOverrides');
+    syncTransformedCalendar(updated, appStateRef.current.adaptiveOverrides);
     if (user?.id) {
-      syncOverridesToCloud(user.id, { postponeOverrides: updated });
+      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+        postponeOverrides: updated,
+        postponeUpdatedAt: updatedAt
+      }));
     }
   };
 
   const handleCancelPostpone = (eventId: string) => {
-    const updated = cancelPostponeWorkout(postponeOverrides, eventId);
+    const updated = cancelPostponeWorkout(appStateRef.current.postponeOverrides, eventId);
+    appStateRef.current.postponeOverrides = updated;
     setPostponeOverrides(updated);
     savePostponeOverrides(updated);
-    recomputeAndSyncCalendar(updated, adaptiveOverrides);
+    const updatedAt = markLocalSyncUpdated('postponeOverrides');
+    syncTransformedCalendar(updated, appStateRef.current.adaptiveOverrides);
     if (user?.id) {
-      syncOverridesToCloud(user.id, { postponeOverrides: updated });
+      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+        postponeOverrides: updated,
+        postponeUpdatedAt: updatedAt
+      }));
     }
   };
 
@@ -527,24 +602,34 @@ export const App: React.FC = () => {
 
     const overrides = buildOverridesFromActions(
       actions,
-      adaptiveOverrides,
+      appStateRef.current.adaptiveOverrides,
       formatDateKey(referenceDate),
       activeWeekDates
     );
+    appStateRef.current.adaptiveOverrides = overrides;
     setAdaptiveOverrides(overrides);
     saveAdaptiveOverrides(overrides);
-    recomputeAndSyncCalendar(postponeOverrides, overrides);
+    const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
+    syncTransformedCalendar(appStateRef.current.postponeOverrides, overrides);
     if (user?.id) {
-      syncOverridesToCloud(user.id, { adaptiveOverrides: overrides });
+      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+        adaptiveOverrides: overrides,
+        adaptiveUpdatedAt: updatedAt
+      }));
     }
   };
 
   const handleRevertAdaptivePlan = () => {
+    appStateRef.current.adaptiveOverrides = {};
     setAdaptiveOverrides({});
     clearAdaptiveOverrides();
-    recomputeAndSyncCalendar(postponeOverrides, {});
+    const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
+    syncTransformedCalendar(appStateRef.current.postponeOverrides, {});
     if (user?.id) {
-      syncOverridesToCloud(user.id, { adaptiveOverrides: {} });
+      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+        adaptiveOverrides: {},
+        adaptiveUpdatedAt: updatedAt
+      }));
     }
   };
 
@@ -567,24 +652,16 @@ export const App: React.FC = () => {
     {
       plannedDurationMin: plannedDurationMin || DEFAULT_WEEKLY_TARGETS.plannedDurationMin,
       plannedElevationM: plannedElevationM || DEFAULT_WEEKLY_TARGETS.plannedElevationM
-    }
+    },
+    athleteVitals
   );
-
-  const statsReport = useMemo(() => {
-    return computeFullStatsReport(
-      garminActivities,
-      comparisons,
-      allEvents,
-      'plan',
-      referenceDate,
-      true
-    );
-  }, [garminActivities, comparisons, allEvents, referenceDate]);
 
   return (
     <div className="app-shell">
       {/* Desktop Left Sidebar */}
       <Sidebar
+        raceName={appConfig.RACE_NAME}
+        raceDate={appConfig.RACE_DATE}
         currentTab={activeTab}
         onChangeTab={(tab) => setActiveTab(tab)}
         periodContext={currentPeriodContext}
@@ -620,7 +697,7 @@ export const App: React.FC = () => {
             }}
           >
             <div>
-              👁️ <strong>Mode Spectateur :</strong> Vous suivez la préparation QMT-80 de{' '}
+              👁️ <strong>Mode Spectateur :</strong> Vous suivez la préparation de{' '}
               <span style={{ color: 'var(--primary)', fontWeight: 800 }}>{spectatorData.profile.displayName}</span>
             </div>
             <button
@@ -637,6 +714,7 @@ export const App: React.FC = () => {
 
         {/* Top Header */}
         <Header
+          raceName={appConfig.RACE_NAME}
           currentTab={activeTab}
           periodContext={currentPeriodContext}
           garminState={garminState}
@@ -653,6 +731,7 @@ export const App: React.FC = () => {
         />
 
       {/* Main Tab Content */}
+      <React.Suspense fallback={<div role="status" style={{ padding: 24 }}>Chargement de la vue…</div>}>
       {activeTab === 'calendar' && (
         <CalendarView
           schedules={schedules}
@@ -663,6 +742,7 @@ export const App: React.FC = () => {
           onCancelPostponeWorkout={handleCancelPostpone}
           comparisons={comparisons}
           garminActivities={garminActivities}
+          athlete={athleteVitals}
           adaptiveOverrides={adaptiveOverrides}
           onApplyAdaptivePlan={handleApplyAdaptivePlan}
           onRevertAdaptivePlan={handleRevertAdaptivePlan}
@@ -682,6 +762,7 @@ export const App: React.FC = () => {
             onManualUnpair={handleManualUnpair}
             onPostponeWorkout={handlePostponeWorkout}
             referenceDateStr={formatDateKey(referenceDate)}
+            athlete={athleteVitals}
           />
         </div>
       )}
@@ -692,16 +773,22 @@ export const App: React.FC = () => {
           comparisons={comparisons}
           allEvents={allEvents}
           referenceDate={referenceDate}
+          config={appConfig}
           onOpenGarminSync={() => handleOpenAccountModal('garmin')}
         />
       )}
 
       {activeTab === 'periodization' && (
-        <QMTPlanOverview
+        <PeriodizationTab
           currentContext={currentPeriodContext}
-          qmtPrediction={statsReport.qmtPrediction}
+          activities={garminActivities}
+          comparisons={comparisons}
+          events={allEvents}
+          referenceDate={referenceDate}
+          fcMax={appConfig.ATHLETE_FC_MAX}
         />
       )}
+      </React.Suspense>
 
       {/* Mobile Bottom Navigation Bar */}
       <MobileNav

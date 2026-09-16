@@ -8,12 +8,14 @@ import {
   LogOut,
   Save
 } from 'lucide-react';
+import { useManagedTimeout } from '../../hooks/useManagedTimeout';
 
 export interface ProfileTabProps {
   onRefreshAll?: () => void;
 }
 
 export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
+  const scheduleTimeout = useManagedTimeout();
   const {
     user,
     profile,
@@ -90,7 +92,7 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
     setProfileSaving(false);
     if (ok) {
       setProfileSuccessMsg('Profil enregistré.');
-      setTimeout(() => setProfileSuccessMsg(''), 3000);
+      scheduleTimeout(() => setProfileSuccessMsg(''), 3000);
       onRefreshAll?.();
     }
   };

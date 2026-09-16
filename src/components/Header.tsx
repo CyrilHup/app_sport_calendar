@@ -25,6 +25,7 @@ import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { useAuth } from '../contexts/AuthContext';
 
 interface HeaderProps {
+  raceName: string;
   currentTab?: 'calendar' | 'compare' | 'stats' | 'periodization';
   periodContext: PeriodizationContext;
   garminState: GarminSyncState;
@@ -41,6 +42,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  raceName,
   currentTab = 'calendar',
   periodContext,
   garminState,
@@ -55,6 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
   userAvatarUrl,
   isLoggedIn
 }) => {
+  const raceLabel = raceName.match(/\(([^)]+)\)/)?.[1] || raceName;
   const { profile } = useAuth();
   const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
 
@@ -85,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({
   } else if (loadScore > 320) {
     loadLevel = 'Stimulus Optimal / Productif';
     loadColor = 'var(--primary)';
-    loadAdvice = "Stimulus d'entraînement progressif et solide pour l'ultra QMT-80.";
+    loadAdvice = `Stimulus d'entraînement progressif et solide pour ${raceName}.`;
   } else if (loadScore < 140) {
     loadLevel = 'Récupération / Décharge Active';
     loadColor = '#38bdf8';
@@ -113,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'stats':
         return 'Statistiques & Progression';
       case 'periodization':
-        return 'Plan Directeur QMT-80';
+        return `Plan Directeur ${raceLabel}`;
       default:
         return 'Planning';
     }
@@ -127,7 +130,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="brand-section">
           {/* Mobile Brand (Shown only on small screens) */}
           <div className="mobile-only" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <h1 className="brand-title">QMT-80</h1>
+            <h1 className="brand-title">{raceLabel}</h1>
             <span className="sidebar-countdown-chip" style={{ fontSize: '0.72rem', padding: '2px 8px' }}>
               <Flame size={12} /> J-{periodContext.daysToRace}
             </span>

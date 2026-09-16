@@ -161,4 +161,27 @@ describe('comparisonEngine - Same-Day Multi-Session Consolidation', () => {
     expect(bonusComp).toBeDefined();
     expect(bonusComp?.actualActivity?.activityType).toBe('CYCLING');
   });
+
+  it('respects the prescribed heart-rate ceiling instead of a fixed 168 bpm floor', () => {
+    const plannedRun: CalendarEvent = {
+      id: 'easy-hr', title: 'Easy run', category: 'sport', sportType: 'RUN_EASY',
+      startDate: '2026-09-10T11:00:00', endDate: '2026-09-10T11:40:00',
+      durationMinutes: 40, location: 'Home', description: '', emoji: '🏃',
+      colorId: '1', colorHex: '#ff5722',
+      metadata: { targetHeartRateRange: [130, 150] }
+    };
+    const actual: GarminActivity = {
+      activityId: 'easy-actual', activityName: 'Easy run', activityType: 'RUNNING',
+      startTimeLocal: '2026-09-10T11:00:00', durationMinutes: 40,
+      avgHeartRate: 160, source: 'GARMIN_CONNECT'
+    };
+
+    const [comparison] = compareWorkoutsWithGarmin(
+      [plannedRun], [actual], {}, new Date('2026-09-10T20:00:00'),
+      { fcMax: 180, fcRest: 60 }
+    );
+
+    expect(comparison.heartRateCompliance).toBe('TOO_HIGH');
+    expect(comparison.feedbackNotes.join(' ')).toContain('150 bpm');
+  });
 });

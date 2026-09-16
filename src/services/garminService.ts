@@ -1,6 +1,5 @@
 import {
   GarminActivity,
-  GarminActivityType,
   GarminSyncState,
   GarminWellnessData,
   GarminWorkoutTargetMode,
@@ -10,42 +9,42 @@ import {
 } from '../types/garmin';
 import { CalendarEvent } from '../types/calendar';
 import { classifyGarminActivityType, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
+import { sanitizeGarminText } from './garminText';
+import { AthleteHeartRateZones, calculateHeartRateZones } from './heartRateZones';
+export type { AthleteHeartRateZones } from './heartRateZones';
 export * from './activityClassifier';
 export * from './garminDeduplication';
+export * from './garminText';
+export { parseGPXString } from './gpxParser';
 import { getApiUrl } from './apiConfig';
 import { saveWellnessData, getBaselineRestingHeartRate } from './readinessEngine';
-import { setAppConfigOverrides, GLOBAL_APP_CONFIG } from './periodizationEngine';
+import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { formatDateKey, toLocalDateKey } from './dateUtils';
+import { mergeGarminActivities } from './activityRepository';
 
 
-import { Preferences } from '@capacitor/preferences';
-import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storageService';
+import { STORAGE_KEYS, storageGet, storageSet, storageRemove, storageGetRaw, storageSetRaw } from './storageService';
 
 const GARMIN_STORAGE_KEY = STORAGE_KEYS.GARMIN_ACTIVITIES;
 const GARMIN_STATE_KEY = STORAGE_KEYS.GARMIN_STATE;
 const GARMIN_CREDS_KEY = STORAGE_KEYS.GARMIN_CREDS;
-export const GARMIN_WORKOUT_TARGET_MODE_KEY = 'garmin_workout_target_mode';
-export const GARMIN_ATHLETE_BASE_PACE_KEY = 'garmin_athlete_base_pace';
+let inMemoryGarminCredentials: GarminCredentials | null = null;
+export const GARMIN_WORKOUT_TARGET_MODE_KEY = STORAGE_KEYS.GARMIN_WORKOUT_TARGET_MODE;
+export const GARMIN_ATHLETE_BASE_PACE_KEY = STORAGE_KEYS.GARMIN_ATHLETE_BASE_PACE;
 // Bump when the generated Garmin step structure changes so existing workouts are re-synced.
-export const GARMIN_WORKOUT_DEFINITION_VERSION = 'recovery-2min-v1';
+export const GARMIN_WORKOUT_DEFINITION_VERSION = 'recovery-2min-heart-zones-v2';
 
 export function getGarminWorkoutTargetMode(): GarminWorkoutTargetMode {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const mode = localStorage.getItem(GARMIN_WORKOUT_TARGET_MODE_KEY);
-      if (mode === 'SMART_PACE_AND_TRAIL_FREE' || mode === 'ALL_FREE' || mode === 'PACE_ONLY' || mode === 'HR_ONLY') {
-        return mode as GarminWorkoutTargetMode;
-      }
-    }
-  } catch {}
+  const mode = storageGetRaw(GARMIN_WORKOUT_TARGET_MODE_KEY);
+  if (mode === 'SMART_PACE_AND_TRAIL_FREE' || mode === 'ALL_FREE' || mode === 'PACE_ONLY' || mode === 'HR_ONLY') {
+    return mode as GarminWorkoutTargetMode;
+  }
   return 'SMART_PACE_AND_TRAIL_FREE';
 }
 
 export function setGarminWorkoutTargetMode(mode: GarminWorkoutTargetMode): void {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(GARMIN_WORKOUT_TARGET_MODE_KEY, mode);
-    }
+    storageSetRaw(GARMIN_WORKOUT_TARGET_MODE_KEY, mode);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('garmin_target_mode_changed', { detail: { mode } }));
     }
@@ -59,8 +58,8 @@ export function setGarminWorkoutTargetMode(mode: GarminWorkoutTargetMode): void 
  * from their recent flat running activities (< 35m D+/km).
  * Updates automatically as the athlete progresses over the weeks!
  */
-export function computeDynamicAthleteBasePace(activities?: GarminActivity[]): string {
-  const acts = activities || loadStoredGarminActivities();
+export function computeDynamicAthleteBasePace(activities: GarminActivity[] = []): string {
+  const acts = activities;
   const runActs = acts.filter(a => {
     if (a.activityType !== 'RUNNING') return false;
     if (!a.distanceKm || a.distanceKm < 1.5) return false;
@@ -114,38 +113,17 @@ export interface AthletePhysiologicalProfile {
  * - Allure aérobie de base : calculée dynamiquement sur les footings plats
  */
 export function getDynamicAthleteProfile(
-  activities?: GarminActivity[],
-  profileOverride?: { fcMax?: number }
+  activities: GarminActivity[] = [],
+  profileOverride?: { fcMax?: number; fcRest?: number }
 ): AthletePhysiologicalProfile {
-  const acts = activities && activities.length > 0 ? activities : loadStoredGarminActivities();
+  const acts = activities;
 
   // 1. FC Max dynamique
   let fcMax = 0;
   if (typeof profileOverride?.fcMax === 'number' && profileOverride.fcMax > 140 && profileOverride.fcMax < 240) {
     fcMax = profileOverride.fcMax;
   } else {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        const cachedFc = localStorage.getItem('athlete_fc_max');
-        if (cachedFc) {
-          const parsed = parseInt(cachedFc, 10);
-          if (parsed > 140 && parsed < 240) fcMax = parsed;
-        }
-        if (!fcMax) {
-          const cachedProfile = localStorage.getItem('athlete_profile');
-          if (cachedProfile) {
-            const parsedProf = JSON.parse(cachedProfile);
-            if (parsedProf.fcMax && parsedProf.fcMax > 140 && parsedProf.fcMax < 240) {
-              fcMax = parsedProf.fcMax;
-            }
-          }
-        }
-      }
-    } catch {}
-
-    if (!fcMax) {
-      fcMax = GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
-    }
+    fcMax = GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
 
     // Validation avec les pics réels enregistrés sur la montre (rehausse si un pic réel supérieur est mesuré)
     if (acts.length > 0) {
@@ -162,8 +140,10 @@ export function getDynamicAthleteProfile(
   }
 
   // 2. FC Repos dynamique (issue de Garmin Wellness)
-  const fcRest = getBaselineRestingHeartRate();
-  const fcReserve = Math.max(40, fcMax - fcRest);
+  const fcRest = typeof profileOverride?.fcRest === 'number' && profileOverride.fcRest > 30
+    ? profileOverride.fcRest
+    : 48;
+  const fcReserve = fcMax - fcRest;
 
   // 3. Calcul dynamique de la FC moyenne en Trail (activités avec D+ >= 80m ou type TRAIL)
   const trailActs = acts.filter(a => {
@@ -248,37 +228,13 @@ export function getDynamicAthleteProfile(
   };
 }
 
-export interface AthleteHeartRateZones {
-  fcMax: number;
-  fcRest: number;
-  fcReserve: number;
-  zone1: [number, number]; // Récupération active / Échauffement doux (50-60% HRR)
-  zone2: [number, number]; // Endurance fondamentale / Aérobie de base (60-75% HRR)
-  zone3: [number, number]; // Allure tempo / Puissance aérobie (75-84% HRR)
-  zone4: [number, number]; // Seuil anaérobie / Spécifique montées (84-92% HRR)
-  zone5: [number, number]; // Puissance max / VO2 Max / Sprint (92-100% HRR)
-}
-
 /**
  * Calcule dynamiquement les 5 zones d'intensité cardio de l'athlète selon le modèle
  * de réserve cardiaque de Karvonen (HRr = FCmax - FCrepos).
  */
 export function getAthleteHeartRateZones(profile?: AthletePhysiologicalProfile): AthleteHeartRateZones {
   const p = profile || getDynamicAthleteProfile();
-  const fcRest = p.fcRest;
-  const fcReserve = p.fcReserve;
-  const fcMax = p.fcMax;
-
-  return {
-    fcMax,
-    fcRest,
-    fcReserve,
-    zone1: [Math.round(fcRest + 0.50 * fcReserve), Math.round(fcRest + 0.60 * fcReserve)],
-    zone2: [Math.round(fcRest + 0.60 * fcReserve), Math.round(fcRest + 0.75 * fcReserve)],
-    zone3: [Math.round(fcRest + 0.75 * fcReserve), Math.round(fcRest + 0.84 * fcReserve)],
-    zone4: [Math.round(fcRest + 0.84 * fcReserve), Math.round(fcRest + 0.92 * fcReserve)],
-    zone5: [Math.round(fcRest + 0.92 * fcReserve), fcMax]
-  };
+  return calculateHeartRateZones(p.fcMax, p.fcRest);
 }
 
 /**
@@ -360,24 +316,28 @@ export function getExpectedHeartRateForEvent(
 }
 
 export function isAthleteBasePaceAuto(): boolean {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      const pace = localStorage.getItem(GARMIN_ATHLETE_BASE_PACE_KEY);
-      return !pace || pace === 'AUTO';
-    }
-  } catch {}
-  return true;
+  const pace = storageGetRaw(GARMIN_ATHLETE_BASE_PACE_KEY);
+  return !pace || pace === 'AUTO';
 }
 
-export function getAthleteBasePace(): string {
-  return computeDynamicAthleteBasePace();
+export function getAthleteBasePace(activities: GarminActivity[] = []): string {
+  const stored = storageGetRaw(GARMIN_ATHLETE_BASE_PACE_KEY);
+  if (stored && stored !== 'AUTO') return stored;
+  return computeDynamicAthleteBasePace(activities);
+}
+
+/** Storage-facing adapter; the calculation above remains deterministic for explicit inputs. */
+export function getStoredAthleteProfile(): AthletePhysiologicalProfile {
+  const cachedFc = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
+  return getDynamicAthleteProfile(loadStoredGarminActivities(), {
+    fcMax: cachedFc > 140 && cachedFc < 240 ? cachedFc : undefined,
+    fcRest: getBaselineRestingHeartRate()
+  });
 }
 
 export function setAthleteBasePace(pace: string): void {
   try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(GARMIN_ATHLETE_BASE_PACE_KEY, pace);
-    }
+    storageSetRaw(GARMIN_ATHLETE_BASE_PACE_KEY, pace);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('garmin_base_pace_changed', { detail: { pace } }));
     }
@@ -409,45 +369,37 @@ export interface GarminCredentials {
 }
 
 /**
- * Saves Garmin credentials in local storage and native preferences.
+ * Keeps Garmin credentials for the current app session only.
+ * Passwords must never be written to localStorage, Capacitor Preferences or cloud metadata.
  */
 export function saveGarminCredentials(creds: GarminCredentials): void {
+  inMemoryGarminCredentials = { ...creds };
   const jsonStr = JSON.stringify(creds);
   try {
-    localStorage.setItem(GARMIN_CREDS_KEY, jsonStr);
-  } catch (e) {
-    console.error("Failed to save garmin credentials to localStorage", e);
-  }
-  // Native Preferences (Android SharedPreferences)
-  try {
-    Preferences.set({ key: GARMIN_CREDS_KEY, value: jsonStr }).catch(() => {});
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(GARMIN_CREDS_KEY, jsonStr);
+    }
   } catch {}
+
+  // Remove copies created by older releases. The async native cleanup is best-effort.
+  try { localStorage.removeItem(GARMIN_CREDS_KEY); } catch {}
+  void import('@capacitor/preferences')
+    .then(({ Preferences }) => Preferences.remove({ key: GARMIN_CREDS_KEY }))
+    .catch(() => {});
 }
 
 /**
- * Loads saved Garmin credentials from local storage.
+ * Loads credentials from the current app session.
  */
 export function loadGarminCredentials(): GarminCredentials | null {
+  if (inMemoryGarminCredentials) return { ...inMemoryGarminCredentials };
   try {
-    const raw = localStorage.getItem(GARMIN_CREDS_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return null;
-}
-
-/**
- * Asynchronously loads Garmin credentials, checking native Preferences as fallback.
- */
-export async function loadGarminCredentialsAsync(): Promise<GarminCredentials | null> {
-  const existing = loadGarminCredentials();
-  if (existing) return existing;
-  try {
-    const { value } = await Preferences.get({ key: GARMIN_CREDS_KEY });
-    if (value) {
-      const parsed = JSON.parse(value);
-      if (parsed?.email) {
-        saveGarminCredentials(parsed);
-        return parsed;
+    if (typeof sessionStorage !== 'undefined') {
+      const raw = sessionStorage.getItem(GARMIN_CREDS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as GarminCredentials;
+        inMemoryGarminCredentials = parsed;
+        return { ...parsed };
       }
     }
   } catch {}
@@ -455,15 +407,38 @@ export async function loadGarminCredentialsAsync(): Promise<GarminCredentials | 
 }
 
 /**
+ * Async compatibility wrapper. Legacy persistent copies are deliberately deleted,
+ * not restored, so the password cannot silently become persistent again.
+ */
+export async function loadGarminCredentialsAsync(): Promise<GarminCredentials | null> {
+  const existing = loadGarminCredentials();
+  try { localStorage.removeItem(GARMIN_CREDS_KEY); } catch {}
+  try {
+    const { Preferences } = await import('@capacitor/preferences');
+    await Preferences.remove({ key: GARMIN_CREDS_KEY });
+  } catch {}
+  return existing;
+}
+
+/**
  * Clears saved Garmin credentials across storage layers.
  */
 export function clearGarminCredentials(): void {
-  try {
-    localStorage.removeItem(GARMIN_CREDS_KEY);
-  } catch {}
-  try {
-    Preferences.remove({ key: GARMIN_CREDS_KEY }).catch(() => {});
-  } catch {}
+  inMemoryGarminCredentials = null;
+  try { sessionStorage.removeItem(GARMIN_CREDS_KEY); } catch {}
+  try { localStorage.removeItem(GARMIN_CREDS_KEY); } catch {}
+  void import('@capacitor/preferences')
+    .then(({ Preferences }) => Preferences.remove({ key: GARMIN_CREDS_KEY }))
+    .catch(() => {});
+}
+
+async function getGarminApiHeaders(): Promise<Record<string, string>> {
+  const { getSupabaseAccessToken } = await import('./supabaseClient');
+  const token = await getSupabaseAccessToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  };
 }
 
 /**
@@ -548,6 +523,7 @@ export async function syncWithGarminAPI(
     mode?: 'full' | 'incremental';
   }
 ): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string; syncMode?: string }> {
+  let combinedActivities = loadStoredGarminActivities();
   try {
     const credsToUse = (credentials?.email && credentials?.password)
       ? credentials
@@ -555,89 +531,101 @@ export async function syncWithGarminAPI(
 
     const syncMode = options?.mode || 'incremental';
 
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 35000);
+    let detectedMaxHr: number | undefined;
+    let nextOffset: number | null = 0;
+    let pageRequests = 0;
 
-    let response: Response;
-    try {
-      response = await fetch(getApiUrl('/api/garmin-sync'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...(credsToUse || {}),
-          syncMode,
-          clientDate: formatDateKey(new Date())
-        }),
-        signal: abortController.signal
-      });
-    } catch (fetchErr: any) {
-      if (fetchErr?.name === 'AbortError') {
+    do {
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => abortController.abort(), 55_000);
+      let response: Response;
+      let responseText: string;
+      try {
+        response = await fetch(getApiUrl('/api/garmin-sync'), {
+          method: 'POST',
+          headers: await getGarminApiHeaders(),
+          body: JSON.stringify({
+            ...(credsToUse || {}),
+            syncMode,
+            offset: syncMode === 'full' ? nextOffset : 0,
+            clientDate: formatDateKey(new Date())
+          }),
+          signal: abortController.signal
+        });
+        responseText = await response.text();
+      } catch (fetchErr: any) {
+        if (fetchErr?.name === 'AbortError') {
+          return {
+            success: false,
+            activities: combinedActivities,
+            count: combinedActivities.length,
+            error: 'La synchronisation Garmin a expiré après 55s. Les pages déjà récupérées ont été conservées.'
+          };
+        }
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
         return {
           success: false,
-          activities: [],
-          count: 0,
-          error: 'La synchronisation Garmin a expiré (délai d\'attente dépassé après 35s). Vérifiez vos identifiants ou réessayez.'
+          activities: combinedActivities,
+          count: combinedActivities.length,
+          error: `Erreur serveur Garmin (HTTP ${response.status}) : ${responseText.slice(0, 160).trim() || 'Réponse non-JSON'}`
         };
       }
-      throw fetchErr;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+      if (!response.ok || !data?.success) {
+        return {
+          success: false,
+          activities: combinedActivities,
+          count: combinedActivities.length,
+          error: data?.error || 'Échec de la récupération des activités Garmin Connect.'
+        };
+      }
 
-    let data: any;
-    const responseText = await response.text();
-    try {
-      data = JSON.parse(responseText);
-    } catch {
+      const freshActivities: GarminActivity[] = Array.isArray(data.activities)
+        ? data.activities.map(normalizeGarminActivity)
+        : [];
+      combinedActivities = mergeGarminActivities(combinedActivities, freshActivities);
+      saveGarminActivities(combinedActivities);
+      if (data.wellness) saveWellnessData(data.wellness);
+      if (typeof data.athleteMaxHr === 'number' && data.athleteMaxHr > 140 && data.athleteMaxHr < 240) {
+        detectedMaxHr = detectedMaxHr === undefined
+          ? data.athleteMaxHr
+          : Math.max(detectedMaxHr, data.athleteMaxHr);
+        storageSetRaw(STORAGE_KEYS.ATHLETE_FC_MAX, String(detectedMaxHr));
+      }
+
+      if (data.historyTruncated) {
+        return {
+          success: false,
+          activities: combinedActivities,
+          count: combinedActivities.length,
+          error: 'Limite de 5 000 activités Garmin atteinte. Les pages reçues sont conservées, mais l’historique complet n’est pas confirmé.'
+        };
+      }
+
+      pageRequests++;
+      const candidate = data.nextOffset;
+      nextOffset = syncMode === 'full' && Number.isInteger(candidate) && candidate > (nextOffset || 0)
+        ? candidate
+        : null;
+    } while (nextOffset !== null && pageRequests < 25);
+
+    if (nextOffset !== null) {
       return {
         success: false,
-        activities: [],
-        count: 0,
-        error: `Erreur serveur Garmin (Code HTTP ${response.status}) : ${responseText.slice(0, 160).trim() || 'Réponse non-JSON reçue du serveur'}`
+        activities: combinedActivities,
+        count: combinedActivities.length,
+        error: 'La synchronisation complète Garmin nécessite plus de 25 requêtes. Les pages déjà récupérées ont été conservées.'
       };
     }
 
-    if (!response.ok || !data?.success) {
-      return {
-        success: false,
-        activities: [],
-        count: 0,
-        error: data?.error || 'Échec de l\'authentification ou de la récupération des activités Garmin Connect.'
-      };
-    }
-
-    const rawActivities: GarminActivity[] = data.activities || [];
-    const freshActivities: GarminActivity[] = rawActivities.map(normalizeGarminActivity);
-
-    // Merge incoming activities with existing stored activities so past history is preserved
-    const existingActivities = loadStoredGarminActivities();
-    const activityMap = new Map<string, GarminActivity>();
-    for (const act of existingActivities) {
-      activityMap.set(act.activityId, act);
-    }
-    for (const act of freshActivities) {
-      activityMap.set(act.activityId, act);
-    }
-    const combinedActivities = Array.from(activityMap.values()).sort(
-      (a, b) => new Date(b.startTimeLocal).getTime() - new Date(a.startTimeLocal).getTime()
-    );
-
-    saveGarminActivities(combinedActivities);
-
-    // If wellness data is returned, persist it immediately
-    if (data.wellness) {
-      saveWellnessData(data.wellness);
-    }
-
-    // If athleteMaxHr is detected from Garmin userSettings or recorded peak HR
-    if (typeof data.athleteMaxHr === 'number' && data.athleteMaxHr > 140) {
-      setAppConfigOverrides({ fcMax: data.athleteMaxHr });
-      try {
-        localStorage.setItem('athlete_fc_max', String(data.athleteMaxHr));
-      } catch {}
-    }
-
-    // Persist credentials locally so future reloads and "Synchro Directe" work automatically
+    // Keep credentials only in memory for this app session.
     if (credsToUse?.email && credsToUse?.password) {
       saveGarminCredentials({ email: credsToUse.email, password: credsToUse.password });
     }
@@ -655,133 +643,19 @@ export async function syncWithGarminAPI(
       success: true,
       activities: combinedActivities,
       count: combinedActivities.length,
-      athleteMaxHr: data.athleteMaxHr,
-      syncMode: data.syncMode || syncMode
+      athleteMaxHr: detectedMaxHr,
+      syncMode
     };
   } catch (err: any) {
     return {
       success: false,
-      activities: [],
-      count: 0,
+      activities: combinedActivities,
+      count: combinedActivities.length,
       error: err.message || 'Network error while connecting to Garmin API proxy.'
     };
   }
 }
 
-/**
- * GPX text parser for manual watch exports
- */
-export function parseGPXString(gpxText: string, fileName: string): GarminActivity {
-  // Extract name
-  const nameMatch = gpxText.match(/<name>([^<]+)<\/name>/i);
-  const name = nameMatch ? nameMatch[1].trim() : fileName.replace(/\.[^/.]+$/, "");
-
-  // Extract time
-  const timeMatch = gpxText.match(/<time>([^<]+)<\/time>/i);
-  const startTime = timeMatch ? new Date(timeMatch[1]).toISOString() : new Date().toISOString();
-
-  // Extract trackpoints and compute distance & elevation gain
-  const trkptRegex = /<trkpt[^>]*lat="([^"]+)"[^>]*lon="([^"]+)"[^>]*>[\s\S]*?<ele>([^<]+)<\/ele>(?:[\s\S]*?<time>([^<]+)<\/time>)?[\s\S]*?<\/trkpt>/gi;
-  let match;
-  let totalDistM = 0;
-  let totalEleGainM = 0;
-  let prevLat: number | null = null;
-  let prevLon: number | null = null;
-  let prevEle: number | null = null;
-  let firstTime: Date | null = null;
-  let lastTime: Date | null = null;
-
-  while ((match = trkptRegex.exec(gpxText)) !== null) {
-    const lat = parseFloat(match[1]);
-    const lon = parseFloat(match[2]);
-    const ele = parseFloat(match[3]);
-    const timeStr = match[4];
-
-    if (timeStr) {
-      const t = new Date(timeStr);
-      if (!firstTime) firstTime = t;
-      lastTime = t;
-    }
-
-    if (prevLat !== null && prevLon !== null) {
-      totalDistM += haversineDistance(prevLat, prevLon, lat, lon);
-    }
-    if (prevEle !== null && ele > prevEle) {
-      totalEleGainM += ele - prevEle;
-    }
-
-    prevLat = lat;
-    prevLon = lon;
-    prevEle = ele;
-  }
-
-  let durationMin = 45;
-  if (firstTime && lastTime) {
-    durationMin = Math.max(1, Math.round((lastTime.getTime() - firstTime.getTime()) / 60000));
-  }
-
-  const distKm = parseFloat((totalDistM / 1000).toFixed(2));
-  const eleGain = Math.round(totalEleGainM);
-
-  // Infer sport type from activity name or elevation
-  let inferredType: GarminActivityType = 'TRAIL_RUNNING';
-  if (name.toLowerCase().includes('stairs') || name.toLowerCase().includes('escalier')) {
-    inferredType = 'OTHER';
-  } else if (name.toLowerCase().includes('gym') || name.toLowerCase().includes('calisth')) {
-    inferredType = 'STRENGTH_TRAINING';
-  } else if (eleGain < 50 && distKm > 3) {
-    inferredType = 'RUNNING';
-  }
-
-  return {
-    activityId: `gpx-${Date.now()}`,
-    activityName: name,
-    activityType: inferredType,
-    startTimeLocal: startTime,
-    durationMinutes: durationMin,
-    distanceKm: distKm > 0 ? distKm : undefined,
-    elevationGainM: eleGain > 0 ? eleGain : undefined,
-    calories: Math.round(durationMin * 8.5),
-    source: 'GPX_IMPORT'
-  };
-}
-
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // Earth radius in meters
-  const toRad = (deg: number) => (deg * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-/**
- * Strips emojis, pictographs, and incompatible special symbols for Garmin watch displays (e.g. Forerunner 55).
- * Normalizes punctuation and limits string length if specified.
- */
-export function sanitizeGarminText(text?: string | null, maxLength?: number): string {
-  if (!text) return '';
-  let cleaned = text
-    // 1. Normalize special symbols and arrows FIRST before dingbats emoji range
-    .replace(/[➔➜➝➞]/g, '->')
-    .replace(/[•●▪]/g, '-')
-    .replace(/[–—]/g, '-')
-    .replace(/[’‘]/g, "'")
-    .replace(/[“”«»]/g, '"')
-    // 2. Strip emojis, pictographs, and remaining dingbats
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
-    // 3. Collapse consecutive whitespaces and trim
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (maxLength && cleaned.length > maxLength) {
-    cleaned = cleaned.slice(0, maxLength).trim();
-  }
-  return cleaned;
-}
 
 /**
  * Constructs a structured Garmin workout payload from a planned CalendarEvent.
@@ -790,13 +664,14 @@ export function sanitizeGarminText(text?: string | null, maxLength?: number): st
 export function buildWorkoutPayloadFromEvent(
   event: CalendarEvent,
   targetDateStr?: string,
-  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
+  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55',
+  athleteProfile?: AthletePhysiologicalProfile
 ): WorkoutPushPayload {
   const dateKey = targetDateStr || toLocalDateKey(event.startDate);
   const durMin = event.durationMinutes || 45;
   const isFR55 = targetWatch === 'FORERUNNER_55';
   const targetMode = getGarminWorkoutTargetMode();
-  const profile = getDynamicAthleteProfile();
+  const profile = athleteProfile || getDynamicAthleteProfile();
   const athleteZones = getAthleteHeartRateZones(profile);
   const basePaceStr = profile.basePace || getAthleteBasePace();
   const baseSec = parsePaceToSeconds(basePaceStr);
@@ -1224,11 +1099,11 @@ export async function pushWorkoutToGarmin(
 ): Promise<WorkoutPushResult> {
   try {
     const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
-    const payload = buildWorkoutPayloadFromEvent(event, targetDateStr, targetWatch);
+    const payload = buildWorkoutPayloadFromEvent(event, targetDateStr, targetWatch, getStoredAthleteProfile());
 
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getGarminApiHeaders(),
       body: JSON.stringify({
         email: creds?.email,
         password: creds?.password,
@@ -1308,7 +1183,7 @@ export async function fetchGarminWellness(): Promise<{ success: boolean; wellnes
     const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getGarminApiHeaders(),
       body: JSON.stringify({
         email: creds?.email,
         password: creds?.password,
@@ -1362,7 +1237,7 @@ export async function cleanDuplicateGarminWorkouts(): Promise<{
     const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getGarminApiHeaders(),
       body: JSON.stringify({
         email: creds?.email,
         password: creds?.password,

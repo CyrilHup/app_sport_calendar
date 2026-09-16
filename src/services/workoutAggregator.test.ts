@@ -2,12 +2,31 @@ import { describe, it, expect } from 'vitest';
 import {
   groupDaySportWorkouts,
   normalizeDiscipline,
-  getDisciplineMetadata
+  getDisciplineMetadata,
+  buildUnplannedSportItem
 } from './workoutAggregator';
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, GarminActivity } from '../types/garmin';
 
 describe('workoutAggregator', () => {
+  it('uses the supplied athlete profile for day-item load estimates', () => {
+    const actualActivity: GarminActivity = {
+      activityId: 'hr-run', activityName: 'Run', activityType: 'RUNNING',
+      startTimeLocal: '2026-09-10T11:00:00', durationMinutes: 50,
+      avgHeartRate: 160, source: 'GARMIN_CONNECT'
+    };
+    const comparison: ActivityComparison = {
+      id: 'hr-run', date: '2026-09-10', status: 'UNPLANNED', actualActivity,
+      durationDeltaMinutes: 0, complianceScore: 100,
+      heartRateCompliance: 'OPTIMAL', feedbackNotes: []
+    };
+
+    const lowerMax = buildUnplannedSportItem(comparison, { fcMax: 180, fcRest: 60 });
+    const higherMax = buildUnplannedSportItem(comparison, { fcMax: 220, fcRest: 60 });
+
+    expect(lowerMax?.trimp).toBeGreaterThan(higherMax?.trimp || 0);
+  });
+
   it('normalizes disciplines correctly', () => {
     expect(normalizeDiscipline(null, { activityType: 'RUNNING', activityName: 'Jogging' } as GarminActivity)).toBe('RUNNING');
     expect(normalizeDiscipline(null, { activityType: 'STRENGTH_TRAINING', activityName: 'Renforcement' } as GarminActivity)).toBe('STRENGTH_TRAINING');

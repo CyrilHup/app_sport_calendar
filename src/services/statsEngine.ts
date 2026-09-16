@@ -16,6 +16,7 @@ import {
   parsePaceStringToSeconds,
   QmtRacePrediction
 } from './racePredictorEngine';
+export { DEFAULT_WEEKLY_TARGETS } from './trainingDefaults';
 
 // 100% Backward-compatible re-exports
 export * from './loadEngine';
@@ -30,11 +31,6 @@ export const PLAN_START_DATE = GLOBAL_APP_CONFIG.SPORT_START_DATE || '2026-09-01
 /**
  * Standard default weekly targets when no planned session is scheduled.
  */
-export const DEFAULT_WEEKLY_TARGETS = {
-  plannedDurationMin: 225,
-  plannedElevationM: 780
-};
-
 export type TimeRangeScope = 'week' | 'plan' | '4w' | '12w' | 'all' | (string & {});
 
 export interface WeeklyTrendPoint {
@@ -202,7 +198,8 @@ export function computeFullStatsReport(
   _plannedEvents: CalendarEvent[] = [],
   scope: TimeRangeScope = 'plan',
   asOfDate: Date = new Date(),
-  includeBonusActivities: boolean = true
+  includeBonusActivities: boolean = true,
+  athlete?: { fcMax?: number; fcRest?: number }
 ): FullStatsReport {
   // Identify which activities are "Bonus" (unplanned non-prescribed activities)
   const bonusActIds = new Set<string>();
@@ -916,7 +913,7 @@ export function computeFullStatsReport(
   // Training Load & Fatigue (CTL / ATL / TSB / ACWR)
   // Physiological load & ACWR must ALWAYS be evaluated on the complete 90-day history (rawList)
   // regardless of the display timeline scope, preserving the 42-day CTL decay and 28-day chronic baseline.
-  const trainingLoad = computeTrainingLoadStats(rawList, asOfDate, 90);
+  const trainingLoad = computeTrainingLoadStats(rawList, asOfDate, 90, athlete);
 
   // Trail-specific metrics (D-, VAM, GAP)
   const trailSpecific = computeTrailSpecificStats(runActivities);

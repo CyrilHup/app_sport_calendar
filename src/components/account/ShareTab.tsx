@@ -6,8 +6,10 @@ import {
   Save,
   Share2
 } from 'lucide-react';
+import { useManagedTimeout } from '../../hooks/useManagedTimeout';
 
 export const ShareTab: React.FC = () => {
+  const scheduleTimeout = useManagedTimeout();
   const { profile, updateProfile } = useAuth();
 
   const [shareSlug, setShareSlug] = useState('');
@@ -29,7 +31,7 @@ export const ShareTab: React.FC = () => {
     if (!shareUrl) return;
     navigator.clipboard.writeText(shareUrl);
     setShareCopied(true);
-    setTimeout(() => setShareCopied(false), 2000);
+    scheduleTimeout(() => setShareCopied(false), 2000);
   };
 
   const handleSaveShareSettings = async () => {
@@ -43,7 +45,7 @@ export const ShareTab: React.FC = () => {
     if (ok) {
       setShareSlug(formattedSlug);
       setShareSuccess(true);
-      setTimeout(() => setShareSuccess(false), 2500);
+      scheduleTimeout(() => setShareSuccess(false), 2500);
     }
   };
 

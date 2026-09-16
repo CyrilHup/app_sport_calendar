@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { CalendarEvent } from '../../types/calendar';
 import { triggerGoogleCalendarOAuthSync, downloadICSFile } from '../../services/googleCalendarService';
+import { useManagedTimeout } from '../../hooks/useManagedTimeout';
 
 interface CalendarTabProps {
   calendarEvents: CalendarEvent[];
@@ -24,6 +25,7 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
   onRefreshAll,
   isRecharging = false
 }) => {
+  const scheduleTimeout = useManagedTimeout();
   const { profile, updateProfile } = useAuth();
 
   const [profIcal, setProfIcal] = useState('');
@@ -55,14 +57,14 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
     if (ok) {
       setProfileSuccessMsg('Flux iCal enregistré et planning actualisé.');
       onRefreshAll();
-      setTimeout(() => setProfileSuccessMsg(''), 3500);
+      scheduleTimeout(() => setProfileSuccessMsg(''), 3500);
     }
   };
 
   const handleDirectGoogleCalendarSync = async () => {
     const res = await triggerGoogleCalendarOAuthSync(calendarEvents, setGcalSyncProgress);
     if (res.success) {
-      setTimeout(() => {
+      scheduleTimeout(() => {
         setGcalSyncProgress(null);
       }, 4000);
     }
@@ -72,7 +74,7 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
     if (!subscriptionUrl) return;
     navigator.clipboard.writeText(subscriptionUrl);
     setGcalCopied(true);
-    setTimeout(() => setGcalCopied(false), 2000);
+    scheduleTimeout(() => setGcalCopied(false), 2000);
   };
 
   return (

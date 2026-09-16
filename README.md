@@ -72,7 +72,15 @@ cp .env.example .env
 Open `.env` and fill in your personal configuration:
 ```env
 # Academic / Corporate iCal Feed URL
-VITE_ICAL_FEED_URL="https://your-university.edu/calendar/feed?token=YOUR_TOKEN"
+ICAL_FEED_URL="https://your-university.edu/calendar/feed?token=YOUR_TOKEN"
+
+# Supabase public client configuration (required for sign-in and authenticated APIs)
+VITE_SUPABASE_URL="https://YOUR_PROJECT.supabase.co"
+VITE_SUPABASE_ANON_KEY="YOUR_PUBLIC_ANON_KEY"
+
+# Optional API restrictions
+ICAL_ALLOWED_HOSTS="your-university.edu"
+ALLOWED_ORIGINS="https://your-app.example.com"
 
 # Addresses for Automated Commute Calculations
 VITE_HOME_ADDRESS="123 Main Street, City, State, Country"
@@ -100,10 +108,9 @@ Open **[http://localhost:5173/](http://localhost:5173/)** in your browser.
 
 ## 🔒 Privacy & Anonymization
 
-This repository is strictly designed to be open-source and privacy-compliant:
-- **Zero hardcoded credentials:** All personal addresses, school tokens, and account identifiers are externalized to `.env`.
-- **Git protection:** `.env` and local credential files are explicitly ignored in `.gitignore`.
-- **Configurable for any athlete:** Can be adapted to any school, club, or ultra-trail event globally.
+The academic feed URL must be configured as a server-only `ICAL_FEED_URL`, not as a `VITE_` variable: the feed URL may contain a private token. Keep `.env` out of version control. Garmin passwords are kept only for the current browser/app session; users must re-enter them after a full restart. The server caches Garmin OAuth tokens in per-user files for up to 24 hours with owner-only file permissions. The public subscription feed at `/api/calendar.ics` publishes the configured academic and training schedule to anyone with its URL; do not configure a private academic feed there unless this exposure is intended. The application still contains QMT-specific training prescriptions and is not a general coaching product.
+
+Run `npm run typecheck`, `npm test`, and `npm run build` before deployment. The `user_settings` columns in `supabase_schema.sql` must be applied to an existing Supabase database before relying on cross-device override conflict resolution.
 
 ---
 
@@ -114,7 +121,7 @@ This repository is strictly designed to be open-source and privacy-compliant:
 ├── .gitignore                # Git exclusions (protects .env and secrets)
 ├── index.html                # Main HTML entry point
 ├── package.json              # Dependencies and build scripts
-├── vite.config.ts            # Vite configuration with iCal & Webcal middleware
+├── vite.config.ts            # Local API middleware
 ├── src/
 │   ├── App.tsx               # Main application coordinator
 │   ├── main.tsx              # React DOM entry

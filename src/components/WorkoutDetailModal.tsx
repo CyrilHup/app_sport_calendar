@@ -21,7 +21,6 @@ import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { buildWorkoutPayloadFromEvent } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
-import { useAuth } from '../contexts/AuthContext';
 import { ActivityComparison } from '../types/garmin';
 import { formatTime, formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
@@ -29,6 +28,8 @@ import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activity
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { getDynamicAthleteProfile } from '../services/garminService';
 import { isWorkoutSyncedToGarmin, syncCurrentWeekWorkoutsToGarmin } from '../services/garminAutoSyncService';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
+import { getBaselineRestingHeartRate } from '../services/readinessEngine';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
@@ -44,6 +45,7 @@ interface WorkoutDetailModalProps {
   ) => void;
   onCancelPostpone?: (eventId: string) => void;
   onOpenGarminSync?: () => void;
+  athlete?: { fcMax: number; fcRest: number };
 }
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
@@ -53,9 +55,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   onClose,
   onPostpone,
   onCancelPostpone,
-  onOpenGarminSync
+  onOpenGarminSync,
+  athlete
 }) => {
-  if (!event && !unifiedGroup) return null;
+  const scheduleTimeout = useManagedTimeout();
+  const hasContent = Boolean(event || unifiedGroup);
 
   const isMultiMerged = Boolean(unifiedGroup && unifiedGroup.isMerged);
   const [activeItemIndex, setActiveItemIndex] = useState<'global' | number>(isMultiMerged ? 'global' : 0);
@@ -69,6 +73,19 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       ? unifiedGroup!.items[activeItemIndex]
       : null;
 
+  const emptyEvent: CalendarEvent = {
+    id: 'empty',
+    title: '',
+    description: '',
+    startDate: new Date(0).toISOString(),
+    endDate: new Date(0).toISOString(),
+    category: 'sport',
+    colorId: 'sport',
+    colorHex: '#000000',
+    durationMinutes: 0,
+    emoji: '',
+    location: ''
+  };
   const effectiveEvent: CalendarEvent = activeItem?.plannedEvent || (activeItem ? {
     id: activeItem.id,
     title: activeItem.title,
@@ -81,7 +98,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     durationMinutes: activeItem.durationMinutes,
     emoji: activeItem.emoji,
     location: 'Garmin Connect'
-  } : (event || {
+  } : (event || (unifiedGroup ? {
     id: unifiedGroup!.id,
     title: unifiedGroup!.title,
     description: 'Activité combinée',
@@ -93,13 +110,12 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     durationMinutes: unifiedGroup!.totalDurationMinutes,
     emoji: unifiedGroup!.emoji,
     location: 'Garmin Connect'
-  }));
+  } : emptyEvent)));
 
   const effectiveComparison: ActivityComparison | null | undefined =
     activeItem ? (activeItem.comparison || null) : comparison;
 
-  const { profile } = useAuth();
-  const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
+  const athleteFcMax = athlete?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX;
 
   const [isAlarmModalOpen, setIsAlarmModalOpen] = useState<boolean>(false);
 
@@ -128,7 +144,14 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   }, []);
 
   const selectedWatch = 'FORERUNNER_55';
-  const workoutPreview = effectiveEvent.category === 'sport' ? buildWorkoutPayloadFromEvent(effectiveEvent, toLocalDateKey(effectiveEvent.startDate), selectedWatch) : null;
+  const dynamicProfile = getDynamicAthleteProfile(
+    unifiedGroup?.items.flatMap(item => item.actualActivity ? [item.actualActivity] : [])
+      || (comparison?.actualActivity ? [comparison.actualActivity] : []),
+    { fcMax: athleteFcMax, fcRest: athlete?.fcRest || getBaselineRestingHeartRate() }
+  );
+  const workoutPreview = effectiveEvent.category === 'sport'
+    ? buildWorkoutPayloadFromEvent(effectiveEvent, toLocalDateKey(effectiveEvent.startDate), selectedWatch, dynamicProfile)
+    : null;
 
   const handleQuickPostpone = (daysOffset: number) => {
     const newDateStr = toLocalDateKey(addDays(parseLocalDate(currentEventDateKey), daysOffset));
@@ -145,7 +168,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       targetTimeInput
     );
     setPostponeSuccessMsg(`Séance reportée avec succès au ${targetDateInput} !`);
-    setTimeout(() => {
+    scheduleTimeout(() => {
       onClose();
     }, 1200);
   };
@@ -154,7 +177,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     if (!onCancelPostpone) return;
     onCancelPostpone(effectiveEvent.id);
     setPostponeSuccessMsg(`Séance rétablie à sa date initiale (${originalDateKey}) !`);
-    setTimeout(() => {
+    scheduleTimeout(() => {
       onClose();
     }, 1000);
   };
@@ -184,8 +207,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     try {
       const result = await syncCurrentWeekWorkoutsToGarmin(
         unsyncedPlannedEvents,
-        new Date(effectiveEvent.startDate),
-        { force: true }
+        new Date(effectiveEvent.startDate)
       );
 
       if (!result.success) {
@@ -229,7 +251,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const effectiveLocation = effectiveEvent.location || 'Garmin Connect';
 
-  const dynamicProfile = getDynamicAthleteProfile();
   const athleteFcRest = dynamicProfile.fcRest;
 
   const plannedTrimpInfo = isSport ? calculateSessionTrimp(
@@ -356,6 +377,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       subtitle: 'Zéro alerte de montre'
     };
   }, [isSport, isCalisthenics, workoutPreview, isTrailIntense, isTrailLong, hasLegStrength, effectiveElevationM, athleteFcMax, effectiveEvent.metadata?.targetHeartRate]);
+
+  if (!hasContent) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>

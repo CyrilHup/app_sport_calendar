@@ -3,6 +3,16 @@ import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { classifyGarminActivityType } from '../src/services/activityClassifier';
+import {
+  areWorkoutsEquivalent,
+  hasGarminEmojiOrSpecialSymbols,
+  normalizeWorkoutTitleForMatching
+} from '../src/services/garminDeduplication';
+import { sanitizeGarminText } from '../src/services/garminText';
+import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
+import { validateGarminRequest } from '../src/server/garminRequest';
+import { fetchGarminActivityBatch } from '../src/server/garminPagination';
 
 const require = createRequire(import.meta.url);
 let garminPkg: any;
@@ -29,52 +39,6 @@ const HrmTarget = garminPkg?.HrmTarget || garminPkg?.default?.HrmTarget;
 const PaceTarget = garminPkg?.PaceTarget || garminPkg?.default?.PaceTarget;
 const NoTarget = garminPkg?.NoTarget || garminPkg?.default?.NoTarget;
 
-/**
- * Self-contained deduplication utilities to avoid fragile cross-directory imports from src/.
- */
-function hasGarminEmojiOrSpecialSymbols(text: string): boolean {
-  if (!text) return false;
-  return /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}➔➜➝➞•●▪–—]/u.test(text);
-}
-
-function normalizeWorkoutTitleForMatching(raw: string): string {
-  if (!raw) return '';
-  return raw
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[➔➜➝➞•●▪–—\-_/\\|:;,()[\]{}"'`~*+?&!]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function areWorkoutsEquivalent(title1: string, title2: string): boolean {
-  const norm1 = normalizeWorkoutTitleForMatching(title1);
-  const norm2 = normalizeWorkoutTitleForMatching(title2);
-
-  if (!norm1 || !norm2) return false;
-  if (norm1 === norm2) return true;
-
-  const minLen = Math.min(norm1.length, norm2.length);
-  if (minLen >= 10 && (norm1.startsWith(norm2.slice(0, minLen)) || norm2.startsWith(norm1.slice(0, minLen)))) {
-    return true;
-  }
-
-  const tokens1 = norm1.split(' ').filter((t: string) => t.length >= 3);
-  const tokens2 = norm2.split(' ').filter((t: string) => t.length >= 3);
-  if (tokens1.length > 0 && tokens2.length > 0) {
-    const intersection = tokens1.filter((t: string) => tokens2.includes(t));
-    const overlap1 = intersection.length / tokens1.length;
-    const overlap2 = intersection.length / tokens2.length;
-    if (overlap1 >= 0.8 || overlap2 >= 0.8) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 function parsePaceSeconds(paceStr?: string): number {
   if (!paceStr) return 0;
   const parts = paceStr.split(':').map(p => parseInt(p.trim(), 10));
@@ -85,98 +49,24 @@ function parsePaceSeconds(paceStr?: string): number {
   return isNaN(val) ? 0 : Math.round(val * 60);
 }
 
-/**
- * Self-contained Garmin activity type classifier for Vercel Serverless execution.
- * Avoids fragile cross-directory TypeScript imports from src/.
- */
-function classifyGarminActivityType(rawTypeKey?: string, activityName?: string): string {
-  const key = String(rawTypeKey || '').toLowerCase();
-  const name = String(activityName || '').toLowerCase();
-
-  if (
-    key.includes('climb') ||
-    key.includes('boulder') ||
-    name.includes('grimp') ||
-    name.includes('climb') ||
-    name.includes('boulder') ||
-    name.includes('escalade') ||
-    name.includes('bloc')
-  ) {
-    return 'CLIMBING';
-  }
-
-  if (
-    key.includes('trail') ||
-    name.includes('trail') ||
-    name.includes('côte') ||
-    name.includes('cotes') ||
-    name.includes('mont-royal') ||
-    name.includes('mont royal') ||
-    name.includes('qmt') ||
-    name.includes('rando-course') ||
-    name.includes('d+')
-  ) {
-    return 'TRAIL_RUNNING';
-  }
-
-  if (
-    key.includes('run') ||
-    name.includes('course') ||
-    name.includes('footing') ||
-    name.includes('jog')
-  ) {
-    return 'RUNNING';
-  }
-
-  if (
-    key.includes('strength') ||
-    key.includes('weight') ||
-    key.includes('gym') ||
-    key.includes('fitness') ||
-    key.includes('cardio') ||
-    key.includes('hiit') ||
-    name.includes('muscu') ||
-    name.includes('calisth') ||
-    name.includes('force') ||
-    name.includes('renfo') ||
-    name.includes('gainage') ||
-    name.includes('pompe') ||
-    name.includes('traction')
-  ) {
-    return 'STRENGTH_TRAINING';
-  }
-
-  if (
-    key.includes('cycl') ||
-    key.includes('bike') ||
-    name.includes('vélo') ||
-    name.includes('bike')
-  ) {
-    return 'CYCLING';
-  }
-
-  if (
-    key.includes('walk') ||
-    key.includes('hike') ||
-    name.includes('marche') ||
-    name.includes('walk') ||
-    name.includes('randonnée')
-  ) {
-    return 'WALKING';
-  }
-
-  return 'OTHER';
+function getSessionFile(userId: string): string {
+  const safeUserId = userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filename = `.garmin_session_${safeUserId}.json`;
+  return process.env.VERCEL ? path.join(os.tmpdir(), filename) : path.resolve(process.cwd(), filename);
 }
 
-const SESSION_FILE = process.env.VERCEL
-  ? path.join(os.tmpdir(), '.garmin_session.json')
-  : path.resolve(process.cwd(), '.garmin_session.json');
-
-function loadCachedSession(): { username?: string; tokens?: any } | null {
+function loadCachedSession(userId: string): { username?: string; tokens?: any } | null {
   try {
-    if (fs.existsSync(SESSION_FILE)) {
-      const content = fs.readFileSync(SESSION_FILE, 'utf-8');
-      return JSON.parse(content);
+    const sessionFile = getSessionFile(userId);
+    if (fs.existsSync(sessionFile)) {
+      const content = fs.readFileSync(sessionFile, 'utf-8');
+      const cached = JSON.parse(content);
+      const savedAt = Date.parse(cached.savedAt || '');
+      if (!Number.isFinite(savedAt) || Date.now() - savedAt > 24 * 60 * 60 * 1000) {
+        fs.unlinkSync(sessionFile);
+        return null;
+      }
+      return cached;
     }
   } catch (e) {
     console.warn('Could not read cached Garmin session:', e);
@@ -184,99 +74,92 @@ function loadCachedSession(): { username?: string; tokens?: any } | null {
   return null;
 }
 
-function saveCachedSession(username: string, tokens: any) {
+function saveCachedSession(userId: string, username: string, tokens: any) {
   try {
-    fs.writeFileSync(SESSION_FILE, JSON.stringify({ username, tokens, savedAt: new Date().toISOString() }, null, 2));
+    fs.writeFileSync(getSessionFile(userId), JSON.stringify({ username, tokens, savedAt: new Date().toISOString() }), { mode: 0o600 });
+    fs.chmodSync(getSessionFile(userId), 0o600);
   } catch (e) {
     console.warn('Could not save cached Garmin session:', e);
   }
 }
 
-function sanitizeGarminText(text: string, maxLength?: number): string {
-  if (!text) return '';
-  let cleaned = text
-    .replace(/[➔➜➝➞]/g, '->')
-    .replace(/[•●▪]/g, '-')
-    .replace(/[–—]/g, '-')
-    .replace(/[’‘]/g, "'")
-    .replace(/[“”«»]/g, '"')
-    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{200D}\u{FE0F}]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (maxLength && cleaned.length > maxLength) {
-    cleaned = cleaned.slice(0, maxLength).trim();
-  }
-  return cleaned;
-}
-
 
 export default async function handler(req: any, res: any) {
-  // Polyfill response helpers for Node/Vite connect middleware
-  if (!res.status) {
-    res.status = (code: number) => { res.statusCode = code; return res; };
-  }
-  if (!res.json) {
-    res.json = (data: any) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify(data));
-    };
-  }
-  if (!res.send) {
-    res.send = (data: any) => {
-      res.end(data);
-    };
-  }
-
-  // CORS
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  ensureResponseHelpers(res);
+  if (!applyApiCors(req, res, 'POST,OPTIONS')) return;
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
+    res.status(204).end();
     return;
   }
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed.' });
+    return;
+  }
+
+  const apiUser = await requireAuthenticatedUser(req, res);
+  if (!apiUser) return;
 
   // Parse stream body for Node connect middleware if not already parsed
   if (!req.body && req.method === 'POST') {
     try {
-      const readBodyPromise = new Promise<string>((resolve) => {
+      const readBodyPromise = new Promise<string>((resolve, reject) => {
         let buf = '';
-        req.on('data', (c: any) => buf += c);
-        req.on('end', () => resolve(buf));
-        req.on('error', () => resolve(''));
-        setTimeout(() => resolve(buf), 4000);
+        let tooLarge = false;
+        const timer = setTimeout(() => reject(new Error('Request timeout')), 4000);
+        req.on('data', (chunk: any) => {
+          if (tooLarge) return;
+          buf += String(chunk);
+          if (buf.length > 65_536) {
+            tooLarge = true;
+            clearTimeout(timer);
+            reject(new Error('Request too large'));
+          }
+        });
+        req.on('end', () => { clearTimeout(timer); resolve(buf); });
+        req.on('error', (error: unknown) => { clearTimeout(timer); reject(error); });
       });
       const raw = await readBodyPromise;
       if (raw) {
         req.body = JSON.parse(raw);
       }
-    } catch {
-      req.body = {};
+    } catch (error) {
+      res.status(error instanceof Error && error.message === 'Request too large' ? 413 : 400)
+        .json({ error: error instanceof Error ? error.message : 'Invalid request body.' });
+      return;
     }
   }
 
-  let body = req.body || {};
-  if (typeof body === 'string') {
+  let rawBody = req.body || {};
+  if (typeof rawBody === 'string') {
     try {
-      body = JSON.parse(body);
+      rawBody = JSON.parse(rawBody);
     } catch {
-      body = {};
+      res.status(400).json({ error: 'Invalid JSON request body.' });
+      return;
     }
   }
 
-  const username = body.email || process.env.GARMIN_EMAIL;
-  const password = body.password || process.env.GARMIN_PASSWORD;
-  const action = body.action || 'sync'; // 'sync' | 'push-workout' | 'get-wellness'
+  if (JSON.stringify(rawBody).length > 65_536) {
+    res.status(413).json({ error: 'Request too large.' });
+    return;
+  }
+
+  let body: ReturnType<typeof validateGarminRequest>;
+  try {
+    body = validateGarminRequest(rawBody);
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid Garmin request.' });
+    return;
+  }
+
+  const username = body.email;
+  const password = body.password;
+  const action = body.action;
 
   try {
     let gc = new GarminConnect({ username: username || 'user', password: password || 'pass' });
-    const cached = loadCachedSession();
+    const cached = loadCachedSession(apiUser.id);
     let isAuthenticated = false;
 
     // 1. Try reusing cached OAuth tokens
@@ -294,7 +177,7 @@ export default async function handler(req: any, res: any) {
     if (!isAuthenticated) {
       if (!username || !password) {
         res.status(400).json({
-          error: 'Veuillez renseigner votre email et mot de passe Garmin Connect (ou configurer GARMIN_EMAIL/PASSWORD).'
+          error: 'Veuillez renseigner votre email et mot de passe Garmin Connect.'
         });
         return;
       }
@@ -304,7 +187,7 @@ export default async function handler(req: any, res: any) {
 
       try {
         const tokens = gc.exportToken();
-        saveCachedSession(username, tokens);
+        saveCachedSession(apiUser.id, username, tokens);
       } catch (tokenExportErr) {
         console.warn('Could not export tokens:', tokenExportErr);
       }
@@ -315,12 +198,12 @@ export default async function handler(req: any, res: any) {
     // ----------------------------------------------------
     if (action === 'push-workout') {
       const workout = body.workout;
-      if (!workout || !workout.title || !workout.steps) {
+      if (!workout) {
         res.status(400).json({ success: false, error: 'Workout payload with title and steps is required.' });
         return;
       }
 
-      const isFR55 = workout.targetWatch === 'FORERUNNER_55' || true;
+      const isFR55 = workout.targetWatch === 'FORERUNNER_55';
       let wt = WorkoutType.Running;
 
       if (workout.sportType === 'CARDIO') {
@@ -334,29 +217,9 @@ export default async function handler(req: any, res: any) {
       const cleanTitle = sanitizeGarminText(workout.title, 36);
       const cleanDesc = sanitizeGarminText(workout.description || 'Seance QMT-80 Performance Hub', 250);
 
-      // 1. Déduplication automatique : Nettoyer tout ancien entraînement équivalent sur Garmin Connect (avec émojis, ancienne version, etc.)
-      try {
-        const existingWorkouts: any[] = await gc.getWorkouts(1, 100);
-        if (Array.isArray(existingWorkouts)) {
-          for (const ew of existingWorkouts) {
-            const ewName = ew.workoutName || '';
-            if (areWorkoutsEquivalent(ewName, workout.title) || areWorkoutsEquivalent(ewName, cleanTitle)) {
-              try {
-                await gc.deleteWorkout({ workoutId: String(ew.workoutId) });
-                console.log(`[Deduplication] Deleted duplicate Garmin workout ${ew.workoutId} ("${ewName}") before recreating clean version`);
-              } catch (delErr) {
-                console.warn(`[Deduplication] Could not delete duplicate workout ${ew.workoutId}:`, delErr);
-              }
-            }
-          }
-        }
-      } catch (fetchErr) {
-        console.warn('[Deduplication] Could not fetch existing workouts for deduplication:', fetchErr);
-      }
-
       const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
 
-      for (const st of workout.steps) {
+      for (const st of workout.steps as any[]) {
         let stepType = StepType.Run;
         if (st.stepType === 'WARMUP') stepType = StepType.WarmUp;
         else if (st.stepType === 'INTERVAL') stepType = wt === WorkoutType.Running ? StepType.Run : (StepType.Exercise || StepType.Run);
@@ -426,6 +289,13 @@ export default async function handler(req: any, res: any) {
         await gc.scheduleWorkout({ workoutId: createdWorkoutId }, workout.scheduledDate);
       } catch (schedErr: any) {
         console.error('Could not schedule workout to calendar:', schedErr);
+        // Only remove the workout created by this request. Never delete older
+        // workouts based on a fuzzy title match during automatic sync.
+        try {
+          await gc.deleteWorkout({ workoutId: createdWorkoutId });
+        } catch (cleanupErr) {
+          console.warn('Could not clean up unscheduled Garmin workout:', cleanupErr);
+        }
         throw new Error(
           `Séance créée mais non programmée dans le calendrier Garmin pour le ${workout.scheduledDate}: ${schedErr?.message || 'erreur Garmin inconnue'}`
         );
@@ -525,7 +395,21 @@ export default async function handler(req: any, res: any) {
     // WELLNESS & ACTIVITIES EXTRACTION (Concurrent with timeouts)
     // ----------------------------------------------------
     const timeoutPromise = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
-      Promise.race([promise, new Promise<T>(res => setTimeout(() => res(fallback), ms))]);
+      new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => resolve(fallback), ms);
+        promise.then(
+          value => { clearTimeout(timer); resolve(value); },
+          error => { clearTimeout(timer); reject(error); }
+        );
+      });
+    const requiredWithin = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+      new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Garmin activity page timed out.')), ms);
+        promise.then(
+          value => { clearTimeout(timer); resolve(value); },
+          error => { clearTimeout(timer); reject(error); }
+        );
+      });
 
     let wellness: any = null;
     const getLocalFallbackDate = () => {
@@ -540,12 +424,12 @@ export default async function handler(req: any, res: any) {
         return new Date().toISOString().slice(0, 10);
       }
     };
-    const todayStr = (req.body?.clientDate && /^\d{4}-\d{2}-\d{2}$/.test(req.body.clientDate))
-      ? req.body.clientDate
+    const todayStr = body.clientDate
+      ? body.clientDate
       : getLocalFallbackDate();
     const today = new Date(todayStr + 'T12:00:00');
 
-    const syncMode = body.syncMode || body.mode || 'incremental';
+    const syncMode = body.syncMode;
 
     const fetchSleep = async () => {
       try {
@@ -613,48 +497,41 @@ export default async function handler(req: any, res: any) {
       return undefined;
     };
 
+    let nextOffset: number | null = null;
+    let historyTruncated = false;
     const fetchActs = async () => {
       if (action === 'get-wellness') return [];
       if (syncMode === 'full') {
-        const pageSize = 100;
-        const maxActivities = 1500;
-        let offset = 0;
-        const acts: any[] = [];
-        while (offset < maxActivities) {
-          try {
-            const page: any[] = await timeoutPromise(gc.getActivities(offset, pageSize), 15000, []);
-            if (!Array.isArray(page) || page.length === 0) break;
-            acts.push(...page);
-            if (page.length < pageSize) break;
-            offset += page.length;
-          } catch (pageErr) {
-            console.warn(`[Garmin Full Sync] Error fetching activities at offset ${offset}:`, pageErr);
-            break;
-          }
-        }
-        return acts;
+        const batch = await fetchGarminActivityBatch<any>(
+          (offset, limit) => requiredWithin<any[]>(gc.getActivities(offset, limit), 15_000),
+          body.offset
+        );
+        nextOffset = batch.nextOffset;
+        historyTruncated = batch.truncated;
+        return batch.activities;
       } else {
-        const limit = Math.min(100, Math.max(20, body.limit || 50));
-        return (await timeoutPromise(gc.getActivities(0, limit), 15000, [])) || [];
+        const limit = body.limit;
+        return (await requiredWithin<any[]>(gc.getActivities(0, limit), 15000)) || [];
       }
     };
 
+    const includeWellness = action === 'get-wellness' || syncMode !== 'full' || body.offset === 0;
     const [sleepSummary, restingHeartRate, hrvSummary, trainingReadinessScore, acts] = await Promise.all([
-      fetchSleep(),
-      fetchHr(),
-      fetchHrv(),
-      fetchReadiness(),
+      includeWellness ? fetchSleep() : Promise.resolve(null),
+      includeWellness ? fetchHr() : Promise.resolve(null),
+      includeWellness ? fetchHrv() : Promise.resolve(null),
+      includeWellness ? fetchReadiness() : Promise.resolve(undefined),
       fetchActs()
     ]);
 
-    wellness = {
+    wellness = includeWellness ? {
       date: todayStr,
       sleep: sleepSummary,
       restingHeartRate,
       hrv: hrvSummary,
       trainingReadinessScore,
       syncedAt: new Date().toISOString()
-    };
+    } : null;
 
     if (action === 'get-wellness') {
       res.status(200).json({ success: true, wellness });
@@ -738,14 +615,16 @@ export default async function handler(req: any, res: any) {
     });
 
     let athleteMaxHr: number | undefined = undefined;
-    try {
-      const userSettings: any = await gc.getUserSettings();
-      const settingsMax = userSettings?.userData?.maxHeartRate || userSettings?.userProfile?.maxHeartRate || userSettings?.maxHeartRate;
-      if (typeof settingsMax === 'number' && settingsMax > 140 && settingsMax < 240) {
-        athleteMaxHr = Math.round(settingsMax);
+    if (syncMode !== 'full' || body.offset === 0) {
+      try {
+        const userSettings: any = await requiredWithin(gc.getUserSettings(), 5_000);
+        const settingsMax = userSettings?.userData?.maxHeartRate || userSettings?.userProfile?.maxHeartRate || userSettings?.maxHeartRate;
+        if (typeof settingsMax === 'number' && settingsMax > 140 && settingsMax < 240) {
+          athleteMaxHr = Math.round(settingsMax);
+        }
+      } catch (settingsErr) {
+        console.warn('Could not fetch user settings for maxHeartRate:', settingsErr);
       }
-    } catch (settingsErr) {
-      console.warn('Could not fetch user settings for maxHeartRate:', settingsErr);
     }
 
     // Fallback or validation: check actual highest peak heart rate recorded in activities
@@ -761,7 +640,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    res.status(200).json({ success: true, count: activities.length, activities, wellness, athleteMaxHr, syncMode });
+    res.status(200).json({ success: true, count: activities.length, activities, wellness, athleteMaxHr, syncMode, nextOffset, historyTruncated });
   } catch (err: any) {
     res.status(500).json({
       success: false,

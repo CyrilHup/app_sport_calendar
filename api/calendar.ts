@@ -1,73 +1,43 @@
-// Vercel Serverless Function: Consolidated iCal Subscription Feed (/api/calendar.ics)
-import { parseICSString, buildCompleteCalendar, RawIcsEvent } from '../src/services/icsParser';
-import { generateICSContent } from '../src/services/googleCalendarService';
+// Public consolidated iCal subscription feed (/api/calendar.ics).
+import { buildCompleteCalendar, parseICSString, RawIcsEvent } from '../src/services/icsParser';
+import { generateICSContent } from '../src/services/icsSerializer';
+import { getCalendarBuildWindow } from '../src/services/calendarWindow';
+import { GLOBAL_APP_CONFIG } from '../src/services/periodizationEngine';
+import { fetchRemoteIcalText, IcalFeedError } from '../src/server/icalFeedClient';
+import { applyApiCors, ensureResponseHelpers } from '../src/server/requestSecurity';
 
 export default async function handler(req: any, res: any) {
-  // Polyfill response helpers for Node/Vite connect middleware
-  if (!res.status) {
-    res.status = (code: number) => { res.statusCode = code; return res; };
-  }
-  if (!res.json) {
-    res.json = (data: any) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify(data));
-    };
-  }
-  if (!res.send) {
-    res.send = (data: any) => {
-      res.end(data);
-    };
-  }
-
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  ensureResponseHelpers(res);
+  if (!applyApiCors(req, res, 'GET,OPTIONS')) return;
 
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== 'GET') {
+    res.status(405).send('Method not allowed.');
     return;
   }
 
   try {
-    let requestedUrl = (req.query?.url as string);
-    if (!requestedUrl && req.url && req.url.includes('?')) {
-      try {
-        const parsedUrl = new URL(req.url, 'http://localhost');
-        requestedUrl = parsedUrl.searchParams.get('url') || '';
-      } catch {}
-    }
-    if (!requestedUrl) {
-      requestedUrl = process.env.ICAL_FEED_URL || process.env.VITE_ICAL_FEED_URL || '';
-    }
-
+    const configuredUrl = process.env.ICAL_FEED_URL || '';
     let rawCourses: RawIcsEvent[] = [];
-    if (requestedUrl) {
-      try {
-        const resp = await fetch(requestedUrl);
-        if (resp.ok) {
-          const rawIcs = await resp.text();
-          rawCourses = parseICSString(rawIcs);
-        }
-      } catch (e) {
-        console.warn('Could not fetch remote iCal in serverless function:', e);
-      }
+    if (configuredUrl) {
+      rawCourses = parseICSString(await fetchRemoteIcalText(configuredUrl));
     }
 
-    // Compute start from Monday of current week
     const now = new Date();
-    const day = (now.getDay() + 6) % 7;
-    const startMonday = new Date(now);
-    startMonday.setDate(now.getDate() - day);
-    startMonday.setHours(0, 0, 0, 0);
-
-    const { allEvents } = buildCompleteCalendar(rawCourses, startMonday, 90);
-    const fullIcsContent = generateICSContent(allEvents);
+    const window = getCalendarBuildWindow(now, GLOBAL_APP_CONFIG.SPORT_START_DATE);
+    const { allEvents } = buildCompleteCalendar(rawCourses, window.startMonday, window.daysCount);
+    const fullIcsContent = generateICSContent(allEvents, now);
 
     res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
-    res.setHeader('Content-Disposition', 'inline; filename="qmt80_training_schedule.ics"');
-    res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=86400');
+    res.setHeader('Content-Disposition', 'inline; filename="training_schedule.ics"');
+    res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
     res.status(200).send(fullIcsContent);
-  } catch (err: any) {
-    res.status(500).send(`Erreur: ${err.message || 'Unknown error'}`);
+  } catch (error) {
+    const status = error instanceof IcalFeedError ? error.statusCode : 500;
+    const message = error instanceof Error ? error.message : 'Unknown calendar error';
+    res.status(status).send(`Erreur: ${message}`);
   }
 }

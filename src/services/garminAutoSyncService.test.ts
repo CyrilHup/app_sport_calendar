@@ -8,6 +8,7 @@ import {
   setGarminAutoSyncEnabled,
   GARMIN_AUTO_SYNC_ENABLED_KEY,
   GARMIN_SYNCED_SIGNATURES_KEY,
+  saveSyncedWeekWorkoutSignatures,
   isWorkoutSyncedToGarmin,
   syncCurrentWeekWorkoutsToGarmin
 } from './garminAutoSyncService';
@@ -179,7 +180,43 @@ describe('Garmin Auto-Sync Service', () => {
 
   it('includes the Garmin workout definition version in sync signatures', () => {
     const event = createMockEvent({ id: 'versioned-workout' });
-    expect(computeWorkoutSyncSignature(event)).toContain('recovery-2min-v1::versioned-workout');
+    expect(computeWorkoutSyncSignature(event)).toContain('recovery-2min-heart-zones-v2::versioned-workout');
+  });
+
+  it('invalidates a synced workout when its prescribed zones or target mode change', () => {
+    const event = createMockEvent({
+      id: 'zone-workout',
+      metadata: { targetHeartRateRange: [141, 164] }
+    });
+    const originalSignature = computeWorkoutSyncSignature(event);
+    expect(computeWorkoutSyncSignature({
+      ...event,
+      metadata: { targetHeartRateRange: [132, 150] }
+    })).not.toBe(originalSignature);
+
+    garminService.setGarminWorkoutTargetMode('HR_ONLY');
+    expect(computeWorkoutSyncSignature(event)).not.toBe(originalSignature);
+  });
+
+  it('does not create a duplicate for a legacy workout without a known Garmin ID', async () => {
+    const event = createMockEvent({
+      id: 'legacy-workout', startDate: '2026-09-09T08:00:00Z'
+    });
+    saveSyncedWeekWorkoutSignatures({
+      [event.id]: 'recovery-2min-v1::legacy-workout::old-definition'
+    });
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com', password: 'password123'
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin(
+      [event], new Date('2026-09-09T12:00:00Z'), { force: true }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('éviter les doublons');
+    expect(pushSpy).not.toHaveBeenCalled();
   });
 
   it('syncs only changed workouts and skips already synced ones', async () => {
@@ -268,5 +305,54 @@ describe('Garmin Auto-Sync Service', () => {
     const successResult = await syncCurrentWeekWorkoutsToGarmin([workout], refDate);
     expect(successResult.success).toBe(true);
     expect(isWorkoutSyncedToGarmin(workout)).toBe(true);
+  });
+
+  it('shares one in-flight Garmin operation between concurrent callers', async () => {
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com',
+      password: 'password123'
+    });
+
+    let finishPush!: (value: any) => void;
+    const pendingPush = new Promise<any>(resolve => { finishPush = resolve; });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockReturnValue(pendingPush);
+    const workout = createMockEvent({ id: 'concurrent_sync' });
+    const refDate = new Date('2026-09-09T12:00:00Z');
+
+    const first = syncCurrentWeekWorkoutsToGarmin([workout], refDate);
+    const second = syncCurrentWeekWorkoutsToGarmin([workout], refDate);
+
+    expect(second).toBe(first);
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+    finishPush({ success: true, workoutId: 'garmin-concurrent', scheduledDate: '2026-09-09' });
+
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult).toEqual(secondResult);
+    expect(firstResult.success).toBe(true);
+  });
+
+  it('pushes the latest changed workout after an earlier push finishes', async () => {
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com',
+      password: 'password123'
+    });
+
+    let finishFirst!: (value: any) => void;
+    const firstPush = new Promise<any>(resolve => { finishFirst = resolve; });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin')
+      .mockReturnValueOnce(firstPush)
+      .mockResolvedValue({ success: true, workoutId: 'new', scheduledDate: '2026-09-09' });
+    const original = createMockEvent({ id: 'changed_mid_sync', durationMinutes: 60 });
+    const changed = { ...original, durationMinutes: 45 };
+    const refDate = new Date('2026-09-09T12:00:00Z');
+
+    const pending = syncCurrentWeekWorkoutsToGarmin([original], refDate);
+    expect(syncCurrentWeekWorkoutsToGarmin([changed], refDate)).toBe(pending);
+    finishFirst({ success: true, workoutId: 'old', scheduledDate: '2026-09-09' });
+    await pending;
+
+    expect(pushSpy).toHaveBeenCalledTimes(2);
+    expect(pushSpy.mock.calls[1][0].durationMinutes).toBe(45);
+    expect(isWorkoutSyncedToGarmin(changed)).toBe(true);
   });
 });

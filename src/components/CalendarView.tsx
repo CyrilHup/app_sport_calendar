@@ -29,17 +29,18 @@ import {
 } from 'lucide-react';
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
-import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation } from '../services/readinessEngine';
+import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation, getBaselineRestingHeartRate } from '../services/readinessEngine';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { formatDateKey, formatTime, formatFriendlyDay, getGarminLocalDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
+import { formatDateKey, formatTime, formatFriendlyDay, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { computeTrainingLoadStats, calculateSessionTrimp } from '../services/statsEngine';
 import { evaluateAdaptivePlanStatus, isAutoAdaptEnabled, setAutoAdaptEnabled } from '../services/adaptivePlanEngine';
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
 import { formatGarminActivityName, getGarminExecutionBadge, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { syncCurrentWeekWorkoutsToGarmin, isGarminAutoSyncEnabled } from '../services/garminAutoSyncService';
-import { loadStoredGarminActivities } from '../services/garminService';
+import { selectDayActivityContext } from '../services/daySelectors';
 import { groupDaySportWorkouts, UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
+import { useManagedTimeout } from '../hooks/useManagedTimeout';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -56,6 +57,7 @@ interface CalendarViewProps {
   onCancelPostponeWorkout?: (eventId: string) => void;
   comparisons?: ActivityComparison[];
   garminActivities?: GarminActivity[];
+  athlete?: { fcMax: number; fcRest: number };
   adaptiveOverrides?: Record<string, AdaptiveWorkoutOverride>;
   onApplyAdaptivePlan?: (actions: AdaptiveWorkoutAction[]) => void;
   onRevertAdaptivePlan?: () => void;
@@ -553,11 +555,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onCancelPostponeWorkout,
   comparisons = [],
   garminActivities = [],
+  athlete,
   adaptiveOverrides = {},
   onApplyAdaptivePlan,
   onRevertAdaptivePlan,
   onOpenGarminSync
 }) => {
+  const scheduleTimeout = useManagedTimeout();
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<FilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
@@ -593,7 +597,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     triggerHapticFeedback('light');
 
     try {
-      const res = await syncCurrentWeekWorkoutsToGarmin(allEvents, effectiveRefDate, { force: true });
+      const res = await syncCurrentWeekWorkoutsToGarmin(allEvents, effectiveRefDate);
       if (res.success) {
         triggerHapticFeedback('success');
         if (res.pushedCount > 0) {
@@ -614,7 +618,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       setGarminSyncFeedback('Erreur réseau ou proxy');
     } finally {
       setIsSyncingWeekGarmin(false);
-      setTimeout(() => setGarminSyncFeedback(null), 4500);
+      scheduleTimeout(() => setGarminSyncFeedback(null), 4500);
     }
   };
 
@@ -630,20 +634,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [schedules, todayKey, hasInitializedOffset]);
 
   const todayWellness = getWellnessForDate(todayKey);
-  const todayComparisons = comparisons.filter(c => c.date === todayKey);
-  const isTodaySessionCompleted = todayComparisons.some(
-    c => (c.status === 'COMPLIANT' || c.status === 'PARTIAL') && c.plannedEvent?.category === 'sport'
+  const todayContext = selectDayActivityContext(todayKey, garminActivities, comparisons);
+  const readiness = calculateReadinessScore(
+    todayWellness,
+    undefined,
+    todayContext.activities,
+    todayContext.isPlannedSessionCompleted
   );
-  const allStoredActs = (garminActivities && garminActivities.length > 0)
-    ? garminActivities
-    : loadStoredGarminActivities();
-  const todayGarminActs = allStoredActs.filter(a => getGarminLocalDateKey(a) === todayKey);
-  const todayActs = todayGarminActs.length > 0
-    ? todayGarminActs
-    : todayComparisons.filter(c => Boolean(c.actualActivity)).map(c => c.actualActivity!);
-  const readiness = calculateReadinessScore(todayWellness, undefined, todayActs, isTodaySessionCompleted);
   const todaySchedule = schedules.find(s => s.date === todayKey);
-  const proactiveRec = getProactivePlanRecommendation(readiness, todaySchedule?.sportSession, isTodaySessionCompleted);
+  const proactiveRec = getProactivePlanRecommendation(readiness, todaySchedule?.sportSession, todayContext.isPlannedSessionCompleted);
 
   // Découpage en blocs de 7 jours pour l'affichage
   const currentWeekStartIdx = weekOffset * 7;
@@ -681,8 +680,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [comparisons]);
 
   const trainingLoad = useMemo(() => {
-    return computeTrainingLoadStats(garminActivities || [], effectiveRefDate);
-  }, [garminActivities, effectiveRefDate]);
+    return computeTrainingLoadStats(garminActivities || [], effectiveRefDate, 60, {
+      fcMax: athlete?.fcMax,
+      fcRest: athlete?.fcRest ?? getBaselineRestingHeartRate()
+    });
+  }, [garminActivities, effectiveRefDate, athlete]);
 
   const adaptiveStatus = useMemo(() => {
     return evaluateAdaptivePlanStatus(
@@ -1176,7 +1178,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </button>
           )}
         </div>
-      ) : proactiveRec.shouldAdapt && todaySchedule?.sportSession && !isTodaySessionCompleted ? (
+      ) : proactiveRec.shouldAdapt && todaySchedule?.sportSession && !todayContext.isPlannedSessionCompleted ? (
         <div className="proactive-coach-banner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.78rem', color: '#fca5a5' }}>
             <AlertTriangle size={15} color="#ef4444" />
@@ -1273,7 +1275,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           });
 
           const daySportEvents = day.events.filter(e => e.category === 'sport');
-          const unifiedSportGroups = groupDaySportWorkouts(daySportEvents, comparisons, day.date);
+          const unifiedSportGroups = groupDaySportWorkouts(daySportEvents, comparisons, day.date, athlete);
 
           const hasAnyDisplayableItem = filter === 'all'
             ? (courseEvents.length > 0 || unifiedSportGroups.length > 0 || ghostEvents.length > 0 || catchupExecutedElsewhere.length > 0 || Boolean(mobilityEvent))
@@ -1650,7 +1652,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             });
 
             const daySportEvents = day.events.filter(e => e.category === 'sport');
-            const unifiedSportGroups = groupDaySportWorkouts(daySportEvents, comparisons, day.date);
+            const unifiedSportGroups = groupDaySportWorkouts(daySportEvents, comparisons, day.date, athlete);
 
             const hasAnyDisplayableItem = filter === 'all'
               ? (courseEvents.length > 0 || unifiedSportGroups.length > 0 || ghostEvents.length > 0 || catchupExecutedElsewhere.length > 0 || Boolean(mobilityEvent))
@@ -1876,6 +1878,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         event={selectedEvent}
         comparison={selectedComparison}
         unifiedGroup={selectedUnifiedGroup}
+        athlete={athlete}
         onClose={() => {
           setSelectedEvent(null);
           setSelectedComparison(null);

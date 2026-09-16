@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/garmin';
 import { formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
-import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { formatGarminActivityName, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { getDynamicAthleteProfile } from '../services/garminService';
 import {
@@ -38,6 +37,7 @@ interface ComparisonDashboardProps {
   onManualUnpair?: (planId: string) => void;
   onPostponeWorkout?: (eventId: string, originalDate: string, targetDate: string, reason?: string) => void;
   referenceDateStr?: string;
+  athlete?: { fcMax: number; fcRest: number };
 }
 
 type StatusFilterType = 'ALL' | 'COMPLIANT' | 'PARTIAL' | 'MISSED' | 'UNPLANNED' | 'PENDING';
@@ -51,7 +51,8 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   onManualPair,
   onManualUnpair,
   onPostponeWorkout,
-  referenceDateStr
+  referenceDateStr,
+  athlete
 }) => {
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -319,7 +320,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 const planId = comp.plannedEvent?.id;
                 const isManuallyPaired = Boolean(planId && manualPairs[planId]);
 
-                const profile = getDynamicAthleteProfile();
+                const profile = getDynamicAthleteProfile(availableGarminActivities, athlete);
                 const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
                   comp.actualActivity.durationMinutes,
                   comp.actualActivity.activityType,
@@ -845,7 +846,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             const planId = comp.plannedEvent?.id;
             const isManuallyPaired = Boolean(planId && manualPairs[planId]);
 
-            const profile = getDynamicAthleteProfile();
+            const profile = getDynamicAthleteProfile(availableGarminActivities, athlete);
             const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
               comp.actualActivity.durationMinutes,
               comp.actualActivity.activityType,

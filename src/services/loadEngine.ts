@@ -1,7 +1,6 @@
 import { formatDateKey, getGarminLocalDateKey } from './dateUtils';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
-import { getBaselineRestingHeartRate } from './readinessEngine';
 import { getDynamicAthleteProfile, getExpectedHeartRateForEvent } from './garminService';
 
 export interface SessionTrimpOptions {
@@ -184,9 +183,9 @@ export function calculateSessionTrimp(
     categoryLabel = 'Récupération active & Mobilité';
   }
 
-  const profile = getDynamicAthleteProfile();
-  const fcMax = options?.athleteFcMax || profile.fcMax;
-  const fcRest = options?.athleteFcRest || profile.fcRest;
+  const fcMax = options?.athleteFcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX;
+  const fcRest = options?.athleteFcRest || 48;
+  const profile = getDynamicAthleteProfile([], { fcMax, fcRest });
 
   // 3. Calcul Banister physiologique si cardiofréquencemètre réel disponible
   if (typeof options?.avgHeartRate === 'number' && options.avgHeartRate > 55 && dur > 0) {
@@ -269,9 +268,10 @@ export function calculateSessionTrimp(
 export function computeTrainingLoadStats(
   activities: Array<any>,
   asOfDate: Date = new Date(),
-  daysToAnalyze: number = 60
+  daysToAnalyze: number = 60,
+  athlete?: { fcMax?: number; fcRest?: number }
 ): TrainingLoadStats {
-  const profile = getDynamicAthleteProfile();
+  const profile = getDynamicAthleteProfile(activities, athlete);
   const dailyLoads: Record<string, number> = {};
   const dailyTrailLoads: Record<string, number> = {};
   const dailyRunningCardioLoads: Record<string, number> = {};

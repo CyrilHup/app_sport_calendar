@@ -2,17 +2,18 @@ import { CalendarEvent } from '../types/calendar';
 import { WorkoutPushResult } from '../types/garmin';
 import {
   GARMIN_WORKOUT_DEFINITION_VERSION,
+  getGarminWorkoutTargetMode,
   loadGarminCredentials,
   loadGarminCredentialsAsync,
-  pushWorkoutToGarmin,
-  cleanDuplicateGarminWorkouts
+  pushWorkoutToGarmin
 } from './garminService';
+import { STORAGE_KEYS, storageGet, storageSet } from './storageService';
 
 
-export const GARMIN_AUTO_SYNC_ENABLED_KEY = 'sport_calendar_garmin_auto_sync_enabled';
+export const GARMIN_AUTO_SYNC_ENABLED_KEY = STORAGE_KEYS.GARMIN_AUTO_SYNC_ENABLED;
 // v2 deliberately invalidates the previous cache, which could contain false positives:
 // the API used to report success even when Garmin rejected calendar scheduling.
-export const GARMIN_SYNCED_SIGNATURES_KEY = 'sport_calendar_garmin_synced_week_signatures_v2';
+export const GARMIN_SYNCED_SIGNATURES_KEY = STORAGE_KEYS.GARMIN_SYNCED_SIGNATURES;
 
 export interface AutoSyncResult {
   success: boolean;
@@ -30,29 +31,16 @@ export interface AutoSyncResult {
  * Defaults to true if user hasn't explicitly disabled it.
  */
 export function isGarminAutoSyncEnabled(): boolean {
-  try {
-    if (typeof localStorage === 'undefined') return true;
-    const val = localStorage.getItem(GARMIN_AUTO_SYNC_ENABLED_KEY);
-    if (val === null) return true; // Enabled by default
-    return val === 'true';
-  } catch {
-    return true;
-  }
+  return storageGet<boolean>(GARMIN_AUTO_SYNC_ENABLED_KEY, true);
 }
 
 /**
  * Enables or disables automatic Garmin synchronization.
  */
 export function setGarminAutoSyncEnabled(enabled: boolean): void {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(GARMIN_AUTO_SYNC_ENABLED_KEY, String(enabled));
-    }
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('garmin_auto_sync_config_changed', { detail: { enabled } }));
-    }
-  } catch (err) {
-    console.warn('Could not persist garmin auto sync setting:', err);
+  storageSet(GARMIN_AUTO_SYNC_ENABLED_KEY, enabled);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('garmin_auto_sync_config_changed', { detail: { enabled } }));
   }
 }
 
@@ -61,40 +49,34 @@ export function setGarminAutoSyncEnabled(enabled: boolean): void {
  * Any modification (postponement, duration change, adapted status, elevation) changes this signature.
  */
 export function computeWorkoutSyncSignature(event: CalendarEvent): string {
-  const dateStr = toLocalDateKey(event.startDate);
-  const dur = event.durationMinutes || 0;
-  const sport = event.sportType || 'SPORT';
-  const adapted = event.metadata?.isAdapted ? '1' : '0';
-  const elev = event.metadata?.targetElevationM || 0;
-  const originalDate = event.metadata?.originalDate || '';
-  return `${GARMIN_WORKOUT_DEFINITION_VERSION}::${event.id}::${dateStr}::${dur}::${sport}::${adapted}::${elev}::${originalDate}`;
+  return `${GARMIN_WORKOUT_DEFINITION_VERSION}::${event.id}::${JSON.stringify({
+    startDate: event.startDate,
+    durationMinutes: event.durationMinutes || 0,
+    sportType: event.sportType || 'SPORT',
+    title: event.title,
+    description: event.description,
+    targetMode: getGarminWorkoutTargetMode(),
+    targetHeartRate: event.metadata?.targetHeartRate,
+    targetHeartRateRange: event.metadata?.targetHeartRateRange,
+    targetElevationM: event.metadata?.targetElevationM,
+    targetCadence: event.metadata?.targetCadence,
+    isAdapted: Boolean(event.metadata?.isAdapted),
+    originalDate: event.metadata?.originalDate || ''
+  })}`;
 }
 
 /**
  * Retrieves the stored map of synced workout signatures.
  */
 export function getSyncedWeekWorkoutSignatures(): Record<string, string> {
-  try {
-    if (typeof localStorage === 'undefined') return {};
-    const raw = localStorage.getItem(GARMIN_SYNCED_SIGNATURES_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+  return storageGet<Record<string, string>>(GARMIN_SYNCED_SIGNATURES_KEY, {});
 }
 
 /**
  * Saves the map of synced workout signatures.
  */
 export function saveSyncedWeekWorkoutSignatures(signatures: Record<string, string>): void {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(GARMIN_SYNCED_SIGNATURES_KEY, JSON.stringify(signatures));
-    }
-  } catch (err) {
-    console.warn('Could not save garmin synced signatures:', err);
-  }
+  storageSet(GARMIN_SYNCED_SIGNATURES_KEY, signatures);
 }
 
 /** Returns true only when the current version of this exact workout was confirmed by Garmin. */
@@ -146,29 +128,40 @@ export function filterCurrentWeekSportWorkouts(
   });
 }
 
-// Global in-flight lock to avoid duplicate parallel syncs
-let isAutoSyncRunning = false;
+// All callers share the active operation. Changes arriving during a push are
+// queued as one latest follow-up so a stale calendar is never the final state.
+let autoSyncInFlight: Promise<AutoSyncResult> | null = null;
+let activeRequestKey: string | null = null;
+let queuedRequest: {
+  events: CalendarEvent[];
+  referenceDate: Date;
+  options?: { force?: boolean };
+  key: string;
+} | null = null;
+
+function workoutSyncRequestKey(
+  events: CalendarEvent[],
+  referenceDate: Date,
+  options?: { force?: boolean }
+): string {
+  return JSON.stringify({
+    week: getCurrentWeekDateBounds(referenceDate).weekStartStr,
+    force: Boolean(options?.force),
+    signatures: filterCurrentWeekSportWorkouts(events, referenceDate)
+      .map(computeWorkoutSyncSignature)
+      .sort()
+  });
+}
 
 /**
  * Automatically pushes current week's sport workouts to Garmin Connect.
  * Compares workout signatures to avoid redundant pushes and duplicates on Garmin calendar.
  */
-export async function syncCurrentWeekWorkoutsToGarmin(
+async function runCurrentWeekWorkoutSync(
   events: CalendarEvent[],
   referenceDate: Date = new Date(),
   options?: { force?: boolean }
 ): Promise<AutoSyncResult> {
-  if (isAutoSyncRunning) {
-    return {
-      success: true,
-      pushedCount: 0,
-      totalWeekWorkouts: 0,
-      alreadyUpToDate: true,
-      results: [],
-      reason: 'SUCCESS'
-    };
-  }
-
   const isEnabled = isGarminAutoSyncEnabled();
   if (!isEnabled && !options?.force) {
     return {
@@ -206,28 +199,39 @@ export async function syncCurrentWeekWorkoutsToGarmin(
     };
   }
 
-  isAutoSyncRunning = true;
   try {
     const existingSignatures = getSyncedWeekWorkoutSignatures();
     const updatedSignatures = { ...existingSignatures };
     const toPush: CalendarEvent[] = [];
+    let legacyStaleCount = 0;
 
     for (const workout of weekWorkouts) {
       const sig = computeWorkoutSyncSignature(workout);
       const storedSig = existingSignatures[workout.id];
+      // Old records prove that a workout was already scheduled but contain no
+      // Garmin workout ID. Re-creating it automatically would make a duplicate.
+      if (storedSig?.startsWith('recovery-2min-v1::')) {
+        legacyStaleCount++;
+        continue;
+      }
       if (options?.force || storedSig !== sig) {
         toPush.push(workout);
       }
     }
 
+    const legacyWarning = legacyStaleCount > 0
+      ? `${legacyStaleCount} séance(s) Garmin déjà programmée(s) ont une ancienne définition. Mise à jour automatique suspendue pour éviter les doublons.`
+      : undefined;
+
     if (toPush.length === 0) {
       const res: AutoSyncResult = {
-        success: true,
+        success: legacyStaleCount === 0,
         pushedCount: 0,
         totalWeekWorkouts: weekWorkouts.length,
-        alreadyUpToDate: true,
+        alreadyUpToDate: legacyStaleCount === 0,
         results: [],
-        reason: 'SUCCESS',
+        reason: legacyStaleCount === 0 ? 'SUCCESS' : 'ERROR',
+        error: legacyWarning,
         lastSyncTimestamp: new Date().toISOString()
       };
       if (typeof window !== 'undefined') {
@@ -253,20 +257,16 @@ export async function syncCurrentWeekWorkoutsToGarmin(
 
     saveSyncedWeekWorkoutSignatures(updatedSignatures);
 
-    // Nettoyer en arrière-plan les anciens doublons résiduels sur Garmin Connect
-    cleanDuplicateGarminWorkouts().catch(() => {});
-
     const failedResults = results.filter(result => !result.success);
     const res: AutoSyncResult = {
-      success: failedResults.length === 0,
+      success: failedResults.length === 0 && legacyStaleCount === 0,
       pushedCount,
       totalWeekWorkouts: weekWorkouts.length,
       alreadyUpToDate: false,
       results,
-      reason: failedResults.length === 0 ? 'SUCCESS' : 'ERROR',
-      error: failedResults.length > 0
-        ? failedResults.map(result => result.error || 'Échec Garmin inconnu').join(' | ')
-        : undefined,
+      reason: failedResults.length === 0 && legacyStaleCount === 0 ? 'SUCCESS' : 'ERROR',
+      error: [legacyWarning, ...failedResults.map(result => result.error || 'Échec Garmin inconnu')]
+        .filter(Boolean).join(' | ') || undefined,
       lastSyncTimestamp: new Date().toISOString()
     };
 
@@ -289,7 +289,43 @@ export async function syncCurrentWeekWorkoutsToGarmin(
       window.dispatchEvent(new CustomEvent('garmin_auto_sync_status', { detail: errorRes }));
     }
     return errorRes;
-  } finally {
-    isAutoSyncRunning = false;
   }
+}
+
+export function syncCurrentWeekWorkoutsToGarmin(
+  events: CalendarEvent[],
+  referenceDate: Date = new Date(),
+  options?: { force?: boolean }
+): Promise<AutoSyncResult> {
+  const key = workoutSyncRequestKey(events, referenceDate, options);
+  if (autoSyncInFlight) {
+    if (key === activeRequestKey) {
+      queuedRequest = null;
+    } else {
+      queuedRequest = { events, referenceDate, options, key };
+    }
+    return autoSyncInFlight;
+  }
+
+  activeRequestKey = key;
+  const operation = (async () => {
+    let current: NonNullable<typeof queuedRequest> = { events, referenceDate, options, key };
+    let result: AutoSyncResult;
+    do {
+      result = await runCurrentWeekWorkoutSync(current.events, current.referenceDate, current.options);
+      if (!queuedRequest) break;
+      current = queuedRequest;
+      queuedRequest = null;
+      activeRequestKey = current.key;
+    } while (true);
+    return result;
+  })();
+  autoSyncInFlight = operation;
+  void operation.finally(() => {
+    if (autoSyncInFlight === operation) {
+      autoSyncInFlight = null;
+      activeRequestKey = null;
+    }
+  }).catch(() => {});
+  return operation;
 }

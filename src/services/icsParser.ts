@@ -1,5 +1,5 @@
 import { CalendarEvent, DailySchedule } from '../types/calendar';
-import { COLOR_MAP, GLOBAL_APP_CONFIG, getDailyWorkoutPlan, getPeriodizationContext } from './periodizationEngine';
+import { AppConfig, COLOR_MAP, GLOBAL_APP_CONFIG, getDailyWorkoutPlan, getPeriodizationContext } from './periodizationEngine';
 import { formatDateKey, addDays } from './dateUtils';
 
 export interface RawIcsEvent {
@@ -22,13 +22,19 @@ export function parseICSString(icsContent: string): RawIcsEvent[] {
     if (line === "BEGIN:VEVENT") {
       currentEvent = {};
     } else if (line === "END:VEVENT" && currentEvent) {
-      if (currentEvent.startDate && currentEvent.endDate && currentEvent.summary) {
+      if (currentEvent.startDate && currentEvent.endDate && currentEvent.summary &&
+        !Number.isNaN(currentEvent.startDate.getTime()) &&
+        !Number.isNaN(currentEvent.endDate.getTime()) &&
+        currentEvent.endDate > currentEvent.startDate) {
+        currentEvent.uid ||= `${currentEvent.summary}-${currentEvent.startDate.toISOString()}`;
         events.push(currentEvent as RawIcsEvent);
       }
       currentEvent = null;
     } else if (currentEvent && line.includes(":")) {
       const idx = line.indexOf(":");
-      const key = line.substring(0, idx).split(";")[0];
+      const property = line.substring(0, idx);
+      const key = property.split(";")[0];
+      const timezone = property.match(/(?:^|;)TZID=([^;]+)/i)?.[1];
       const value = line.substring(idx + 1);
 
       switch (key) {
@@ -45,10 +51,10 @@ export function parseICSString(icsContent: string): RawIcsEvent[] {
           currentEvent.uid = value;
           break;
         case "DTSTART":
-          currentEvent.startDate = parseICSDate(value);
+          currentEvent.startDate = parseICSDate(value, timezone);
           break;
         case "DTEND":
-          currentEvent.endDate = parseICSDate(value);
+          currentEvent.endDate = parseICSDate(value, timezone);
           break;
       }
     }
@@ -57,7 +63,7 @@ export function parseICSString(icsContent: string): RawIcsEvent[] {
   return events;
 }
 
-function parseICSDate(dateStr: string): Date {
+function parseICSDate(dateStr: string, timezone = 'America/Toronto'): Date {
   const y = parseInt(dateStr.substring(0, 4), 10);
   const m = parseInt(dateStr.substring(4, 6), 10) - 1;
   const d = parseInt(dateStr.substring(6, 8), 10);
@@ -68,8 +74,28 @@ function parseICSDate(dateStr: string): Date {
   if (dateStr.endsWith("Z")) {
     return new Date(Date.UTC(y, m, d, h, min, s));
   }
-  // Local Montreal date
-  return new Date(y, m, d, h, min, s);
+  // Interpret floating academic times in the calendar's timezone rather than
+  // the viewer's browser timezone or the serverless function's UTC timezone.
+  const localAsUtc = Date.UTC(y, m, d, h, min, s);
+  if (Number.isNaN(localAsUtc)) return new Date(NaN);
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23'
+    });
+    const parts = Object.fromEntries(
+      formatter.formatToParts(new Date(localAsUtc)).map(part => [part.type, part.value])
+    );
+    const zonedAsUtc = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute), Number(parts.second)
+    );
+    return new Date(localAsUtc - (zonedAsUtc - localAsUtc));
+  } catch {
+    return new Date(localAsUtc);
+  }
 }
 
 function unescapeICS(str: string): string {
@@ -145,10 +171,21 @@ export { formatDateKey, addDays };
 export function buildCompleteCalendar(
   rawCourses: RawIcsEvent[],
   startDate: Date,
-  daysCount: number = 60
+  daysCount: number = 60,
+  config: Readonly<AppConfig> = GLOBAL_APP_CONFIG
 ): { schedules: DailySchedule[]; allEvents: CalendarEvent[] } {
+  const GLOBAL_APP_CONFIG = config;
   // Index courses by date key
   const coursesByDate = new Map<string, RawIcsEvent[]>();
+  const courseMetadata = new Map<RawIcsEvent, ReturnType<typeof analyzeETSEvent>>();
+  const getCourseMetadata = (course: RawIcsEvent) => {
+    let metadata = courseMetadata.get(course);
+    if (!metadata) {
+      metadata = analyzeETSEvent(course);
+      courseMetadata.set(course, metadata);
+    }
+    return metadata;
+  };
 
   for (const course of rawCourses) {
     const key = formatDateKey(course.startDate);
@@ -163,7 +200,7 @@ export function buildCompleteCalendar(
     const currentDate = addDays(startDate, i);
     const dateKey = formatDateKey(currentDate);
     const dayOfWeek = (currentDate.getDay() + 6) % 7; // 0=Lundi, ..., 6=Dimanche
-    const periodContext = getPeriodizationContext(currentDate);
+    const periodContext = getPeriodizationContext(currentDate, config);
 
     const dayCourses = coursesByDate.get(dateKey) || [];
     dayCourses.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
@@ -171,11 +208,11 @@ export function buildCompleteCalendar(
     // Check course attributes
     const hasCourse = dayCourses.length > 0;
     const presentialCourses = dayCourses.filter(c => {
-      const meta = analyzeETSEvent(c);
+      const meta = getCourseMetadata(c);
       return !meta.isDistanciel;
     });
     const onlineCourses = dayCourses.filter(c => {
-      const meta = analyzeETSEvent(c);
+      const meta = getCourseMetadata(c);
       return meta.isDistanciel;
     });
 
@@ -213,14 +250,15 @@ export function buildCompleteCalendar(
       {
         hasPresentialClass: presentialCourses.length > 0,
         hasOnlineClass: onlineCourses.length > 0
-      }
+      },
+      config
     );
 
     const dayEvents: CalendarEvent[] = [];
 
     // Add Course events
     for (const raw of dayCourses) {
-      const meta = analyzeETSEvent(raw);
+      const meta = getCourseMetadata(raw);
       const dur = Math.round((raw.endDate.getTime() - raw.startDate.getTime()) / 60000);
 
       const isFirstPresential = presentialCourses[0]?.uid === raw.uid;
@@ -364,7 +402,7 @@ export function buildCompleteCalendar(
 
         // Check if morning target window conflicts with any class or class transit on that day
         const conflictingCourse = dayCourses.find(c => {
-          const cMeta = analyzeETSEvent(c);
+          const cMeta = getCourseMetadata(c);
           const cTransit = !cMeta.isDistanciel ? GLOBAL_APP_CONFIG.TRANSIT_TIMES.HOME_TO_ETS : 0;
           const cBuffer = !cMeta.isDistanciel ? GLOBAL_APP_CONFIG.BUFFER_BEFORE_CLASS_MIN : 0;
           const cBufferAfter = !cMeta.isDistanciel ? GLOBAL_APP_CONFIG.BUFFER_AFTER_CLASS_MIN : 0;
@@ -376,7 +414,7 @@ export function buildCompleteCalendar(
 
         if (conflictingCourse) {
           conflictRescheduled = true;
-          const cMeta = analyzeETSEvent(conflictingCourse);
+          const cMeta = getCourseMetadata(conflictingCourse);
 
           // If workout is at ÉTS Gym and conflicting course is at ÉTS, chain directly after the course
           if (workoutTemplate.address === GLOBAL_APP_CONFIG.ETS_ADDRESS && !cMeta.isDistanciel) {
@@ -403,13 +441,15 @@ export function buildCompleteCalendar(
 
             // Reschedule after all day classes finish (late afternoon / early evening)
             const latestCourseEnd = Math.max(...dayCourses.map(c => {
-              const m = analyzeETSEvent(c);
+              const m = getCourseMetadata(c);
               const t = !m.isDistanciel ? (GLOBAL_APP_CONFIG.TRANSIT_TIMES.ETS_TO_HOME + GLOBAL_APP_CONFIG.BUFFER_AFTER_CLASS_MIN) : 0;
               return c.endDate.getTime() + t * 60000;
             }));
 
             // Make sure the start time gives enough time for transit if transitAllerMinutes > 0
-            const earliestSafeStart = new Date(latestCourseEnd + 20 * 60000 + transitAllerMinutes * 60000);
+            const earliestSafeStart = new Date(
+              latestCourseEnd + GLOBAL_APP_CONFIG.BUFFER_AFTER_CONFLICT_MIN * 60000 + transitAllerMinutes * 60000
+            );
             const standardAfternoon = new Date(currentDate);
             standardAfternoon.setHours(17, 0, 0, 0);
 

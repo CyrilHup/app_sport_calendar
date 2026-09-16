@@ -27,10 +27,10 @@ export async function initializeNativeMobile(): Promise<void> {
   }
 
   try {
-    // 3. Restore native Garmin credentials to localStorage if needed
+    // 3. Remove credentials persisted by older releases; passwords are session-only now.
     await loadGarminCredentialsAsync();
   } catch (e) {
-    console.warn('Native credentials restoration failed:', e);
+    console.warn('Legacy native credential cleanup failed:', e);
   }
 
   try {

@@ -27,6 +27,7 @@ import {
   Trash2,
   Watch
 } from 'lucide-react';
+import { useManagedTimeout } from '../../hooks/useManagedTimeout';
 
 export interface GarminTabProps {
   garminState: GarminSyncState;
@@ -45,6 +46,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   onRefreshAll,
   onUpdateFcMax
 }) => {
+  const scheduleTimeout = useManagedTimeout();
   const {
     user,
     saveCloudGarminCredentials,
@@ -54,17 +56,16 @@ export const GarminTab: React.FC<GarminTabProps> = ({
 
   const storedGarminCreds = loadGarminCredentials();
   const cloudGarminEmail = user?.user_metadata?.garmin_email;
-  const cloudGarminPassword = user?.user_metadata?.garmin_password;
 
   const [garminEmail, setGarminEmail] = useState<string>(
     storedGarminCreds?.email || cloudGarminEmail || garminState.accountEmail || ''
   );
   const [garminPassword, setGarminPassword] = useState<string>(
-    storedGarminCreds?.password || cloudGarminPassword || ''
+    storedGarminCreds?.password || ''
   );
   const [garminSyncMsg, setGarminSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [isGarminProcessing, setIsGarminProcessing] = useState(false);
-  const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.email && !cloudGarminEmail);
+  const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.password);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => isGarminAutoSyncEnabled());
   const [targetMode, setTargetMode] = useState<GarminWorkoutTargetMode>(() => getGarminWorkoutTargetMode());
   const [isCleaningDuplicates, setIsCleaningDuplicates] = useState<boolean>(false);
@@ -73,10 +74,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   useEffect(() => {
     if (user?.user_metadata?.garmin_email) {
       setGarminEmail(user.user_metadata.garmin_email);
-      if (user.user_metadata.garmin_password) {
-        setGarminPassword(user.user_metadata.garmin_password);
-      }
-      setShowGarminCredsEdit(false);
     }
   }, [user]);
 
@@ -111,7 +108,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       if (garminEmail && garminPassword) {
         saveGarminCredentials({ email: garminEmail, password: garminPassword });
         if (user) {
-          saveCloudGarminCredentials(garminEmail, garminPassword);
+          await saveCloudGarminCredentials(garminEmail);
         }
       }
       onActivitiesSynced(result.activities);
@@ -131,12 +128,13 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       let pushFeedback = '';
       try {
         if (calendarEvents && calendarEvents.length > 0) {
-          const pushRes = await syncCurrentWeekWorkoutsToGarmin(calendarEvents, new Date(), { force: true });
+          const pushRes = await syncCurrentWeekWorkoutsToGarmin(calendarEvents, new Date());
           if (pushRes.pushedCount > 0) {
             pushFeedback = ` • ${pushRes.pushedCount} séance${pushRes.pushedCount > 1 ? 's' : ''} envoyée${pushRes.pushedCount > 1 ? 's' : ''} sur votre montre`;
           } else if (pushRes.alreadyUpToDate) {
             pushFeedback = ` • Séances de la semaine déjà à jour sur votre montre`;
           }
+          if (pushRes.error) pushFeedback += ` • ⚠️ Séances Garmin : ${pushRes.error}`;
         }
       } catch (pushErr) {
         console.warn('Could not auto-push week workouts to Garmin:', pushErr);
@@ -149,6 +147,11 @@ export const GarminTab: React.FC<GarminTabProps> = ({
 
       onRefreshAll();
     } else {
+      // A complete sync can fail after earlier pages were saved; expose those
+      // activities without presenting the history as complete.
+      if (mode === 'full' && result.activities.length > 0) {
+        onActivitiesSynced(result.activities);
+      }
       setGarminSyncMsg({
         text: `❌ ${result.error}`,
         isError: true
@@ -196,7 +199,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       setCleanDuplicatesMsg({ text: err.message || 'Erreur lors du nettoyage.', isError: true });
     } finally {
       setIsCleaningDuplicates(false);
-      setTimeout(() => setCleanDuplicatesMsg(null), 5000);
+      scheduleTimeout(() => setCleanDuplicatesMsg(null), 5000);
     }
   };
 

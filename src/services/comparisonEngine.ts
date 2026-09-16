@@ -5,7 +5,8 @@ import {
   inferOtherProfileCategory,
   isStrengthOrCalisthenics,
   isTrailOrRunning,
-  getDynamicAthleteProfile
+  getDynamicAthleteProfile,
+  getAthleteHeartRateZones
 } from './garminService';
 import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay } from './dateUtils';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
@@ -135,7 +136,8 @@ export function compareWorkoutsWithGarmin(
   plannedEvents: CalendarEvent[],
   garminActivities: GarminActivity[],
   manualPairs: Record<string, string> = {},
-  asOfDate: Date = new Date()
+  asOfDate: Date = new Date(),
+  athlete?: { fcMax?: number; fcRest?: number }
 ): ActivityComparison[] {
   const comparisons: ActivityComparison[] = [];
   const matchedGarminIds = new Set<string>();
@@ -339,7 +341,7 @@ export function compareWorkoutsWithGarmin(
       // on positionne la date sur le jour d'exécution réel pour que la séance remplace
       // l'activité bonus du dimanche et affiche clairement le report !
       const comparisonDate = match.isPostponedCatchup ? match.executedDate : match.scheduledDate;
-      const comp = evaluateSingleWorkout(plan, match.act, comparisonDate);
+      const comp = evaluateSingleWorkout(plan, match.act, comparisonDate, athlete);
 
       if (match.isPostponedCatchup) {
         comp.isPostponedCatchup = true;
@@ -437,7 +439,8 @@ export function compareWorkoutsWithGarmin(
 export function computeWeeklyTelemetry(
   comparisons: ActivityComparison[],
   targetDaysCountOrRange: number | { start: string; end: string } = 7,
-  fullWeekTarget?: { plannedDurationMin: number; plannedElevationM: number }
+  fullWeekTarget?: { plannedDurationMin: number; plannedElevationM: number },
+  athlete?: { fcMax?: number; fcRest?: number }
 ): WeeklyStatsSummary {
   let currentDays: ActivityComparison[];
   if (typeof targetDaysCountOrRange === 'object' && targetDaysCountOrRange.start && targetDaysCountOrRange.end) {
@@ -509,7 +512,7 @@ export function computeWeeklyTelemetry(
         hrCount++;
       }
 
-      const profile = getDynamicAthleteProfile();
+      const profile = getDynamicAthleteProfile([act], athlete);
       // Calcul unifié de la charge d'entraînement (Firstbeat direct ou Banister TRIMP)
       const trimpRes = calculateSessionTrimp(
         act.durationMinutes,
@@ -564,7 +567,8 @@ export function computeWeeklyTelemetry(
 function evaluateSingleWorkout(
   plan: CalendarEvent,
   act: GarminActivity,
-  dateKey: string
+  dateKey: string,
+  athlete?: { fcMax?: number; fcRest?: number }
 ): ActivityComparison {
   const durationDelta = act.durationMinutes - plan.durationMinutes;
   const feedbackNotes: string[] = [];
@@ -604,14 +608,17 @@ function evaluateSingleWorkout(
     feedbackNotes.push(`Durée prescrite strictement respectée (${act.durationMinutes} min).`);
   }
 
-  // 2. Évaluation de la fréquence cardiaque (FCmax = 203 bpm)
+  // 2. Évaluation de la fréquence cardiaque selon la prescription de la séance.
   let hrCompliance: 'OPTIMAL' | 'TOO_HIGH' | 'TOO_LOW' | 'N/A' = 'OPTIMAL';
   const titleLower = String(plan.title || '').toLowerCase();
   const isRecovery = plan.sportType === 'RUN_EASY' || titleLower.includes('récupération') || titleLower.includes('footing') || titleLower.includes('rolling run');
   const isTrailRun = plan.sportType === 'TRAIL_LONG' || titleLower.includes('trail') || titleLower.includes('rando-course');
-  // Seuil physiologique réaliste pour l'athlète (FCmax = 203 bpm) : endurance fondamentale jusqu'à 168 bpm sans fausse alerte
-  const effectiveMaxTarget = (isRecovery || isTrailRun) ? Math.max(168, plan.metadata?.targetHeartRateRange?.[1] || 168) : (plan.metadata?.targetHeartRateRange?.[1] || 175);
-  const effectiveMinTarget = (isRecovery || isTrailRun) ? Math.min(135, plan.metadata?.targetHeartRateRange?.[0] || 135) : (plan.metadata?.targetHeartRateRange?.[0] || 135);
+  const athleteProfile = getDynamicAthleteProfile([act], athlete);
+  const zones = getAthleteHeartRateZones(athleteProfile);
+  const fallbackRange = plan.sportType === 'TRAIL_INTENSE'
+    ? zones.zone4
+    : (isRecovery || isTrailRun ? zones.zone2 : zones.zone1);
+  const [effectiveMinTarget, effectiveMaxTarget] = plan.metadata?.targetHeartRateRange || fallbackRange;
 
   if (act.avgHeartRate) {
     if (act.avgHeartRate > effectiveMaxTarget + 5) {
@@ -628,8 +635,7 @@ function evaluateSingleWorkout(
       );
     } else {
       hrCompliance = 'OPTIMAL';
-      const profile = getDynamicAthleteProfile();
-      const pctFcMax = Math.round((act.avgHeartRate / profile.fcMax) * 100);
+      const pctFcMax = Math.round((act.avgHeartRate / athleteProfile.fcMax) * 100);
       feedbackNotes.push(
         `🎯 Cardio maîtrisé : FC moy. ${act.avgHeartRate} bpm (~${pctFcMax}% FCmax, zone aérobie bien calibrée).`
       );

@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { GarminActivity, GarminWellnessData } from '../types/garmin';
 
@@ -6,167 +7,89 @@ const getEnv = (key: string): string => {
   return (import.meta as any).env?.[key] || (globalThis as any).process?.env?.[key] || '';
 };
 
-const DEFAULT_SUPABASE_URL = 'https://iolvxwvjasawlnsxlmpi.supabase.co';
-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvbHZ4d3ZqYXNhd2xuc3hsbXBpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NTE3OTUsImV4cCI6MjEwNDEyNzc5NX0.ZXDSu7yBu8h-loaoTkmWUUfmZgkRoMCX201LEJ9__rs';
-
-const supabaseUrl = getEnv('VITE_SUPABASE_URL') || DEFAULT_SUPABASE_URL;
-const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || DEFAULT_SUPABASE_ANON_KEY;
+const supabaseUrl = getEnv('VITE_SUPABASE_URL');
+const supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY');
 
 export const isSupabaseConfigured = (): boolean => {
   return Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http'));
 };
 
-const PERMANENT_BACKUP_KEY = 'sb-permanent-session-backup';
+const LEGACY_PERMANENT_BACKUP_KEY = 'sb-permanent-session-backup';
 
 /**
- * Resilient Triple-Layer persistent storage adapter with Permanent Recovery Mirror:
- * Layer 1: @capacitor/preferences (native SharedPreferences on Android, immune to process kills)
- * Layer 2: HTML5 window.localStorage (web DOM storage)
- * Layer 3: Persistent Document Cookie (365-day expiry with SameSite=Lax)
- * Mirror: Isolated permanent backup that survives transient offline refresh failures
- * Includes bidirectional automatic recovery to prevent session loss.
+ * Uses exactly one authoritative auth store per platform:
+ * Capacitor Preferences on native and localStorage on the web.
+ *
+ * The previous cookie + permanent mirror implementation could resurrect a session
+ * after sign-out and made it impossible to know which copy was authoritative.
  */
 export const persistentAuthStorage = {
   getItem: async (key: string): Promise<string | null> => {
-    // 1. Try Capacitor Native Preferences
-    try {
-      const res = await Preferences.get({ key });
-      if (res && typeof res.value === 'string' && res.value.trim().length > 0) {
-        // Backfill localStorage and cookie to keep all layers in sync
-        try {
-          if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem(key, res.value);
-          }
-        } catch {}
-        return res.value;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        return (await Preferences.get({ key })).value;
+      } catch (error) {
+        console.warn('Unable to read native auth session:', error);
+        return null;
       }
-    } catch (e) {
-      console.warn('Preferences.get notice:', e);
     }
 
-    // 2. Try window.localStorage
     try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const localVal = window.localStorage.getItem(key);
-        if (localVal && localVal.trim().length > 0) {
-          // Backfill Capacitor Preferences so native storage is permanently populated
-          try {
-            await Preferences.set({ key, value: localVal });
-          } catch {}
-          return localVal;
-        }
-      }
-    } catch {}
-
-    // 3. Try Document Cookies fallback (useful if WebView restarted with clean web cache)
-    try {
-      if (typeof document !== 'undefined' && document.cookie) {
-        const match = document.cookie.match(new RegExp('(?:^|; )' + encodeURIComponent(key).replace(/[-.+*]/g, '\\$&') + '=([^;]*)'));
-        if (match && match[1]) {
-          const cookieVal = decodeURIComponent(match[1]);
-          if (cookieVal && cookieVal.trim().length > 0) {
-            // Restore both Preferences and localStorage from Cookie
-            try {
-              await Preferences.set({ key, value: cookieVal });
-              if (typeof window !== 'undefined' && window.localStorage) {
-                window.localStorage.setItem(key, cookieVal);
-              }
-            } catch {}
-            return cookieVal;
-          }
-        }
-      }
-    } catch {}
-
-    // 4. Fail-Safe Recovery from Permanent Backup Mirror (recovers session if offline launch caused Supabase to purge the active slot)
-    if (key.includes('auth-token')) {
-      try {
-        const backupPref = await Preferences.get({ key: PERMANENT_BACKUP_KEY });
-        if (backupPref && typeof backupPref.value === 'string' && backupPref.value.trim().length > 0) {
-          // Re-populate the main key across layers
-          await persistentAuthStorage.setItem(key, backupPref.value);
-          return backupPref.value;
-        }
-      } catch {}
-
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          const backupLocal = window.localStorage.getItem(PERMANENT_BACKUP_KEY);
-          if (backupLocal && backupLocal.trim().length > 0) {
-            await persistentAuthStorage.setItem(key, backupLocal);
-            return backupLocal;
-          }
-        }
-      } catch {}
+      return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
+    } catch (error) {
+      console.warn('Unable to read web auth session:', error);
+      return null;
     }
-
-    return null;
   },
   setItem: async (key: string, value: string): Promise<void> => {
-    // 1. Save to Capacitor Preferences (Android SharedPreferences)
-    try {
-      await Preferences.set({ key, value });
-    } catch (e) {
-      console.warn('Preferences.set notice:', e);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Preferences.set({ key, value });
+      } catch (error) {
+        console.warn('Unable to persist native auth session:', error);
+      }
+      return;
     }
 
-    // 2. Save to window.localStorage
     try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(key, value);
-      }
-    } catch {}
-
-    // 3. Save to Document Cookie (365 days)
-    try {
-      if (typeof document !== 'undefined') {
-        const d = new Date();
-        d.setTime(d.getTime() + 365 * 24 * 60 * 60 * 1000);
-        document.cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
-      }
-    } catch {}
-
-    // 4. Maintain Permanent Recovery Mirror for auth tokens
-    if (key.includes('auth-token')) {
-      try {
-        await Preferences.set({ key: PERMANENT_BACKUP_KEY, value });
-      } catch {}
-      try {
-        if (typeof window !== 'undefined' && window.localStorage) {
-          window.localStorage.setItem(PERMANENT_BACKUP_KEY, value);
-        }
-      } catch {}
+      window.localStorage.setItem(key, value);
+    } catch (error) {
+      console.warn('Unable to persist web auth session:', error);
     }
   },
   removeItem: async (key: string): Promise<void> => {
-    try {
-      await Preferences.remove({ key });
-    } catch {}
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.removeItem(key);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Preferences.remove({ key });
+      } catch (error) {
+        console.warn('Unable to remove native auth session:', error);
       }
-    } catch {}
+      return;
+    }
+
     try {
-      if (typeof document !== 'undefined') {
-        document.cookie = `${encodeURIComponent(key)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
-      }
-    } catch {}
-    // Note: PERMANENT_BACKUP_KEY is intentionally NOT deleted here so transient refresh failures
-    // don't wipe the user's saved session. It is only purged when the user explicitly signs out.
+      window.localStorage.removeItem(key);
+    } catch (error) {
+      console.warn('Unable to remove web auth session:', error);
+    }
   }
 };
 
 /**
- * Purges the permanent backup mirror. Only invoked during explicit user sign out.
+ * Removes artifacts created by the former multi-layer auth store.
  */
 export async function clearPermanentAuthBackup(): Promise<void> {
   try {
-    await Preferences.remove({ key: PERMANENT_BACKUP_KEY });
+    await Preferences.remove({ key: LEGACY_PERMANENT_BACKUP_KEY });
   } catch {}
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.removeItem(PERMANENT_BACKUP_KEY);
+      window.localStorage.removeItem(LEGACY_PERMANENT_BACKUP_KEY);
+    }
+  } catch {}
+  try {
+    if (typeof document !== 'undefined') {
+      document.cookie = `${encodeURIComponent(LEGACY_PERMANENT_BACKUP_KEY)}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax`;
     }
   } catch {}
 }
@@ -181,6 +104,16 @@ export const supabase: SupabaseClient = isSupabaseConfigured()
       }
     })
   : (null as unknown as SupabaseClient);
+
+export async function getSupabaseAccessToken(): Promise<string | null> {
+  if (!isSupabaseConfigured()) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    console.warn('Unable to read Supabase access token:', error);
+    return null;
+  }
+  return data.session?.access_token || null;
+}
 
 export interface UserProfile {
   id: string;
@@ -310,21 +243,29 @@ export async function syncActivitiesToCloud(userId: string, activities: GarminAc
   }
 }
 
-/**
- * Fetch activities from Supabase for current user (up to 2500 activities)
- */
+/** Fetch the complete activity history with deterministic pagination. */
 export async function fetchActivitiesFromCloud(userId: string): Promise<GarminActivity[]> {
   if (!isSupabaseConfigured() || !userId) return [];
   try {
-    const { data, error } = await supabase
-      .from('activities')
-      .select('raw_payload')
-      .eq('user_id', userId)
-      .order('start_time', { ascending: false })
-      .limit(2500);
+    const pageSize = 1000;
+    const activities: GarminActivity[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('activities')
+        .select('raw_payload')
+        .eq('user_id', userId)
+        .order('start_time', { ascending: false })
+        .range(offset, offset + pageSize - 1);
 
-    if (error || !data) return [];
-    return data.map(d => d.raw_payload as GarminActivity).filter(Boolean);
+      if (error) {
+        console.warn('Error fetching activities from Supabase:', error);
+        return activities;
+      }
+      const page = data || [];
+      activities.push(...page.map(row => row.raw_payload as GarminActivity).filter(Boolean));
+      if (page.length < pageSize) break;
+    }
+    return activities;
   } catch (err) {
     console.warn('Error fetching activities from Supabase:', err);
     return [];
@@ -347,6 +288,12 @@ function isTableMissingError(error: any): boolean {
     (typeof error.message === 'string' &&
       (error.message.includes('public.wellness') || error.message.includes('schema cache')))
   );
+}
+
+function isMissingColumnError(error: any): boolean {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return code === '42703' || code === 'PGRST204' || (message.includes('column') && message.includes('does not exist'));
 }
 
 export function resetWellnessTableAvailability(): void {
@@ -413,31 +360,33 @@ export async function fetchWellnessFromCloud(userId: string): Promise<GarminWell
   if (!isSupabaseConfigured() || !userId) return [];
   if (isWellnessTableAvailable === false) return [];
   try {
-    const { data, error } = await supabase
-      .from('wellness')
-      .select('raw_payload')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(1000);
+    const pageSize = 1000;
+    const wellness: GarminWellnessData[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('wellness')
+        .select('raw_payload')
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .range(offset, offset + pageSize - 1);
 
-    if (error) {
-      if (isTableMissingError(error)) {
-        if (isWellnessTableAvailable === null) {
+      if (error) {
+        if (isTableMissingError(error)) {
+          if (isWellnessTableAvailable === null) {
+            console.info('[Supabase] Table "public.wellness" absente; le suivi reste local.');
+          }
           isWellnessTableAvailable = false;
-          console.info(
-            '[Supabase] Note: Table "public.wellness" non encore créée dans Supabase. Le suivi bien-être reste conservé localement.'
-          );
-        } else {
-          isWellnessTableAvailable = false;
+          return [];
         }
-        return [];
+        console.warn('Could not fetch wellness from Supabase:', error.message);
+        return wellness;
       }
-      console.warn('Could not fetch wellness from Supabase:', error.message);
-      return [];
+      const page = data || [];
+      wellness.push(...page.map(row => row.raw_payload as GarminWellnessData).filter(Boolean));
+      if (page.length < pageSize) break;
     }
     isWellnessTableAvailable = true;
-    if (!data) return [];
-    return data.map(d => d.raw_payload as GarminWellnessData).filter(Boolean);
+    return wellness;
   } catch (err: any) {
     if (isTableMissingError(err)) {
       isWellnessTableAvailable = false;
@@ -451,16 +400,27 @@ export async function fetchWellnessFromCloud(userId: string): Promise<GarminWell
 /**
  * Save manual pairs to Supabase
  */
-export async function syncPairsToCloud(userId: string, pairs: Record<string, string>): Promise<boolean> {
+export async function syncPairsToCloud(
+  userId: string,
+  pairs: Record<string, string>,
+  updatedAt: string = new Date().toISOString()
+): Promise<boolean> {
   if (!isSupabaseConfigured() || !userId) return false;
   try {
-    const { error } = await supabase
+    let { error } = await supabase
       .from('user_settings')
       .upsert({
         user_id: userId,
         manual_pairs: pairs,
-        updated_at: new Date().toISOString()
+        manual_pairs_updated_at: updatedAt,
+        updated_at: updatedAt
       }, { onConflict: 'user_id' });
+
+    if (error && isMissingColumnError(error)) {
+      ({ error } = await supabase
+        .from('user_settings')
+        .upsert({ user_id: userId, manual_pairs: pairs, updated_at: updatedAt }, { onConflict: 'user_id' }));
+    }
 
     return !error;
   } catch (err) {
@@ -472,17 +432,31 @@ export async function syncPairsToCloud(userId: string, pairs: Record<string, str
 /**
  * Fetch manual pairs from Supabase
  */
-export async function fetchPairsFromCloud(userId: string): Promise<Record<string, string> | null> {
+export async function fetchPairsFromCloud(userId: string): Promise<{
+  value: Record<string, string>;
+  updatedAt: string | null;
+} | null> {
   if (!isSupabaseConfigured() || !userId) return null;
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('user_settings')
-      .select('manual_pairs')
+      .select('manual_pairs, manual_pairs_updated_at, updated_at')
       .eq('user_id', userId)
       .single();
 
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await supabase
+        .from('user_settings')
+        .select('manual_pairs, updated_at')
+        .eq('user_id', userId)
+        .single() as any);
+    }
+
     if (error || !data) return null;
-    return data.manual_pairs || {};
+    return {
+      value: data.manual_pairs || {},
+      updatedAt: data.manual_pairs_updated_at || data.updated_at || null
+    };
   } catch (err) {
     console.warn('Error fetching pairs from cloud:', err);
     return null;
@@ -497,6 +471,8 @@ export async function syncOverridesToCloud(
   overrides: {
     adaptiveOverrides?: Record<string, any>;
     postponeOverrides?: Record<string, any>;
+    adaptiveUpdatedAt?: string;
+    postponeUpdatedAt?: string;
   }
 ): Promise<boolean> {
   if (!isSupabaseConfigured() || !userId) return false;
@@ -507,14 +483,25 @@ export async function syncOverridesToCloud(
     };
     if (overrides.adaptiveOverrides !== undefined) {
       payload.adaptive_overrides = overrides.adaptiveOverrides;
+      payload.adaptive_overrides_updated_at = overrides.adaptiveUpdatedAt || payload.updated_at;
     }
     if (overrides.postponeOverrides !== undefined) {
       payload.postpone_overrides = overrides.postponeOverrides;
+      payload.postpone_overrides_updated_at = overrides.postponeUpdatedAt || payload.updated_at;
     }
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('user_settings')
       .upsert(payload, { onConflict: 'user_id' });
+
+    if (error && isMissingColumnError(error)) {
+      const legacyPayload = { ...payload };
+      delete legacyPayload.adaptive_overrides_updated_at;
+      delete legacyPayload.postpone_overrides_updated_at;
+      ({ error } = await supabase
+        .from('user_settings')
+        .upsert(legacyPayload, { onConflict: 'user_id' }));
+    }
 
     if (error) {
       console.warn('Error saving overrides to cloud:', error);
@@ -531,21 +518,35 @@ export async function syncOverridesToCloud(
  * Fetch adaptive & postpone overrides from Supabase user_settings
  */
 export async function fetchOverridesFromCloud(userId: string): Promise<{
-  adaptiveOverrides: Record<string, any> | null;
-  postponeOverrides: Record<string, any> | null;
+  adaptiveOverrides: { value: Record<string, any>; updatedAt: string | null };
+  postponeOverrides: { value: Record<string, any>; updatedAt: string | null };
 } | null> {
   if (!isSupabaseConfigured() || !userId) return null;
   try {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('user_settings')
-      .select('adaptive_overrides, postpone_overrides')
+      .select('adaptive_overrides, postpone_overrides, adaptive_overrides_updated_at, postpone_overrides_updated_at, updated_at')
       .eq('user_id', userId)
       .single();
 
+    if (error && isMissingColumnError(error)) {
+      ({ data, error } = await supabase
+        .from('user_settings')
+        .select('adaptive_overrides, postpone_overrides, updated_at')
+        .eq('user_id', userId)
+        .single() as any);
+    }
+
     if (error || !data) return null;
     return {
-      adaptiveOverrides: data.adaptive_overrides || null,
-      postponeOverrides: data.postpone_overrides || null
+      adaptiveOverrides: {
+        value: data.adaptive_overrides || {},
+        updatedAt: data.adaptive_overrides_updated_at || data.updated_at || null
+      },
+      postponeOverrides: {
+        value: data.postpone_overrides || {},
+        updatedAt: data.postpone_overrides_updated_at || data.updated_at || null
+      }
     };
   } catch (err) {
     console.warn('Error fetching overrides from cloud:', err);
@@ -573,11 +574,23 @@ export async function fetchPublicSharedData(slugOrUserId: string): Promise<{
 
     if (error || !profileData) return null;
 
-    const { data: actData } = await supabase
-      .from('activities')
-      .select('raw_payload')
-      .eq('user_id', profileData.id)
-      .order('start_time', { ascending: false });
+    const pageSize = 1000;
+    const sharedActivities: GarminActivity[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data: actData, error: activitiesError } = await supabase
+        .from('activities')
+        .select('raw_payload')
+        .eq('user_id', profileData.id)
+        .order('start_time', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      if (activitiesError) {
+        console.warn('Error fetching public shared activities:', activitiesError);
+        break;
+      }
+      const page = actData || [];
+      sharedActivities.push(...page.map(row => row.raw_payload as GarminActivity).filter(Boolean));
+      if (page.length < pageSize) break;
+    }
 
     return {
       profile: {
@@ -591,7 +604,7 @@ export async function fetchPublicSharedData(slugOrUserId: string): Promise<{
         shareSlug: profileData.share_slug,
         isPublic: true
       },
-      activities: (actData || []).map(d => d.raw_payload as GarminActivity).filter(Boolean)
+      activities: sharedActivities
     };
   } catch (err) {
     console.warn('Error fetching shared data:', err);
