@@ -2,6 +2,7 @@ import { CalendarEvent } from '../types/calendar';
 import { WorkoutPushResult } from '../types/garmin';
 import {
   GARMIN_WORKOUT_DEFINITION_VERSION,
+  AthletePhysiologicalProfile,
   getGarminWorkoutTargetMode,
   loadGarminCredentials,
   loadGarminCredentialsAsync,
@@ -135,18 +136,19 @@ let activeRequestKey: string | null = null;
 let queuedRequest: {
   events: CalendarEvent[];
   referenceDate: Date;
-  options?: { force?: boolean };
+  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile };
   key: string;
 } | null = null;
 
 function workoutSyncRequestKey(
   events: CalendarEvent[],
   referenceDate: Date,
-  options?: { force?: boolean }
+  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile }
 ): string {
   return JSON.stringify({
     week: getCurrentWeekDateBounds(referenceDate).weekStartStr,
     force: Boolean(options?.force),
+    athlete: options?.athleteProfile,
     signatures: filterCurrentWeekSportWorkouts(events, referenceDate)
       .map(computeWorkoutSyncSignature)
       .sort()
@@ -160,7 +162,7 @@ function workoutSyncRequestKey(
 async function runCurrentWeekWorkoutSync(
   events: CalendarEvent[],
   referenceDate: Date = new Date(),
-  options?: { force?: boolean }
+  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile }
 ): Promise<AutoSyncResult> {
   const isEnabled = isGarminAutoSyncEnabled();
   if (!isEnabled && !options?.force) {
@@ -245,7 +247,7 @@ async function runCurrentWeekWorkoutSync(
 
     for (const workout of toPush) {
       const dateStr = toLocalDateKey(workout.startDate);
-      const pushRes = await pushWorkoutToGarmin(workout, dateStr, 'FORERUNNER_55');
+      const pushRes = await pushWorkoutToGarmin(workout, dateStr, 'FORERUNNER_55', options?.athleteProfile);
       results.push(pushRes);
 
       if (pushRes.success) {
@@ -295,7 +297,7 @@ async function runCurrentWeekWorkoutSync(
 export function syncCurrentWeekWorkoutsToGarmin(
   events: CalendarEvent[],
   referenceDate: Date = new Date(),
-  options?: { force?: boolean }
+  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile }
 ): Promise<AutoSyncResult> {
   const key = workoutSyncRequestKey(events, referenceDate, options);
   if (autoSyncInFlight) {

@@ -42,6 +42,9 @@ in `src/services/garminAutoSyncService.ts`.
 - Garmin passwords are session-only. The server caches user-scoped OAuth tokens
   for at most 24 hours in owner-readable files. It never automatically deletes
   older Garmin workouts by fuzzy title matching during a push.
+- Garmin activity synchronization no longer sends workouts from a potentially
+  stale calendar in the account tab. The central refresh rebuilds the plan first,
+  then passes the same athlete profile used for the UI preview into workout push.
 - A full Garmin history sync requests bounded batches of up to two 100-activity
   pages per server call. The client follows `nextOffset`, persists each successful
   page, and reports an error instead of silently treating a timed-out page as

@@ -219,6 +219,24 @@ describe('Garmin Auto-Sync Service', () => {
     expect(pushSpy).not.toHaveBeenCalled();
   });
 
+  it('passes the selected athlete profile through to the Garmin push', async () => {
+    const event = createMockEvent({ id: 'profile-workout' });
+    const athleteProfile = garminService.getDynamicAthleteProfile([], { fcMax: 180, fcRest: 60 });
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com', password: 'password123'
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: true, workoutId: 'new-workout'
+    });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin(
+      [event], new Date('2026-09-09T12:00:00Z'), { athleteProfile }
+    );
+
+    expect(result.success).toBe(true);
+    expect(pushSpy).toHaveBeenCalledWith(event, '2026-09-09', 'FORERUNNER_55', athleteProfile);
+  });
+
   it('syncs only changed workouts and skips already synced ones', async () => {
     // Mock credentials
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({

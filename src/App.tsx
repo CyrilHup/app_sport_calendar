@@ -8,7 +8,7 @@ import { MobileNav } from './components/MobileNav';
 import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/icsParser';
 import { formatDateKey, getMondayOfWeek, parseLocalDate } from './services/dateUtils';
 import { createAppConfig, getPeriodizationContext } from './services/periodizationEngine';
-import { loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
+import { getDynamicAthleteProfile, loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
@@ -69,6 +69,10 @@ export const App: React.FC = () => {
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
   const [baselineFcRest, setBaselineFcRest] = useState(getBaselineRestingHeartRate());
+  const [detectedFcMax, setDetectedFcMax] = useState<number | undefined>(() => {
+    const value = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
+    return value > 140 && value < 240 ? value : undefined;
+  });
   const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
   const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization' | 'stats'>('calendar');
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
@@ -97,11 +101,11 @@ export const App: React.FC = () => {
     homeAddress: effectiveProfile?.homeAddress,
     campusAddress: effectiveProfile?.campusAddress,
     trailAddress: effectiveProfile?.trailAddress,
-    fcMax: effectiveProfile?.fcMax,
+    fcMax: effectiveProfile?.fcMax ?? detectedFcMax,
     fcRest: baselineFcRest,
     raceName: effectiveProfile?.raceName,
     raceDate: effectiveProfile?.raceDate
-  }), [effectiveProfile, baselineFcRest]);
+  }), [effectiveProfile, baselineFcRest, detectedFcMax]);
   const athleteVitals = useMemo(() => ({
     fcMax: appConfig.ATHLETE_FC_MAX,
     fcRest: appConfig.ATHLETE_FC_REST
@@ -399,7 +403,12 @@ export const App: React.FC = () => {
     }
 
     loadedActivities = mergeGarminActivities(loadedActivities, appStateRef.current.garminActivities);
-    setBaselineFcRest(getBaselineRestingHeartRate());
+    const refreshedFcRest = getBaselineRestingHeartRate();
+    setBaselineFcRest(refreshedFcRest);
+    const cachedFcMax = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
+    const validCachedFcMax = cachedFcMax > 140 && cachedFcMax < 240 ? cachedFcMax : undefined;
+    setDetectedFcMax(validCachedFcMax);
+    const refreshedFcMax = appStateRef.current.profile?.fcMax ?? validCachedFcMax ?? appConfig.ATHLETE_FC_MAX;
     appStateRef.current.garminActivities = loadedActivities;
     setGarminActivities(loadedActivities);
 
@@ -431,9 +440,14 @@ export const App: React.FC = () => {
       return updatedState;
     });
 
-    if (!shareSlug) {
+    if (!shareSlug && refreshedFcRest === appConfig.ATHLETE_FC_REST && refreshedFcMax === appConfig.ATHLETE_FC_MAX) {
       // Ensure current week workouts are really created AND scheduled before marking them synced.
-      const workoutSyncResult = await syncCurrentWeekWorkoutsToGarmin(transformedEvents, referenceDate);
+      const athleteProfile = getDynamicAthleteProfile(loadedActivities, athleteVitals);
+      const workoutSyncResult = await syncCurrentWeekWorkoutsToGarmin(
+        transformedEvents,
+        referenceDate,
+        { athleteProfile }
+      );
       if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
         console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
         if (isManualTrigger) {
@@ -551,7 +565,8 @@ export const App: React.FC = () => {
       postpones,
       adaptations
     );
-    void syncCurrentWeekWorkoutsToGarmin(newEvents, referenceDate);
+    const athleteProfile = getDynamicAthleteProfile(appStateRef.current.garminActivities, athleteVitals);
+    void syncCurrentWeekWorkoutsToGarmin(newEvents, referenceDate, { athleteProfile });
   };
 
   const handlePostponeWorkout = (

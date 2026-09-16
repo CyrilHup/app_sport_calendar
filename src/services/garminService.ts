@@ -1095,11 +1095,12 @@ export function buildWorkoutPayloadFromEvent(
 export async function pushWorkoutToGarmin(
   event: CalendarEvent,
   targetDateStr?: string,
-  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
+  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55',
+  athleteProfile?: AthletePhysiologicalProfile
 ): Promise<WorkoutPushResult> {
   try {
     const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
-    const payload = buildWorkoutPayloadFromEvent(event, targetDateStr, targetWatch, getStoredAthleteProfile());
+    const payload = buildWorkoutPayloadFromEvent(event, targetDateStr, targetWatch, athleteProfile || getStoredAthleteProfile());
 
     const response = await fetch(getApiUrl('/api/garmin-sync'), {
       method: 'POST',

@@ -41,6 +41,7 @@ import { syncCurrentWeekWorkoutsToGarmin, isGarminAutoSyncEnabled } from '../ser
 import { selectDayActivityContext } from '../services/daySelectors';
 import { groupDaySportWorkouts, UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
+import { getDynamicAthleteProfile } from '../services/garminService';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -566,6 +567,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [filter, setFilter] = useState<FilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
   const effectiveRefDate = referenceDate || (referenceDateStr ? parseLocalDate(referenceDateStr) : new Date());
+  const athleteProfile = useMemo(
+    () => getDynamicAthleteProfile(garminActivities, athlete),
+    [garminActivities, athlete]
+  );
   const todayKey = referenceDateStr || formatDateKey(effectiveRefDate);
   const currentTodayIndex = schedules.findIndex(s => s.date === todayKey);
   const currentWeekOffset = currentTodayIndex >= 0 ? Math.floor(currentTodayIndex / 7) : 0;
@@ -597,7 +602,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     triggerHapticFeedback('light');
 
     try {
-      const res = await syncCurrentWeekWorkoutsToGarmin(allEvents, effectiveRefDate);
+      const res = await syncCurrentWeekWorkoutsToGarmin(allEvents, effectiveRefDate, { athleteProfile });
       if (res.success) {
         triggerHapticFeedback('success');
         if (res.pushedCount > 0) {
@@ -1879,6 +1884,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         comparison={selectedComparison}
         unifiedGroup={selectedUnifiedGroup}
         athlete={athlete}
+        athleteProfile={athleteProfile}
         onClose={() => {
           setSelectedEvent(null);
           setSelectedComparison(null);

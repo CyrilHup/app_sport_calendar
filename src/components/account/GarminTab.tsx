@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { GarminActivity, GarminSyncState, GarminWorkoutTargetMode } from '../../types/garmin';
-import { CalendarEvent } from '../../types/calendar';
 import {
   clearGarminCredentials,
   loadGarminCredentials,
@@ -15,8 +14,7 @@ import {
 } from '../../services/garminService';
 import {
   isGarminAutoSyncEnabled,
-  setGarminAutoSyncEnabled,
-  syncCurrentWeekWorkoutsToGarmin
+  setGarminAutoSyncEnabled
 } from '../../services/garminAutoSyncService';
 import {
   Activity,
@@ -33,7 +31,6 @@ export interface GarminTabProps {
   garminState: GarminSyncState;
   onUpdateGarminState: (state: GarminSyncState) => void;
   onActivitiesSynced: (activities: GarminActivity[]) => void;
-  calendarEvents: CalendarEvent[];
   onRefreshAll: () => void;
   onUpdateFcMax?: (fcMax: number) => void;
 }
@@ -42,7 +39,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   garminState,
   onUpdateGarminState,
   onActivitiesSynced,
-  calendarEvents,
   onRefreshAll,
   onUpdateFcMax
 }) => {
@@ -121,27 +117,11 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       });
       if (result.athleteMaxHr) {
         if (onUpdateFcMax) onUpdateFcMax(result.athleteMaxHr);
-        updateProfile({ fcMax: result.athleteMaxHr }).catch(() => {});
-      }
-
-      // Ensure current week workouts are pushed / updated on Garmin Forerunner 55
-      let pushFeedback = '';
-      try {
-        if (calendarEvents && calendarEvents.length > 0) {
-          const pushRes = await syncCurrentWeekWorkoutsToGarmin(calendarEvents, new Date());
-          if (pushRes.pushedCount > 0) {
-            pushFeedback = ` • ${pushRes.pushedCount} séance${pushRes.pushedCount > 1 ? 's' : ''} envoyée${pushRes.pushedCount > 1 ? 's' : ''} sur votre montre`;
-          } else if (pushRes.alreadyUpToDate) {
-            pushFeedback = ` • Séances de la semaine déjà à jour sur votre montre`;
-          }
-          if (pushRes.error) pushFeedback += ` • ⚠️ Séances Garmin : ${pushRes.error}`;
-        }
-      } catch (pushErr) {
-        console.warn('Could not auto-push week workouts to Garmin:', pushErr);
+        await updateProfile({ fcMax: result.athleteMaxHr });
       }
 
       setGarminSyncMsg({
-        text: `✅ ${result.count} activité(s) dans votre historique${mode === 'full' ? ' complet (archivées sur Supabase)' : ''}${pushFeedback} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
+        text: `✅ ${result.count} activité(s) dans votre historique${mode === 'full' ? ' complet' : ''} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
         isError: false
       });
 

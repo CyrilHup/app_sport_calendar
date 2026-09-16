@@ -228,7 +228,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               garminState={garminState}
               onUpdateGarminState={onUpdateGarminState}
               onActivitiesSynced={onActivitiesSynced}
-              calendarEvents={calendarEvents}
               onRefreshAll={onRefreshAll}
             />
           )}

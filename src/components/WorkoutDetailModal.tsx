@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { buildWorkoutPayloadFromEvent } from '../services/garminService';
+import { AthletePhysiologicalProfile, buildWorkoutPayloadFromEvent } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { ActivityComparison } from '../types/garmin';
 import { formatTime, formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
@@ -46,6 +46,7 @@ interface WorkoutDetailModalProps {
   onCancelPostpone?: (eventId: string) => void;
   onOpenGarminSync?: () => void;
   athlete?: { fcMax: number; fcRest: number };
+  athleteProfile?: AthletePhysiologicalProfile;
 }
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
@@ -56,7 +57,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   onPostpone,
   onCancelPostpone,
   onOpenGarminSync,
-  athlete
+  athlete,
+  athleteProfile
 }) => {
   const scheduleTimeout = useManagedTimeout();
   const hasContent = Boolean(event || unifiedGroup);
@@ -144,7 +146,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   }, []);
 
   const selectedWatch = 'FORERUNNER_55';
-  const dynamicProfile = getDynamicAthleteProfile(
+  const dynamicProfile = athleteProfile || getDynamicAthleteProfile(
     unifiedGroup?.items.flatMap(item => item.actualActivity ? [item.actualActivity] : [])
       || (comparison?.actualActivity ? [comparison.actualActivity] : []),
     { fcMax: athleteFcMax, fcRest: athlete?.fcRest || getBaselineRestingHeartRate() }
@@ -207,7 +209,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     try {
       const result = await syncCurrentWeekWorkoutsToGarmin(
         unsyncedPlannedEvents,
-        new Date(effectiveEvent.startDate)
+        new Date(effectiveEvent.startDate),
+        { athleteProfile: dynamicProfile }
       );
 
       if (!result.success) {
