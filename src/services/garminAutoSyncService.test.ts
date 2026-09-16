@@ -8,6 +8,7 @@ import {
   setGarminAutoSyncEnabled,
   GARMIN_AUTO_SYNC_ENABLED_KEY,
   GARMIN_SYNCED_SIGNATURES_KEY,
+  GARMIN_SYNCED_WORKOUT_IDS_KEY,
   saveSyncedWeekWorkoutSignatures,
   isWorkoutSyncedToGarmin,
   syncCurrentWeekWorkoutsToGarmin
@@ -219,6 +220,24 @@ describe('Garmin Auto-Sync Service', () => {
     expect(pushSpy).not.toHaveBeenCalled();
   });
 
+  it('also protects current-version signatures when their Garmin ID is unknown', async () => {
+    const event = createMockEvent({ id: 'missing-id' });
+    saveSyncedWeekWorkoutSignatures({ [event.id]: computeWorkoutSyncSignature(event) });
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com', password: 'password123'
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const changed = { ...event, durationMinutes: 45 };
+    const result = await syncCurrentWeekWorkoutsToGarmin(
+      [changed], new Date('2026-09-09T12:00:00Z'), { force: true }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('identifiant exact');
+    expect(pushSpy).not.toHaveBeenCalled();
+  });
+
   it('passes the selected athlete profile through to the Garmin push', async () => {
     const event = createMockEvent({ id: 'profile-workout' });
     const athleteProfile = garminService.getDynamicAthleteProfile([], { fcMax: 180, fcRest: 60 });
@@ -226,7 +245,7 @@ describe('Garmin Auto-Sync Service', () => {
       email: 'test@example.com', password: 'password123'
     });
     const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
-      success: true, workoutId: 'new-workout'
+      success: true, workoutId: '101'
     });
 
     const result = await syncCurrentWeekWorkoutsToGarmin(
@@ -234,7 +253,8 @@ describe('Garmin Auto-Sync Service', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(pushSpy).toHaveBeenCalledWith(event, '2026-09-09', 'FORERUNNER_55', athleteProfile);
+    expect(pushSpy).toHaveBeenCalledWith(event, '2026-09-09', 'FORERUNNER_55', athleteProfile, undefined);
+    expect(isWorkoutSyncedToGarmin(event, athleteProfile)).toBe(true);
   });
 
   it('syncs only changed workouts and skips already synced ones', async () => {
@@ -246,7 +266,7 @@ describe('Garmin Auto-Sync Service', () => {
 
     const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
       success: true,
-      workoutId: 'garmin_123',
+      workoutId: '123',
       workoutName: '[QMT] Footing',
       scheduledDate: '2026-09-09'
     });
@@ -288,6 +308,8 @@ describe('Garmin Auto-Sync Service', () => {
     const res3 = await syncCurrentWeekWorkoutsToGarmin(modifiedEvents, refDate);
     expect(res3.pushedCount).toBe(1);
     expect(pushSpy).toHaveBeenCalledTimes(2);
+    expect(pushSpy.mock.calls[1][4]).toBe('123');
+    expect(JSON.parse(localStorage.getItem(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}').sport_1).toBe('123');
   });
 
   it('marks a workout as synced only after Garmin confirms scheduling', async () => {
@@ -316,13 +338,32 @@ describe('Garmin Auto-Sync Service', () => {
 
     vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValueOnce({
       success: true,
-      workoutId: 'garmin_456',
+      workoutId: '456',
       scheduledDate: '2026-09-09'
     });
 
     const successResult = await syncCurrentWeekWorkoutsToGarmin([workout], refDate);
     expect(successResult.success).toBe(true);
     expect(isWorkoutSyncedToGarmin(workout)).toBe(true);
+  });
+
+  it('stops automatic retries when a replacement needs manual review', async () => {
+    const workout = createMockEvent({ id: 'replacement-failed' });
+    const refDate = new Date('2026-09-09T12:00:00Z');
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
+      email: 'test@example.com', password: 'password123'
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin')
+      .mockResolvedValueOnce({ success: true, workoutId: '123' })
+      .mockResolvedValueOnce({ success: false, error: 'Remplacement Garmin incomplet : ancienne séance 123 et nouvelle séance 456 à vérifier manuellement.' });
+
+    await syncCurrentWeekWorkoutsToGarmin([workout], refDate);
+    const changed = { ...workout, durationMinutes: 45 };
+    expect((await syncCurrentWeekWorkoutsToGarmin([changed], refDate)).success).toBe(false);
+    const again = await syncCurrentWeekWorkoutsToGarmin([changed], refDate, { force: true });
+    expect(again.success).toBe(false);
+    expect(again.error).toContain('123 et nouvelle séance 456');
+    expect(pushSpy).toHaveBeenCalledTimes(2);
   });
 
   it('shares one in-flight Garmin operation between concurrent callers', async () => {
@@ -342,7 +383,7 @@ describe('Garmin Auto-Sync Service', () => {
 
     expect(second).toBe(first);
     expect(pushSpy).toHaveBeenCalledTimes(1);
-    finishPush({ success: true, workoutId: 'garmin-concurrent', scheduledDate: '2026-09-09' });
+    finishPush({ success: true, workoutId: '789', scheduledDate: '2026-09-09' });
 
     const [firstResult, secondResult] = await Promise.all([first, second]);
     expect(firstResult).toEqual(secondResult);
@@ -359,17 +400,18 @@ describe('Garmin Auto-Sync Service', () => {
     const firstPush = new Promise<any>(resolve => { finishFirst = resolve; });
     const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin')
       .mockReturnValueOnce(firstPush)
-      .mockResolvedValue({ success: true, workoutId: 'new', scheduledDate: '2026-09-09' });
+      .mockResolvedValue({ success: true, workoutId: '902', scheduledDate: '2026-09-09' });
     const original = createMockEvent({ id: 'changed_mid_sync', durationMinutes: 60 });
     const changed = { ...original, durationMinutes: 45 };
     const refDate = new Date('2026-09-09T12:00:00Z');
 
     const pending = syncCurrentWeekWorkoutsToGarmin([original], refDate);
     expect(syncCurrentWeekWorkoutsToGarmin([changed], refDate)).toBe(pending);
-    finishFirst({ success: true, workoutId: 'old', scheduledDate: '2026-09-09' });
+    finishFirst({ success: true, workoutId: '901', scheduledDate: '2026-09-09' });
     await pending;
 
     expect(pushSpy).toHaveBeenCalledTimes(2);
+    expect(pushSpy.mock.calls[1][4]).toBe('901');
     expect(pushSpy.mock.calls[1][0].durationMinutes).toBe(45);
     expect(isWorkoutSyncedToGarmin(changed)).toBe(true);
   });

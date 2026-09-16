@@ -30,5 +30,7 @@ describe('validateGarminRequest', () => {
     expect(validateGarminRequest(request).workout?.title).toBe('Easy run');
     expect(() => validateGarminRequest({ ...request, workout: { ...request.workout, steps: [] } })).toThrow('Étapes');
     expect(() => validateGarminRequest({ ...request, workout: { ...request.workout, scheduledDate: 'tomorrow' } })).toThrow('Date');
+    expect(validateGarminRequest({ ...request, workout: { ...request.workout, replaceWorkoutId: '123' } }).workout?.replaceWorkoutId).toBe('123');
+    expect(() => validateGarminRequest({ ...request, workout: { ...request.workout, replaceWorkoutId: 'old-workout' } })).toThrow('Identifiant');
   });
 });

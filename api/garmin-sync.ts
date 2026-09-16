@@ -13,6 +13,7 @@ import { sanitizeGarminText } from '../src/services/garminText';
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
 import { validateGarminRequest } from '../src/server/garminRequest';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination';
+import { finishWorkoutReplacement, verifyReplaceableWorkout } from '../src/server/garminWorkoutReplacement';
 
 const require = createRequire(import.meta.url);
 let garminPkg: any;
@@ -217,6 +218,13 @@ export default async function handler(req: any, res: any) {
       const cleanTitle = sanitizeGarminText(workout.title, 36);
       const cleanDesc = sanitizeGarminText(workout.description || 'Seance QMT-80 Performance Hub', 250);
 
+      // A replacement is allowed only for the exact Garmin ID previously stored
+      // by this app. Verify it still resolves to one of our workouts before
+      // creating anything; never fall back to a title-based search.
+      if (workout.replaceWorkoutId) {
+        await verifyReplaceableWorkout(gc, workout.replaceWorkoutId);
+      }
+
       const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
 
       for (const st of workout.steps as any[]) {
@@ -299,6 +307,10 @@ export default async function handler(req: any, res: any) {
         throw new Error(
           `Séance créée mais non programmée dans le calendrier Garmin pour le ${workout.scheduledDate}: ${schedErr?.message || 'erreur Garmin inconnue'}`
         );
+      }
+
+      if (workout.replaceWorkoutId) {
+        await finishWorkoutReplacement(gc, workout.replaceWorkoutId, createdWorkoutId);
       }
 
       res.status(200).json({

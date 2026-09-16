@@ -4,6 +4,7 @@ import {
   GARMIN_WORKOUT_DEFINITION_VERSION,
   AthletePhysiologicalProfile,
   getGarminWorkoutTargetMode,
+  getStoredAthleteProfile,
   loadGarminCredentials,
   loadGarminCredentialsAsync,
   pushWorkoutToGarmin
@@ -15,6 +16,7 @@ export const GARMIN_AUTO_SYNC_ENABLED_KEY = STORAGE_KEYS.GARMIN_AUTO_SYNC_ENABLE
 // v2 deliberately invalidates the previous cache, which could contain false positives:
 // the API used to report success even when Garmin rejected calendar scheduling.
 export const GARMIN_SYNCED_SIGNATURES_KEY = STORAGE_KEYS.GARMIN_SYNCED_SIGNATURES;
+export const GARMIN_SYNCED_WORKOUT_IDS_KEY = STORAGE_KEYS.GARMIN_SYNCED_WORKOUT_IDS;
 
 export interface AutoSyncResult {
   success: boolean;
@@ -49,7 +51,7 @@ export function setGarminAutoSyncEnabled(enabled: boolean): void {
  * Computes a deterministic content signature for a workout.
  * Any modification (postponement, duration change, adapted status, elevation) changes this signature.
  */
-export function computeWorkoutSyncSignature(event: CalendarEvent): string {
+export function computeWorkoutSyncSignature(event: CalendarEvent, athleteProfile?: AthletePhysiologicalProfile): string {
   return `${GARMIN_WORKOUT_DEFINITION_VERSION}::${event.id}::${JSON.stringify({
     startDate: event.startDate,
     durationMinutes: event.durationMinutes || 0,
@@ -57,6 +59,7 @@ export function computeWorkoutSyncSignature(event: CalendarEvent): string {
     title: event.title,
     description: event.description,
     targetMode: getGarminWorkoutTargetMode(),
+    athleteProfile: athleteProfile || getStoredAthleteProfile(),
     targetHeartRate: event.metadata?.targetHeartRate,
     targetHeartRateRange: event.metadata?.targetHeartRateRange,
     targetElevationM: event.metadata?.targetElevationM,
@@ -81,9 +84,9 @@ export function saveSyncedWeekWorkoutSignatures(signatures: Record<string, strin
 }
 
 /** Returns true only when the current version of this exact workout was confirmed by Garmin. */
-export function isWorkoutSyncedToGarmin(event: CalendarEvent): boolean {
+export function isWorkoutSyncedToGarmin(event: CalendarEvent, athleteProfile?: AthletePhysiologicalProfile): boolean {
   const signatures = getSyncedWeekWorkoutSignatures();
-  return signatures[event.id] === computeWorkoutSyncSignature(event);
+  return signatures[event.id] === computeWorkoutSyncSignature(event, athleteProfile);
 }
 
 /**
@@ -150,7 +153,7 @@ function workoutSyncRequestKey(
     force: Boolean(options?.force),
     athlete: options?.athleteProfile,
     signatures: filterCurrentWeekSportWorkouts(events, referenceDate)
-      .map(computeWorkoutSyncSignature)
+      .map(event => computeWorkoutSyncSignature(event, options?.athleteProfile))
       .sort()
   });
 }
@@ -203,16 +206,24 @@ async function runCurrentWeekWorkoutSync(
 
   try {
     const existingSignatures = getSyncedWeekWorkoutSignatures();
+    const existingWorkoutIds = storageGet<Record<string, string>>(GARMIN_SYNCED_WORKOUT_IDS_KEY, {});
     const updatedSignatures = { ...existingSignatures };
+    const updatedWorkoutIds = { ...existingWorkoutIds };
     const toPush: CalendarEvent[] = [];
     let legacyStaleCount = 0;
+    const manualReviewErrors: string[] = [];
 
     for (const workout of weekWorkouts) {
-      const sig = computeWorkoutSyncSignature(workout);
+      const sig = computeWorkoutSyncSignature(workout, options?.athleteProfile);
       const storedSig = existingSignatures[workout.id];
+      if (storedSig?.startsWith('replacement-review::')) {
+        manualReviewErrors.push(storedSig.slice('replacement-review::'.length));
+        continue;
+      }
       // Old records prove that a workout was already scheduled but contain no
       // Garmin workout ID. Re-creating it automatically would make a duplicate.
-      if (storedSig?.startsWith('recovery-2min-v1::')) {
+      if (storedSig && (options?.force || storedSig !== sig) &&
+        !/^[1-9]\d{0,19}$/.test(existingWorkoutIds[workout.id] || '')) {
         legacyStaleCount++;
         continue;
       }
@@ -221,18 +232,21 @@ async function runCurrentWeekWorkoutSync(
       }
     }
 
-    const legacyWarning = legacyStaleCount > 0
-      ? `${legacyStaleCount} séance(s) Garmin déjà programmée(s) ont une ancienne définition. Mise à jour automatique suspendue pour éviter les doublons.`
-      : undefined;
+    const legacyWarning = [
+      legacyStaleCount > 0
+        ? `${legacyStaleCount} séance(s) Garmin déjà programmée(s) n'ont pas d'identifiant exact enregistré. Mise à jour automatique suspendue pour éviter les doublons.`
+        : undefined,
+      ...manualReviewErrors
+    ].filter(Boolean).join(' | ') || undefined;
 
     if (toPush.length === 0) {
       const res: AutoSyncResult = {
-        success: legacyStaleCount === 0,
+        success: legacyStaleCount === 0 && manualReviewErrors.length === 0,
         pushedCount: 0,
         totalWeekWorkouts: weekWorkouts.length,
-        alreadyUpToDate: legacyStaleCount === 0,
+        alreadyUpToDate: legacyStaleCount === 0 && manualReviewErrors.length === 0,
         results: [],
-        reason: legacyStaleCount === 0 ? 'SUCCESS' : 'ERROR',
+        reason: legacyStaleCount === 0 && manualReviewErrors.length === 0 ? 'SUCCESS' : 'ERROR',
         error: legacyWarning,
         lastSyncTimestamp: new Date().toISOString()
       };
@@ -247,26 +261,38 @@ async function runCurrentWeekWorkoutSync(
 
     for (const workout of toPush) {
       const dateStr = toLocalDateKey(workout.startDate);
-      const pushRes = await pushWorkoutToGarmin(workout, dateStr, 'FORERUNNER_55', options?.athleteProfile);
+      const pushRes = await pushWorkoutToGarmin(
+        workout, dateStr, 'FORERUNNER_55', options?.athleteProfile, existingWorkoutIds[workout.id]
+      );
       results.push(pushRes);
 
-      if (pushRes.success) {
+      if (pushRes.success && pushRes.workoutId && /^[1-9]\d{0,19}$/.test(pushRes.workoutId)) {
         pushedCount++;
-        // Update signature in map
-        updatedSignatures[workout.id] = computeWorkoutSyncSignature(workout);
+        updatedSignatures[workout.id] = computeWorkoutSyncSignature(workout, options?.athleteProfile);
+        updatedWorkoutIds[workout.id] = pushRes.workoutId;
+      } else if (pushRes.success) {
+        // Scheduling succeeded but there is no usable ID. A retry could
+        // duplicate the workout, so require manual review first.
+        pushRes.success = false;
+        pushRes.error = 'Garmin a confirmé la séance sans fournir son identifiant exact. Vérification manuelle nécessaire avant une nouvelle tentative.';
+        updatedSignatures[workout.id] = `replacement-review::${pushRes.error}`;
+      } else if (pushRes.error?.startsWith('Remplacement Garmin incomplet')) {
+        // Both IDs may still exist. Never retry automatically in this state.
+        updatedSignatures[workout.id] = `replacement-review::${pushRes.error}`;
       }
     }
 
+    storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
     saveSyncedWeekWorkoutSignatures(updatedSignatures);
 
     const failedResults = results.filter(result => !result.success);
     const res: AutoSyncResult = {
-      success: failedResults.length === 0 && legacyStaleCount === 0,
+      success: failedResults.length === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0,
       pushedCount,
       totalWeekWorkouts: weekWorkouts.length,
       alreadyUpToDate: false,
       results,
-      reason: failedResults.length === 0 && legacyStaleCount === 0 ? 'SUCCESS' : 'ERROR',
+      reason: failedResults.length === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 ? 'SUCCESS' : 'ERROR',
       error: [legacyWarning, ...failedResults.map(result => result.error || 'Échec Garmin inconnu')]
         .filter(Boolean).join(' | ') || undefined,
       lastSyncTimestamp: new Date().toISOString()

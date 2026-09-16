@@ -1096,7 +1096,8 @@ export async function pushWorkoutToGarmin(
   event: CalendarEvent,
   targetDateStr?: string,
   targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55',
-  athleteProfile?: AthletePhysiologicalProfile
+  athleteProfile?: AthletePhysiologicalProfile,
+  replaceWorkoutId?: string
 ): Promise<WorkoutPushResult> {
   try {
     const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
@@ -1109,7 +1110,7 @@ export async function pushWorkoutToGarmin(
         email: creds?.email,
         password: creds?.password,
         action: 'push-workout',
-        workout: payload
+        workout: { ...payload, replaceWorkoutId }
       })
     });
 

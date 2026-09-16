@@ -195,9 +195,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const plannedEventsForSync = isMultiMerged && activeItemIndex === 'global'
     ? (unifiedGroup?.items.flatMap(item => item.plannedEvent ? [item.plannedEvent] : []) || [])
     : [effectiveEvent];
-  const garminSyncedCount = plannedEventsForSync.filter(isWorkoutSyncedToGarmin).length;
+  const garminSyncedCount = plannedEventsForSync.filter(plannedEvent => isWorkoutSyncedToGarmin(plannedEvent, dynamicProfile)).length;
   const isGarminWorkoutSynced = plannedEventsForSync.length > 0 && garminSyncedCount === plannedEventsForSync.length;
-  const unsyncedPlannedEvents = plannedEventsForSync.filter(plannedEvent => !isWorkoutSyncedToGarmin(plannedEvent));
+  const unsyncedPlannedEvents = plannedEventsForSync.filter(plannedEvent => !isWorkoutSyncedToGarmin(plannedEvent, dynamicProfile));
 
   const handleForceGarminSync = async () => {
     if (isForceSyncing || unsyncedPlannedEvents.length === 0) return;

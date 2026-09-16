@@ -18,6 +18,7 @@ export interface ValidatedGarminRequest {
     steps: Array<Record<string, unknown>>;
     targetWatch?: string;
     description?: string;
+    replaceWorkoutId?: string;
   };
 }
 
@@ -71,6 +72,10 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
       !['WARMUP', 'INTERVAL', 'RECOVERY', 'REST', 'COOLDOWN'].includes(step.stepType))) {
     throw new Error('Étapes de séance Garmin invalides.');
   }
+  if (data.replaceWorkoutId !== undefined &&
+    (typeof data.replaceWorkoutId !== 'string' || !/^[1-9]\d{0,19}$/.test(data.replaceWorkoutId))) {
+    throw new Error('Identifiant de séance Garmin à remplacer invalide.');
+  }
   return {
     email,
     password,
@@ -85,7 +90,8 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
       sportType: data.sportType,
       steps: data.steps as Array<Record<string, unknown>>,
       targetWatch: typeof data.targetWatch === 'string' ? data.targetWatch : undefined,
-      description: typeof data.description === 'string' ? data.description.slice(0, 2000) : undefined
+      description: typeof data.description === 'string' ? data.description.slice(0, 2000) : undefined,
+      replaceWorkoutId: data.replaceWorkoutId as string | undefined
     }
   };
 }

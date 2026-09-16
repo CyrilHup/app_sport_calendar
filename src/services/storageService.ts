@@ -13,6 +13,7 @@ export const STORAGE_KEYS = {
   GARMIN_PUSHED_WORKOUTS: 'garmin_pushed_workouts',
   GARMIN_AUTO_SYNC_ENABLED: 'sport_calendar_garmin_auto_sync_enabled',
   GARMIN_SYNCED_SIGNATURES: 'sport_calendar_garmin_synced_week_signatures_v2',
+  GARMIN_SYNCED_WORKOUT_IDS: 'sport_calendar_garmin_synced_workout_ids_v1',
   GARMIN_WORKOUT_TARGET_MODE: 'garmin_workout_target_mode',
   GARMIN_ATHLETE_BASE_PACE: 'garmin_athlete_base_pace',
   ATHLETE_FC_MAX: 'athlete_fc_max',
