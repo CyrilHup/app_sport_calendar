@@ -28,6 +28,7 @@ import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncServic
 import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } from './services/storageService';
 import { SyncErrorModal, SyncErrorInfo } from './components/SyncErrorModal';
 import { createLatestRerunCoordinator, LatestRerunCoordinator } from './services/asyncCoordinator';
+import { createCloudMutationQueue, type CloudMutationDomain } from './services/cloudMutationQueue';
 
 const CalendarView = React.lazy(() => import('./components/CalendarView').then(module => ({ default: module.CalendarView })));
 const ComparisonDashboard = React.lazy(() => import('./components/ComparisonDashboard').then(module => ({ default: module.ComparisonDashboard })));
@@ -62,6 +63,8 @@ export const App: React.FC = () => {
   const [isRecharging, setIsRecharging] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(new Date().toISOString());
   const [syncError, setSyncError] = useState<SyncErrorInfo | null>(null);
+  const [cloudSyncIssues, setCloudSyncIssues] = useState<Set<CloudMutationDomain>>(() => new Set());
+  const [isRetryingCloud, setIsRetryingCloud] = useState(false);
   const [accountModal, setAccountModal] = useState<{ isOpen: boolean; tab: AccountModalTab }>({
     isOpen: false,
     tab: 'profile'
@@ -131,21 +134,61 @@ export const App: React.FC = () => {
       }
     });
   }
-  const cloudMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
-
-  const enqueueCloudMutation = useCallback((mutation: () => Promise<unknown>): Promise<void> => {
-    const queued = cloudMutationQueueRef.current
-      .catch(() => undefined)
-      .then(async () => { await mutation(); });
-    cloudMutationQueueRef.current = queued.catch(error => {
-      console.warn('[Cloud Mutation Error]', error);
+  const cloudMutationQueueRef = useRef<ReturnType<typeof createCloudMutationQueue> | null>(null);
+  if (!cloudMutationQueueRef.current) {
+    cloudMutationQueueRef.current = createCloudMutationQueue((domain, success, error) => {
+      if (domain === 'wellness') return; // Cloud wellness remains optional.
+      if (!success) console.warn(`[Cloud Mutation Error] ${domain}`, error || 'Write not confirmed');
+      setCloudSyncIssues(previous => {
+        const next = new Set(previous);
+        if (success) next.delete(domain);
+        else next.add(domain);
+        return next;
+      });
     });
-    return cloudMutationQueueRef.current;
-  }, []);
+  }
+
+  const enqueueCloudMutation = useCallback((
+    domain: CloudMutationDomain,
+    mutation: () => Promise<boolean>
+  ): Promise<boolean> => cloudMutationQueueRef.current!.enqueue(domain, mutation), []);
 
   const autoRechargeAll = useCallback((isManualTrigger = false): Promise<void> => {
     return refreshCoordinatorRef.current!.run(isManualTrigger);
   }, []);
+
+  const retryCloudSync = async () => {
+    const userId = appStateRef.current.user?.id;
+    if (!userId || isRetryingCloud) return;
+    setIsRetryingCloud(true);
+    try {
+      for (const domain of cloudSyncIssues) {
+        if (domain === 'activities') {
+          if (appStateRef.current.garminActivities.length > 0) {
+            await enqueueCloudMutation(domain, () => syncActivitiesToCloud(userId, appStateRef.current.garminActivities));
+          }
+        } else if (domain === 'manualPairs') {
+          await enqueueCloudMutation(domain, () => syncPairsToCloud(
+            userId,
+            appStateRef.current.manualPairs,
+            getLocalSyncTimestamp(domain) || markLocalSyncUpdated(domain)
+          ));
+        } else if (domain === 'adaptiveOverrides') {
+          await enqueueCloudMutation(domain, () => syncOverridesToCloud(userId, {
+            adaptiveOverrides: appStateRef.current.adaptiveOverrides,
+            adaptiveUpdatedAt: getLocalSyncTimestamp(domain) || markLocalSyncUpdated(domain)
+          }));
+        } else if (domain === 'postponeOverrides') {
+          await enqueueCloudMutation(domain, () => syncOverridesToCloud(userId, {
+            postponeOverrides: appStateRef.current.postponeOverrides,
+            postponeUpdatedAt: getLocalSyncTimestamp(domain) || markLocalSyncUpdated(domain)
+          }));
+        }
+      }
+    } finally {
+      setIsRetryingCloud(false);
+    }
+  };
 
   const syncPlannedWorkouts = useCallback((syncDate: Date, eventIds?: string[]) => {
     const { allEvents: currentEvents } = buildEffectiveCalendar(
@@ -218,7 +261,7 @@ export const App: React.FC = () => {
           setGarminActivities(mergedActs);
           saveGarminActivities(mergedActs);
           // Push any merged activities that weren't yet on cloud
-          await enqueueCloudMutation(() => syncActivitiesToCloud(user.id, mergedActs));
+          await enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, mergedActs));
         }
 
         // Synchronize wellness history (resting HR, HRV, sleep)
@@ -231,7 +274,7 @@ export const App: React.FC = () => {
           const localWellness = Object.values(loadWellnessHistory());
           setBaselineFcRest(getBaselineRestingHeartRate());
           if (localWellness.length > 0) {
-            await enqueueCloudMutation(() => syncWellnessToCloud(user.id, localWellness));
+            await enqueueCloudMutation('wellness', () => syncWellnessToCloud(user.id, localWellness));
           }
         } catch {}
 
@@ -246,7 +289,7 @@ export const App: React.FC = () => {
           if (cloudPairs.updatedAt) setLocalSyncTimestamp('manualPairs', cloudPairs.updatedAt);
         } else if (Object.keys(localPairs).length > 0 || localPairsUpdatedAt) {
           const updatedAt = localPairsUpdatedAt || markLocalSyncUpdated('manualPairs');
-          await enqueueCloudMutation(() => syncPairsToCloud(user.id, localPairs, updatedAt));
+          await enqueueCloudMutation('manualPairs', () => syncPairsToCloud(user.id, localPairs, updatedAt));
         }
 
         // Hydrate and sync overrides (adaptive + postpone) from cloud
@@ -268,7 +311,7 @@ export const App: React.FC = () => {
             }
           } else if (Object.keys(localAdaptive).length > 0 || localAdaptiveUpdatedAt) {
             const updatedAt = localAdaptiveUpdatedAt || markLocalSyncUpdated('adaptiveOverrides');
-            await enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+            await enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
               adaptiveOverrides: localAdaptive,
               adaptiveUpdatedAt: updatedAt
             }));
@@ -284,7 +327,7 @@ export const App: React.FC = () => {
             }
           } else if (Object.keys(localPostpones).length > 0 || localPostponeUpdatedAt) {
             const updatedAt = localPostponeUpdatedAt || markLocalSyncUpdated('postponeOverrides');
-            await enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+            await enqueueCloudMutation('postponeOverrides', () => syncOverridesToCloud(user.id, {
               postponeOverrides: localPostpones,
               postponeUpdatedAt: updatedAt
             }));
@@ -419,11 +462,11 @@ export const App: React.FC = () => {
 
     // Automatically persist fresh activities and wellness to Supabase cloud if authenticated
     if (!shareSlug && user?.id && loadedActivities.length > 0) {
-      await enqueueCloudMutation(() => syncActivitiesToCloud(user.id, loadedActivities));
+      await enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, loadedActivities));
       try {
         const localWellness = Object.values(loadWellnessHistory());
         if (localWellness.length > 0) {
-          await enqueueCloudMutation(() => syncWellnessToCloud(user.id, localWellness));
+          await enqueueCloudMutation('wellness', () => syncWellnessToCloud(user.id, localWellness));
         }
       } catch {}
     }
@@ -528,7 +571,7 @@ export const App: React.FC = () => {
     setGarminActivities(mergedActivities);
     saveGarminActivities(mergedActivities);
     if (user?.id) {
-      void enqueueCloudMutation(() => syncActivitiesToCloud(user.id, mergedActivities));
+      void enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, mergedActivities));
     }
   };
 
@@ -539,7 +582,7 @@ export const App: React.FC = () => {
     saveManualPairs(updated);
     const updatedAt = markLocalSyncUpdated('manualPairs');
     if (user?.id) {
-      void enqueueCloudMutation(() => syncPairsToCloud(user.id, updated, updatedAt));
+      void enqueueCloudMutation('manualPairs', () => syncPairsToCloud(user.id, updated, updatedAt));
     }
   };
 
@@ -551,7 +594,7 @@ export const App: React.FC = () => {
     saveManualPairs(updated);
     const updatedAt = markLocalSyncUpdated('manualPairs');
     if (user?.id) {
-      void enqueueCloudMutation(() => syncPairsToCloud(user.id, updated, updatedAt));
+      void enqueueCloudMutation('manualPairs', () => syncPairsToCloud(user.id, updated, updatedAt));
     }
   };
 
@@ -574,7 +617,7 @@ export const App: React.FC = () => {
     const updatedAt = markLocalSyncUpdated('postponeOverrides');
     syncTransformedCalendar();
     if (user?.id) {
-      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+      void enqueueCloudMutation('postponeOverrides', () => syncOverridesToCloud(user.id, {
         postponeOverrides: updated,
         postponeUpdatedAt: updatedAt
       }));
@@ -589,7 +632,7 @@ export const App: React.FC = () => {
     const updatedAt = markLocalSyncUpdated('postponeOverrides');
     syncTransformedCalendar();
     if (user?.id) {
-      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+      void enqueueCloudMutation('postponeOverrides', () => syncOverridesToCloud(user.id, {
         postponeOverrides: updated,
         postponeUpdatedAt: updatedAt
       }));
@@ -618,7 +661,7 @@ export const App: React.FC = () => {
     const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
     syncTransformedCalendar();
     if (user?.id) {
-      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+      void enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
         adaptiveOverrides: overrides,
         adaptiveUpdatedAt: updatedAt
       }));
@@ -632,7 +675,7 @@ export const App: React.FC = () => {
     const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
     syncTransformedCalendar();
     if (user?.id) {
-      void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
+      void enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
         adaptiveOverrides: {},
         adaptiveUpdatedAt: updatedAt
       }));
@@ -735,6 +778,15 @@ export const App: React.FC = () => {
           userAvatarUrl={profile?.avatarUrl || user?.user_metadata?.avatar_url || user?.user_metadata?.picture}
           isLoggedIn={Boolean(user)}
         />
+
+      {cloudSyncIssues.size > 0 && (
+        <div role="status" style={{ margin: '8px 16px', padding: '10px 12px', borderRadius: 8, background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <span>La sauvegarde en ligne de certaines données n’est pas confirmée. Elles restent sur cet appareil.</span>
+          <button type="button" className="btn-secondary" onClick={() => void retryCloudSync()} disabled={isRetryingCloud || !user?.id}>
+            {isRetryingCloud ? 'Nouvel essai…' : 'Réessayer'}
+          </button>
+        </div>
+      )}
 
       {/* Main Tab Content */}
       <React.Suspense fallback={<div role="status" style={{ padding: 24 }}>Chargement de la vue…</div>}>

@@ -31,6 +31,10 @@ in `src/services/garminAutoSyncService.ts`.
 3. Workout comparisons and transformed schedules are derived from the canonical
    inputs. Local/cloud settings use per-domain update timestamps to decide which
    copy wins, including when the winning value is empty.
+   Cloud mutations are serialized and checked for explicit `false` results as
+   well as exceptions. Failed required writes remain local, show a retry banner,
+   and retry from the latest in-memory snapshot; wellness cloud storage remains
+   optional when its table is unavailable.
 4. Pure physiological calculations accept activities and athlete parameters.
    `getStoredAthleteProfile()` is the storage-facing Garmin adapter. The plan
    and Garmin workout builder share Karvonen zone boundaries from
