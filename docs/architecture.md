@@ -23,8 +23,9 @@ in `src/services/garminAutoSyncService.ts`.
 ## Activities and comparisons
 
 1. Garmin and GPX records merge through `src/services/activityRepository.ts`.
-   `activityId` is the identity key; richer records win, with the later source
-   breaking ties.
+   `activityId` is the identity key; later non-empty fields win, while
+   earlier-only metrics survive partial responses. Source order is explicit
+   at each boundary (local → cloud during login, cached → live Garmin refresh).
 2. `garminActivities` in `App.tsx` is the UI's canonical activity collection.
    Components receive that collection and use `daySelectors.ts` for day views.
 3. Workout comparisons and transformed schedules are derived from the canonical

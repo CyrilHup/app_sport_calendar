@@ -1,14 +1,15 @@
 import { GarminActivity } from '../types/garmin';
 
-function completenessScore(activity: GarminActivity): number {
-  return Object.values(activity).reduce((score, value) => (
-    value !== undefined && value !== null && value !== '' ? score + 1 : score
-  ), 0);
+function nonEmptyFields(activity: GarminActivity): Partial<GarminActivity> {
+  return Object.fromEntries(
+    Object.entries(activity).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  ) as Partial<GarminActivity>;
 }
 
 /**
  * Deterministic merge used at every Garmin/local/cloud boundary.
- * The richer record wins; the later source wins ties (normally the freshest source).
+ * Sources are ordered oldest to newest. Later non-empty values win conflicts;
+ * earlier-only fields are retained instead of being lost to partial responses.
  */
 export function mergeGarminActivities(...sources: GarminActivity[][]): GarminActivity[] {
   const byId = new Map<string, GarminActivity>();
@@ -16,9 +17,14 @@ export function mergeGarminActivities(...sources: GarminActivity[][]): GarminAct
     for (const activity of activities || []) {
       if (!activity?.activityId) continue;
       const existing = byId.get(activity.activityId);
-      if (!existing || completenessScore(activity) >= completenessScore(existing)) {
+      if (!existing) {
         byId.set(activity.activityId, activity);
+        continue;
       }
+      byId.set(activity.activityId, {
+        ...nonEmptyFields(existing),
+        ...nonEmptyFields(activity)
+      } as GarminActivity);
     }
   }
 

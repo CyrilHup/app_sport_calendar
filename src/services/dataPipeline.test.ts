@@ -49,12 +49,22 @@ function event(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 describe('canonical data pipeline helpers', () => {
   beforeEach(() => localStorage.clear());
 
-  it('merges activities deterministically and keeps the richer freshest record', () => {
+  it('merges activities deterministically and keeps later source values', () => {
     const older = activity({ startTimeLocal: '2026-09-14T08:00:00', distanceKm: 5 });
     const richer = activity({ distanceKm: 5, avgHeartRate: 150 });
     const newest = activity({ activityId: 'a2', startTimeLocal: '2026-09-16T08:00:00' });
 
     expect(mergeGarminActivities([older], [richer, newest])).toEqual([newest, richer]);
+  });
+
+  it('retains complementary metrics and lets the later source win conflicts', () => {
+    const local = activity({ activityName: 'Old local name', avgHeartRate: 140 });
+    const cloud = activity({ activityName: 'Updated cloud name', avgCadence: 174 });
+    const [merged] = mergeGarminActivities([local], [cloud]);
+
+    expect(merged.activityName).toBe('Updated cloud name');
+    expect(merged.avgHeartRate).toBe(140);
+    expect(merged.avgCadence).toBe(174);
   });
 
   it('selects one deduplicated day view from activities and comparisons', () => {

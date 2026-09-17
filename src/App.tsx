@@ -200,7 +200,9 @@ export const App: React.FC = () => {
         const localActs = loadStoredGarminActivities();
         const cloudActs = await fetchActivitiesFromCloud(user.id);
         if (cancelled) return;
-        const mergedActs = mergeGarminActivities(cloudActs || [], localActs || []);
+        // The cloud snapshot is fetched after local hydration, so its defined
+        // fields win while local-only metrics are preserved.
+        const mergedActs = mergeGarminActivities(localActs || [], cloudActs || []);
 
         if (mergedActs.length > 0) {
           appStateRef.current.garminActivities = mergedActs;
@@ -402,7 +404,7 @@ export const App: React.FC = () => {
       loadedActivities = garminActivities;
     }
 
-    loadedActivities = mergeGarminActivities(loadedActivities, appStateRef.current.garminActivities);
+    loadedActivities = mergeGarminActivities(appStateRef.current.garminActivities, loadedActivities);
     const refreshedFcRest = getBaselineRestingHeartRate();
     setBaselineFcRest(refreshedFcRest);
     const cachedFcMax = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
