@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile, clearPermanentAuthBackup } from '../services/supabaseClient';
 import { App as CapacitorApp } from '@capacitor/app';
+import { getProductionOrigin } from '../services/runtimeUrls';
 
 interface AuthContextType {
   user: User | null;
@@ -96,7 +97,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!url) return;
         if (url.includes('code=')) {
           try {
-            const urlObj = new URL(url.replace('com.cyrilhup.sportcalendar://', 'https://appsportcalendar.vercel.app/'));
+            const urlObj = new URL(url.replace('com.cyrilhup.sportcalendar://', `${getProductionOrigin()}/`));
             const code = urlObj.searchParams.get('code');
             if (code) {
               await supabase.auth.exchangeCodeForSession(code);
@@ -147,7 +148,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // On mobile or production, redirect to the live Vercel domain to prevent localhost fallback
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     const isLocalViteDev = origin.includes('localhost:5173') || origin.includes('127.0.0.1:5173');
-    const targetRedirectUrl = isLocalViteDev ? origin : 'https://appsportcalendar.vercel.app';
+    const targetRedirectUrl = isLocalViteDev ? origin : getProductionOrigin();
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',

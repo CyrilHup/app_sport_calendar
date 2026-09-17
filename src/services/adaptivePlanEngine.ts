@@ -7,10 +7,10 @@ import {
 } from '../types/calendar';
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
-import { storageGet, storageSet, storageRemove } from './storageService';
+import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storageService';
 import { toLocalDateKey } from './dateUtils';
 
-export const ADAPTIVE_PLAN_STORAGE_KEY = 'sport_calendar_adaptive_overrides';
+export const ADAPTIVE_PLAN_STORAGE_KEY = STORAGE_KEYS.ADAPTIVE_OVERRIDES;
 
 /**
  * Charge les adaptations actives du plan depuis le localStorage.
@@ -58,7 +58,7 @@ export function clearAdaptiveOverrides(): void {
   storageRemove(ADAPTIVE_PLAN_STORAGE_KEY);
 }
 
-export const AUTO_ADAPT_STORAGE_KEY = 'sport_calendar_auto_adapt_enabled';
+export const AUTO_ADAPT_STORAGE_KEY = STORAGE_KEYS.AUTO_ADAPT_ENABLED;
 
 /**
  * Indique si le mode Auto-Pilot Adaptatif est activé.

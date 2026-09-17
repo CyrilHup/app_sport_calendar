@@ -78,6 +78,10 @@ ICAL_FEED_URL="https://your-university.edu/calendar/feed?token=YOUR_TOKEN"
 VITE_SUPABASE_URL="https://YOUR_PROJECT.supabase.co"
 VITE_SUPABASE_ANON_KEY="YOUR_PUBLIC_ANON_KEY"
 
+# Optional when deploying outside the built-in production domain; keep both equal
+VITE_APP_ORIGIN="https://your-app.example.com"
+APP_ORIGIN="https://your-app.example.com"
+
 # Optional API restrictions
 ICAL_ALLOWED_HOSTS="your-university.edu"
 ALLOWED_ORIGINS="https://your-app.example.com"

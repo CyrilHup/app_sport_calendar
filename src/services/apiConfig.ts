@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { getProductionOrigin } from './runtimeUrls';
 
 /**
  * Returns whether the application is currently running as a native app (Android / iOS).
@@ -24,7 +25,7 @@ export function getApiUrl(endpoint: string): string {
 
   if (isNative()) {
     const metaEnv = (import.meta as any).env || {};
-    const backendUrl = metaEnv.VITE_BACKEND_URL || metaEnv.VITE_API_BASE_URL || 'https://appsportcalendar.vercel.app';
+    const backendUrl = metaEnv.VITE_BACKEND_URL || metaEnv.VITE_API_BASE_URL || getProductionOrigin();
     if (backendUrl) {
       const cleanBase = backendUrl.endsWith('/') ? backendUrl.slice(0, -1) : backendUrl;
       return `${cleanBase}${cleanEndpoint}`;

@@ -1,3 +1,5 @@
+import { getProductionOrigin } from '../services/runtimeUrls';
+
 export interface AuthenticatedRequestUser {
   id: string;
   email?: string;
@@ -33,7 +35,7 @@ function configuredAllowedOrigins(): Set<string> {
     .filter(Boolean);
 
   return new Set([
-    'https://appsportcalendar.vercel.app',
+    getProductionOrigin(),
     'capacitor://localhost',
     'http://localhost',
     'http://localhost:5173',

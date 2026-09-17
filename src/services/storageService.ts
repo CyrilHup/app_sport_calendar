@@ -21,6 +21,7 @@ export const STORAGE_KEYS = {
   // Entraînement et Calendrier
   POSTPONE_OVERRIDES: 'sport_calendar_postponed_workouts',
   ADAPTIVE_OVERRIDES: 'sport_calendar_adaptive_overrides',
+  AUTO_ADAPT_ENABLED: 'sport_calendar_auto_adapt_enabled',
   CACHED_ETS_ICS: 'cached_ets_ics',
   SYNC_METADATA: 'sport_calendar_sync_metadata_v1',
 
