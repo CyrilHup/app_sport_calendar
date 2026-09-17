@@ -123,9 +123,9 @@ export const GarminTab: React.FC<GarminTabProps> = ({
 
       onRefreshAll();
     } else {
-      // A complete sync can fail after earlier pages were saved; expose those
-      // activities without presenting the history as complete.
-      if (mode === 'full' && result.activities.length > 0) {
+      // Any partial sync can still return valid activities. Expose them without
+      // presenting the overall Garmin sync as complete.
+      if (result.activities.length > 0) {
         onActivitiesSynced(result.activities);
       }
       setGarminSyncMsg({

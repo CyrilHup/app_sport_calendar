@@ -3,7 +3,7 @@ import { createRequire } from 'module';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { classifyGarminActivityType } from '../src/services/activityClassifier';
+import { normalizeGarminActivities } from '../src/server/garminActivityNormalizer';
 import { sanitizeGarminText } from '../src/services/garminText';
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
 import { validateGarminRequest } from '../src/server/garminRequest';
@@ -466,81 +466,7 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    let rawActivities: any[] = acts || [];
-
-    const activities = (rawActivities || []).map((a: any) => {
-      const typeKey = String((typeof a.activityType === 'object' ? a.activityType?.typeKey : a.activityType) || '');
-      let actName = String(a.activityName || '');
-      const activityType = classifyGarminActivityType(typeKey, actName);
-
-      if (
-        actName.trim().toLowerCase() === 'cardio' ||
-        actName.trim().toLowerCase() === 'cardio training' ||
-        actName.trim().toLowerCase() === 'indoor cardio' ||
-        actName.trim().toLowerCase() === 'indoor_cardio' ||
-        actName.trim().toLowerCase() === 'entraînement cardio'
-      ) {
-        actName = 'Calisthénie / Renforcement';
-      }
-
-      const movingDurSec = a.movingDuration || a.duration || a.elapsedDuration || 0;
-      const elapsedDurSec = a.elapsedDuration || a.duration || 0;
-      const isStrengthOrClimb =
-        activityType === 'STRENGTH_TRAINING' || activityType === 'CLIMBING' || activityType === 'FITNESS_EQUIPMENT';
-      const effectiveDurSec = isStrengthOrClimb ? elapsedDurSec : (movingDurSec || elapsedDurSec);
-      const durMin = Math.max(1, Math.round(effectiveDurSec / 60));
-
-      const distKm = a.distance ? parseFloat((a.distance / 1000).toFixed(2)) : undefined;
-      const eleGain = a.elevationGain !== undefined && a.elevationGain !== null ? Math.round(a.elevationGain) : undefined;
-      const eleLoss = a.elevationLoss !== undefined && a.elevationLoss !== null ? Math.round(a.elevationLoss) : undefined;
-      const avgHr = a.averageHR ? Math.round(a.averageHR) : undefined;
-      const maxHr = a.maxHR ? Math.round(a.maxHR) : undefined;
-      const avgCadence = a.averageRunningCadenceInStepsPerMinute
-        ? Math.round(a.averageRunningCadenceInStepsPerMinute)
-        : (a.averageBikingCadenceInRevPerMinute ? Math.round(a.averageBikingCadenceInRevPerMinute) : undefined);
-
-      let avgPaceMinKm: string | undefined = undefined;
-      if (
-        (activityType === 'RUNNING' || activityType === 'TRAIL_RUNNING' || activityType === 'WALKING') &&
-        distKm &&
-        distKm > 0.1 &&
-        effectiveDurSec > 0
-      ) {
-        const paceSecPerKm = effectiveDurSec / distKm;
-        const pMin = Math.floor(paceSecPerKm / 60);
-        const pSec = Math.round(paceSecPerKm % 60);
-        if (pMin < 30) {
-          avgPaceMinKm = `${pMin}:${String(pSec).padStart(2, '0')} /km`;
-        }
-      }
-
-      return {
-        activityId: String(a.activityId || `${Date.now()}-${Math.random()}`),
-        activityName: actName || 'Garmin Activity',
-        activityType,
-        garminTypeKey: typeKey || undefined,
-        startTimeLocal: a.startTimeLocal || a.startTimeGMT || new Date().toISOString(),
-        durationMinutes: durMin,
-        elapsedDurationMinutes: elapsedDurSec ? Math.round(elapsedDurSec / 60) : undefined,
-        movingDurationMinutes: movingDurSec ? Math.round(movingDurSec / 60) : undefined,
-        distanceKm: distKm,
-        elevationGainM: eleGain,
-        elevationLossM: eleLoss,
-        avgHeartRate: avgHr,
-        maxHeartRate: maxHr,
-        avgCadence,
-        avgPaceMinKm,
-        calories: a.calories ? Math.round(a.calories) : undefined,
-        aerobicTrainingEffect:
-          typeof a.aerobicTrainingEffect === 'number' ? parseFloat(a.aerobicTrainingEffect.toFixed(1)) : undefined,
-        anaerobicTrainingEffect:
-          typeof a.anaerobicTrainingEffect === 'number' ? parseFloat(a.anaerobicTrainingEffect.toFixed(1)) : undefined,
-        trainingLoad: a.activityTrainingLoad ? Math.round(a.activityTrainingLoad) : undefined,
-        trainingEffectLabel: a.trainingEffectLabel ? String(a.trainingEffectLabel) : undefined,
-        vo2MaxValue: typeof a.vO2MaxValue === 'number' ? Math.round(a.vO2MaxValue) : undefined,
-        source: 'GARMIN_CONNECT'
-      };
-    });
+    const { activities, skippedActivityCount } = normalizeGarminActivities(acts || []);
 
     let athleteMaxHr: number | undefined = undefined;
     if (syncMode !== 'full' || body.offset === 0) {
@@ -568,7 +494,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    res.status(200).json({ success: true, count: activities.length, activities, wellness, athleteMaxHr, syncMode, nextOffset, historyTruncated });
+    res.status(200).json({ success: true, count: activities.length, activities, skippedActivityCount, wellness, athleteMaxHr, syncMode, nextOffset, historyTruncated });
   } catch (err: any) {
     res.status(500).json({
       success: false,

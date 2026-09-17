@@ -70,6 +70,9 @@ in `src/services/garminAutoSyncService.ts`.
   page, and reports an error instead of silently treating a timed-out page as
   complete history. A 5,000-activity safety limit is reported as incomplete,
   never as a successful full sync.
+- The Garmin activity normalizer accepts only records with a stable activity ID
+  and parseable start time. It reports skipped malformed records as an incomplete
+  sync instead of inventing random IDs or today's date.
 - `ICAL_FEED_URL` is a server-only variable; do not use a `VITE_` prefix for a URL
   containing a private calendar token.
 - `api/calendar.ts` is a public feed. It should not be used to publish a private

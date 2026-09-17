@@ -599,6 +599,15 @@ export async function syncWithGarminAPI(
         storageSetRaw(STORAGE_KEYS.ATHLETE_FC_MAX, String(detectedMaxHr));
       }
 
+      if (Number.isInteger(data.skippedActivityCount) && data.skippedActivityCount > 0) {
+        return {
+          success: false,
+          activities: combinedActivities,
+          count: combinedActivities.length,
+          error: `${data.skippedActivityCount} activité(s) Garmin ignorée(s) car sans identifiant ou date fiable. Les autres activités ont été conservées.`
+        };
+      }
+
       if (data.historyTruncated) {
         return {
           success: false,

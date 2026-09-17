@@ -68,6 +68,21 @@ describe('full Garmin pagination', () => {
     expect(result.error).toContain('5 000');
   });
 
+  it('keeps valid activities but reports incomplete normalization', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      activities: [activity('one')],
+      skippedActivityCount: 1,
+      nextOffset: null
+    }), { status: 200 })));
+
+    const result = await syncWithGarminAPI({ email: 'athlete@example.com', password: 'secret' });
+
+    expect(result.success).toBe(false);
+    expect(result.activities.map(item => item.activityId)).toEqual(['one']);
+    expect(result.error).toContain('sans identifiant ou date fiable');
+  });
+
   it('returns previously saved pages when a later request fails', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
