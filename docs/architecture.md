@@ -13,9 +13,9 @@ in `src/services/garminAutoSyncService.ts`.
 2. `src/services/icsParser.ts` parses courses and builds the base academic/training
    calendar using an immutable `AppConfig` snapshot from
    `src/services/periodizationEngine.ts`.
-3. `src/App.tsx` derives the visible calendar by applying postponements and
-   adaptive changes to the base calendar. These derived events are not stored as
-   a second mutable React state.
+3. `src/services/calendarPipeline.ts` applies postponements and adaptive changes
+   to the base calendar. Both the visible calendar and Garmin push requests use
+   this projection; derived events are not stored as a second mutable React state.
 4. The same window helper and iCal serializer serve UI downloads and the public
    subscription endpoint. The subscription endpoint uses server configuration,
    not an individual user's profile URL.
@@ -57,6 +57,10 @@ in `src/services/garminAutoSyncService.ts`.
 - Garmin activity synchronization no longer sends workouts from a potentially
   stale calendar in the account tab. The central refresh rebuilds the plan first,
   then passes the same athlete profile used for the UI preview into workout push.
+- Refresh, calendar actions, and workout details now request pushes through one
+  App-level entry point. It reads the current base calendar and overrides before
+  calling the queued Garmin sync service; views no longer submit their own
+  potentially stale event arrays.
 - A full Garmin history sync requests bounded batches of up to two 100-activity
   pages per server call. The client follows `nextOffset`, persists each successful
   page, and reports an error instead of silently treating a timed-out page as

@@ -37,7 +37,7 @@ import { evaluateAdaptivePlanStatus, isAutoAdaptEnabled, setAutoAdaptEnabled } f
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
 import { formatGarminActivityName, getGarminExecutionBadge, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
-import { syncCurrentWeekWorkoutsToGarmin, isGarminAutoSyncEnabled } from '../services/garminAutoSyncService';
+import { isGarminAutoSyncEnabled, type AutoSyncResult } from '../services/garminAutoSyncService';
 import { selectDayActivityContext } from '../services/daySelectors';
 import { groupDaySportWorkouts, UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
@@ -45,7 +45,7 @@ import { getDynamicAthleteProfile } from '../services/garminService';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
-  allEvents?: CalendarEvent[];
+  onSyncGarminWorkouts: (referenceDate: Date, eventIds?: string[]) => Promise<AutoSyncResult>;
   referenceDateStr?: string;
   referenceDate?: Date;
   onPostponeWorkout?: (
@@ -549,7 +549,7 @@ const UnplannedGarminCard: React.FC<UnplannedGarminCardProps> = ({
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
   schedules,
-  allEvents = [],
+  onSyncGarminWorkouts,
   referenceDateStr,
   referenceDate,
   onPostponeWorkout,
@@ -602,7 +602,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     triggerHapticFeedback('light');
 
     try {
-      const res = await syncCurrentWeekWorkoutsToGarmin(allEvents, effectiveRefDate, { athleteProfile });
+      const res = await onSyncGarminWorkouts(effectiveRefDate);
       if (res.success) {
         triggerHapticFeedback('success');
         if (res.pushedCount > 0) {
@@ -1885,6 +1885,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         unifiedGroup={selectedUnifiedGroup}
         athlete={athlete}
         athleteProfile={athleteProfile}
+        onSyncGarminWorkouts={onSyncGarminWorkouts}
         onClose={() => {
           setSelectedEvent(null);
           setSelectedComparison(null);

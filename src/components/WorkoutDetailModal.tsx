@@ -27,7 +27,7 @@ import { calculateSessionTrimp } from '../services/statsEngine';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { getDynamicAthleteProfile } from '../services/garminService';
-import { isWorkoutSyncedToGarmin, syncCurrentWeekWorkoutsToGarmin } from '../services/garminAutoSyncService';
+import { isWorkoutSyncedToGarmin, type AutoSyncResult } from '../services/garminAutoSyncService';
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
 import { getBaselineRestingHeartRate } from '../services/readinessEngine';
 
@@ -47,6 +47,7 @@ interface WorkoutDetailModalProps {
   onOpenGarminSync?: () => void;
   athlete?: { fcMax: number; fcRest: number };
   athleteProfile?: AthletePhysiologicalProfile;
+  onSyncGarminWorkouts: (referenceDate: Date, eventIds?: string[]) => Promise<AutoSyncResult>;
 }
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
@@ -58,7 +59,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   onCancelPostpone,
   onOpenGarminSync,
   athlete,
-  athleteProfile
+  athleteProfile,
+  onSyncGarminWorkouts
 }) => {
   const scheduleTimeout = useManagedTimeout();
   const hasContent = Boolean(event || unifiedGroup);
@@ -207,10 +209,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
     triggerHapticFeedback('light');
 
     try {
-      const result = await syncCurrentWeekWorkoutsToGarmin(
-        unsyncedPlannedEvents,
+      const result = await onSyncGarminWorkouts(
         new Date(effectiveEvent.startDate),
-        { athleteProfile: dynamicProfile }
+        unsyncedPlannedEvents.map(plannedEvent => plannedEvent.id)
       );
 
       if (!result.success) {

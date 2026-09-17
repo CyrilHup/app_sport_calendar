@@ -11,8 +11,9 @@ import { createAppConfig, getPeriodizationContext } from './services/periodizati
 import { getDynamicAthleteProfile, loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
-import { applyPostponements, cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
-import { applyAdaptiveModifications, buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
+import { cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
+import { buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
+import { buildEffectiveCalendar, selectCalendarEventsById } from './services/calendarPipeline';
 import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
 import { isTrailOrRunning } from './services/activityClassifier';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
@@ -39,23 +40,6 @@ function loadManualPairs(): Record<string, string> {
 
 function saveManualPairs(pairs: Record<string, string>): void {
   storageSet(STORAGE_KEYS.GARMIN_MANUAL_PAIRS, pairs);
-}
-
-function transformCalendar(
-  baseCalendar: { schedules: DailySchedule[]; allEvents: CalendarEvent[] },
-  postpones: Record<string, WorkoutPostponeOverride>,
-  adaptations: Record<string, AdaptiveWorkoutOverride>
-): { schedules: DailySchedule[]; allEvents: CalendarEvent[] } {
-  const postponed = applyPostponements(
-    baseCalendar.schedules,
-    baseCalendar.allEvents,
-    postpones
-  );
-  return applyAdaptiveModifications(
-    postponed.schedules,
-    postponed.allEvents,
-    adaptations
-  );
 }
 
 export const App: React.FC = () => {
@@ -86,7 +70,7 @@ export const App: React.FC = () => {
   const referenceDateKey = formatDateKey(new Date());
   const referenceDate = useMemo(() => parseLocalDate(referenceDateKey), [referenceDateKey]);
   const { schedules, allEvents } = useMemo(
-    () => transformCalendar(baseCalendar, postponeOverrides, adaptiveOverrides),
+    () => buildEffectiveCalendar(baseCalendar, postponeOverrides, adaptiveOverrides),
     [baseCalendar, postponeOverrides, adaptiveOverrides]
   );
   const baseCalendarRef = useRef(baseCalendar);
@@ -162,6 +146,31 @@ export const App: React.FC = () => {
   const autoRechargeAll = useCallback((isManualTrigger = false): Promise<void> => {
     return refreshCoordinatorRef.current!.run(isManualTrigger);
   }, []);
+
+  const syncPlannedWorkouts = useCallback((syncDate: Date, eventIds?: string[]) => {
+    const { allEvents: currentEvents } = buildEffectiveCalendar(
+      baseCalendarRef.current,
+      appStateRef.current.postponeOverrides,
+      appStateRef.current.adaptiveOverrides
+    );
+    const { events, missingIds } = selectCalendarEventsById(currentEvents, eventIds);
+    if (missingIds.length > 0) {
+      return Promise.resolve({
+        success: false,
+        pushedCount: 0,
+        totalWeekWorkouts: 0,
+        alreadyUpToDate: false,
+        results: [],
+        reason: 'ERROR' as const,
+        error: 'La séance sélectionnée ne figure plus dans le calendrier actuel. Actualisez puis réessayez.'
+      });
+    }
+    const athleteProfile = getDynamicAthleteProfile(appStateRef.current.garminActivities, {
+      fcMax: appConfig.ATHLETE_FC_MAX,
+      fcRest: appConfig.ATHLETE_FC_REST
+    });
+    return syncCurrentWeekWorkoutsToGarmin(events, syncDate, { athleteProfile });
+  }, [appConfig]);
 
   // Check for spectator share mode in URL (?share=slug)
   useEffect(() => {
@@ -346,12 +355,6 @@ export const App: React.FC = () => {
     const freshBaseCalendar = { schedules: builtSchedules, allEvents: builtEvents };
     baseCalendarRef.current = freshBaseCalendar;
     setBaseCalendar(freshBaseCalendar);
-    const { allEvents: transformedEvents } = transformCalendar(
-      freshBaseCalendar,
-      appStateRef.current.postponeOverrides,
-      appStateRef.current.adaptiveOverrides
-    );
-
     // 2. Synchronisation Incrémentielle Garmin Connect
     let loadedActivities = shareSlug ? garminActivities : mergeGarminActivities(garminActivities, loadStoredGarminActivities());
     const creds = shareSlug ? null : await loadGarminCredentialsAsync();
@@ -444,12 +447,7 @@ export const App: React.FC = () => {
 
     if (!shareSlug && refreshedFcRest === appConfig.ATHLETE_FC_REST && refreshedFcMax === appConfig.ATHLETE_FC_MAX) {
       // Ensure current week workouts are really created AND scheduled before marking them synced.
-      const athleteProfile = getDynamicAthleteProfile(loadedActivities, athleteVitals);
-      const workoutSyncResult = await syncCurrentWeekWorkoutsToGarmin(
-        transformedEvents,
-        referenceDate,
-        { athleteProfile }
-      );
+      const workoutSyncResult = await syncPlannedWorkouts(referenceDate);
       if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
         console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
         if (isManualTrigger) {
@@ -557,18 +555,9 @@ export const App: React.FC = () => {
     }
   };
 
-  const syncTransformedCalendar = (
-    postpones: Record<string, WorkoutPostponeOverride>,
-    adaptations: Record<string, AdaptiveWorkoutOverride>
-  ) => {
+  const syncTransformedCalendar = () => {
     if (baseCalendarRef.current.schedules.length === 0) return;
-    const { allEvents: newEvents } = transformCalendar(
-      baseCalendarRef.current,
-      postpones,
-      adaptations
-    );
-    const athleteProfile = getDynamicAthleteProfile(appStateRef.current.garminActivities, athleteVitals);
-    void syncCurrentWeekWorkoutsToGarmin(newEvents, referenceDate, { athleteProfile });
+    void syncPlannedWorkouts(referenceDate);
   };
 
   const handlePostponeWorkout = (
@@ -583,7 +572,7 @@ export const App: React.FC = () => {
     setPostponeOverrides(updated);
     savePostponeOverrides(updated);
     const updatedAt = markLocalSyncUpdated('postponeOverrides');
-    syncTransformedCalendar(updated, appStateRef.current.adaptiveOverrides);
+    syncTransformedCalendar();
     if (user?.id) {
       void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
         postponeOverrides: updated,
@@ -598,7 +587,7 @@ export const App: React.FC = () => {
     setPostponeOverrides(updated);
     savePostponeOverrides(updated);
     const updatedAt = markLocalSyncUpdated('postponeOverrides');
-    syncTransformedCalendar(updated, appStateRef.current.adaptiveOverrides);
+    syncTransformedCalendar();
     if (user?.id) {
       void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
         postponeOverrides: updated,
@@ -627,7 +616,7 @@ export const App: React.FC = () => {
     setAdaptiveOverrides(overrides);
     saveAdaptiveOverrides(overrides);
     const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
-    syncTransformedCalendar(appStateRef.current.postponeOverrides, overrides);
+    syncTransformedCalendar();
     if (user?.id) {
       void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
         adaptiveOverrides: overrides,
@@ -641,7 +630,7 @@ export const App: React.FC = () => {
     setAdaptiveOverrides({});
     clearAdaptiveOverrides();
     const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
-    syncTransformedCalendar(appStateRef.current.postponeOverrides, {});
+    syncTransformedCalendar();
     if (user?.id) {
       void enqueueCloudMutation(() => syncOverridesToCloud(user.id, {
         adaptiveOverrides: {},
@@ -752,7 +741,6 @@ export const App: React.FC = () => {
       {activeTab === 'calendar' && (
         <CalendarView
           schedules={schedules}
-          allEvents={allEvents}
           referenceDateStr={formatDateKey(referenceDate)}
           referenceDate={referenceDate}
           onPostponeWorkout={handlePostponeWorkout}
@@ -764,6 +752,7 @@ export const App: React.FC = () => {
           onApplyAdaptivePlan={handleApplyAdaptivePlan}
           onRevertAdaptivePlan={handleRevertAdaptivePlan}
           onOpenGarminSync={() => handleOpenAccountModal('garmin')}
+          onSyncGarminWorkouts={syncPlannedWorkouts}
         />
       )}
 
