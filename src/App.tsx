@@ -29,6 +29,7 @@ import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } fr
 import { SyncErrorModal, SyncErrorInfo } from './components/SyncErrorModal';
 import { createLatestRerunCoordinator, LatestRerunCoordinator } from './services/asyncCoordinator';
 import { createCloudMutationQueue, type CloudMutationDomain } from './services/cloudMutationQueue';
+import { registerAutoRefreshTriggers } from './services/autoRefreshTriggers';
 
 const CalendarView = React.lazy(() => import('./components/CalendarView').then(module => ({ default: module.CalendarView })));
 const ComparisonDashboard = React.lazy(() => import('./components/ComparisonDashboard').then(module => ({ default: module.ComparisonDashboard })));
@@ -511,52 +512,10 @@ export const App: React.FC = () => {
 
   // Automatic sync on mobile app resume, tab visibility change, focus, and periodic interval
   useEffect(() => {
-    let lastAutoSyncAt = Date.now();
-
-    const triggerThrottledSync = () => {
-      const now = Date.now();
-      // Throttle: don't sync if last sync was less than 2 minutes ago
-      if (now - lastAutoSyncAt < 120_000) {
-        return;
-      }
-      lastAutoSyncAt = now;
-      autoRechargeAll();
-    };
-
-    // 1. Mobile native resume listener (Capacitor App state)
-    let appStateListener: any = null;
-    try {
-      CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-        if (isActive) {
-          triggerThrottledSync();
-        }
-      }).then(l => { appStateListener = l; }).catch(() => {});
-    } catch {}
-
-    // 2. Web visibility change listener (browser tab returned to foreground)
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        triggerThrottledSync();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // 3. Web window focus listener
-    window.addEventListener('focus', triggerThrottledSync);
-
-    // 4. Periodic background refresh every 15 minutes when app is active
-    const periodicInterval = setInterval(() => {
-      triggerThrottledSync();
-    }, 15 * 60 * 1000);
-
-    return () => {
-      if (appStateListener && typeof appStateListener.remove === 'function') {
-        appStateListener.remove();
-      }
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', triggerThrottledSync);
-      clearInterval(periodicInterval);
-    };
+    return registerAutoRefreshTriggers(
+      () => { void autoRechargeAll(); },
+      { nativeApp: CapacitorApp, document, window }
+    );
   }, []);
 
 

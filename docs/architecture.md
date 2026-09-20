@@ -4,7 +4,9 @@ The application has three external inputs: an academic iCal feed, Garmin Connect
 and Supabase. A calendar refresh is coordinated by `src/services/asyncCoordinator.ts`
 and `src/App.tsx`; simultaneous refresh triggers coalesce into one active run and
 one latest rerun. Garmin workout pushes have their own latest-request coordinator
-in `src/services/garminAutoSyncService.ts`.
+in `src/services/garminAutoSyncService.ts`. Automatic foreground/visibility
+triggers are registered through `autoRefreshTriggers.ts`; late Capacitor listener
+registration is cleaned up after unmount and periodic refresh pauses while hidden.
 
 ## Calendar
 
