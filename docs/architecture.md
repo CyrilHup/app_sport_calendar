@@ -23,6 +23,9 @@ registration is cleaned up after unmount and periodic refresh pauses while hidde
 4. Snapshot downloads serialize the same canonical event collection currently
    displayed in the UI. Direct Google synchronization consumes that collection
    through the App-level calendar action boundary as well.
+5. Grid/day and list renderers consume the same `calendarDayViewModel.ts`
+   projection for category filtering, postponed placeholders, catch-ups, unified
+   sport groups, empty state, and event counts.
 
 ## Activities and comparisons
 

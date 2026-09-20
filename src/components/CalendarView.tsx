@@ -39,9 +39,10 @@ import { GarminActivity } from '../types/garmin';
 import { formatGarminActivityName, getGarminExecutionBadge, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
 import { isGarminAutoSyncEnabled, type AutoSyncResult } from '../services/garminAutoSyncService';
 import { selectDayActivityContext } from '../services/daySelectors';
-import { groupDaySportWorkouts, UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
+import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
 import { getDynamicAthleteProfile } from '../services/garminService';
+import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -65,7 +66,6 @@ interface CalendarViewProps {
   onOpenGarminSync?: () => void;
 }
 
-type FilterCategory = 'all' | 'sport' | 'course' | 'mobility';
 type ViewMode = 'day' | 'grid' | 'list';
 
 
@@ -564,7 +564,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 }) => {
   const scheduleTimeout = useManagedTimeout();
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
-  const [filter, setFilter] = useState<FilterCategory>('all');
+  const [filter, setFilter] = useState<CalendarFilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
   const effectiveRefDate = referenceDate || (referenceDateStr ? parseLocalDate(referenceDateStr) : new Date());
   const athleteProfile = useMemo(
@@ -1270,25 +1270,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
       {(() => {
         const renderDayEventsContent = (day: DailySchedule, isSingleDayView: boolean = false) => {
-          const courseEvents = day.events.filter(e => e.category === 'course');
-          const mobilityEvent = day.events.find(e => e.category === 'mobility');
-          const ghostEvents = day.events.filter(e => e.category === 'sport' && Boolean(e.metadata?.isPostponedPlaceholder));
-          const catchupExecutedElsewhere = day.events.filter(e => {
-            if (e.category !== 'sport') return false;
-            const comp = comparisons.find(c => c.plannedEvent?.id === e.id);
-            return Boolean(comp?.isPostponedCatchup && comp.executedDate && comp.executedDate !== day.date);
-          });
-
-          const daySportEvents = day.events.filter(e => e.category === 'sport');
-          const unifiedSportGroups = groupDaySportWorkouts(daySportEvents, comparisons, day.date, athlete);
-
-          const hasAnyDisplayableItem = filter === 'all'
-            ? (courseEvents.length > 0 || unifiedSportGroups.length > 0 || ghostEvents.length > 0 || catchupExecutedElsewhere.length > 0 || Boolean(mobilityEvent))
-            : filter === 'sport'
-            ? (unifiedSportGroups.length > 0 || ghostEvents.length > 0 || catchupExecutedElsewhere.length > 0)
-            : filter === 'course'
-            ? courseEvents.length > 0
-            : Boolean(mobilityEvent);
+          const {
+            courseEvents,
+            mobilityEvent,
+            ghostEvents,
+            catchupExecutedElsewhere,
+            unifiedSportGroups,
+            hasAnyDisplayableItem
+          } = buildCalendarDayViewModel(day, comparisons, filter, athlete);
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
@@ -1647,29 +1636,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             const dateObj = parseLocalDate(day.date);
             const isToday = day.date === todayKey;
 
-            const courseEvents = day.events.filter(e => e.category === 'course');
-            const mobilityEvent = day.events.find(e => e.category === 'mobility');
-            const ghostEvents = day.events.filter(e => e.category === 'sport' && Boolean(e.metadata?.isPostponedPlaceholder));
-            const catchupExecutedElsewhere = day.events.filter(e => {
-              if (e.category !== 'sport') return false;
-              const comp = comparisons.find(c => c.plannedEvent?.id === e.id);
-              return Boolean(comp?.isPostponedCatchup && comp.executedDate && comp.executedDate !== day.date);
-            });
-
-            const daySportEvents = day.events.filter(e => e.category === 'sport');
-            const unifiedSportGroups = groupDaySportWorkouts(daySportEvents, comparisons, day.date, athlete);
-
-            const hasAnyDisplayableItem = filter === 'all'
-              ? (courseEvents.length > 0 || unifiedSportGroups.length > 0 || ghostEvents.length > 0 || catchupExecutedElsewhere.length > 0 || Boolean(mobilityEvent))
-              : filter === 'sport'
-              ? (unifiedSportGroups.length > 0 || ghostEvents.length > 0 || catchupExecutedElsewhere.length > 0)
-              : filter === 'course'
-              ? courseEvents.length > 0
-              : Boolean(mobilityEvent);
-
-            const displayCount = (filter === 'all' || filter === 'sport' ? unifiedSportGroups.length + ghostEvents.length + catchupExecutedElsewhere.length : 0)
-              + (filter === 'all' || filter === 'course' ? courseEvents.length : 0)
-              + ((filter === 'all' || filter === 'mobility') && mobilityEvent ? 1 : 0);
+            const {
+              courseEvents,
+              mobilityEvent,
+              ghostEvents,
+              catchupExecutedElsewhere,
+              unifiedSportGroups,
+              hasAnyDisplayableItem,
+              displayCount
+            } = buildCalendarDayViewModel(day, comparisons, filter, athlete);
 
             return (
               <div
