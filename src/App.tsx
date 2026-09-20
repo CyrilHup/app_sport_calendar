@@ -191,7 +191,11 @@ export const App: React.FC = () => {
     }
   };
 
-  const syncPlannedWorkouts = useCallback((syncDate: Date, eventIds?: string[]) => {
+  const syncPlannedWorkouts = useCallback((
+    syncDate: Date,
+    eventIds?: string[],
+    vitalsOverride?: { fcMax: number; fcRest: number }
+  ) => {
     const { allEvents: currentEvents } = buildEffectiveCalendar(
       baseCalendarRef.current,
       appStateRef.current.postponeOverrides,
@@ -210,8 +214,8 @@ export const App: React.FC = () => {
       });
     }
     const athleteProfile = getDynamicAthleteProfile(appStateRef.current.garminActivities, {
-      fcMax: appConfig.ATHLETE_FC_MAX,
-      fcRest: appConfig.ATHLETE_FC_REST
+      fcMax: vitalsOverride?.fcMax ?? appConfig.ATHLETE_FC_MAX,
+      fcRest: vitalsOverride?.fcRest ?? appConfig.ATHLETE_FC_REST
     });
     return syncCurrentWeekWorkoutsToGarmin(events, syncDate, { athleteProfile });
   }, [appConfig]);
@@ -386,19 +390,6 @@ export const App: React.FC = () => {
       }
     }
 
-    // Start calendar on Monday of the training plan start week (2026-08-31)
-    // to preserve Week 1 (from 1er sept.), past microcycles, history, and telemetry reconciliation
-    const calendarWindow = getCalendarBuildWindow(referenceDate, appConfig.SPORT_START_DATE);
-    const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
-      rawCourses,
-      calendarWindow.startMonday,
-      calendarWindow.daysCount,
-      appConfig
-    );
-
-    const freshBaseCalendar = { schedules: builtSchedules, allEvents: builtEvents };
-    baseCalendarRef.current = freshBaseCalendar;
-    setBaseCalendar(freshBaseCalendar);
     // 2. Synchronisation Incrémentielle Garmin Connect
     let loadedActivities = shareSlug ? garminActivities : mergeGarminActivities(garminActivities, loadStoredGarminActivities());
     const creds = shareSlug ? null : await loadGarminCredentialsAsync();
@@ -461,6 +452,29 @@ export const App: React.FC = () => {
     appStateRef.current.garminActivities = loadedActivities;
     setGarminActivities(loadedActivities);
 
+    // 3. Build one canonical calendar from the physiological inputs read in
+    // this refresh. React state is an output of the pipeline, not a prerequisite
+    // for a second refresh with the correct values.
+    const refreshedConfig = createAppConfig({
+      homeAddress: effectiveProfile?.homeAddress,
+      campusAddress: effectiveProfile?.campusAddress,
+      trailAddress: effectiveProfile?.trailAddress,
+      fcMax: shareSlug ? appConfig.ATHLETE_FC_MAX : refreshedFcMax,
+      fcRest: shareSlug ? appConfig.ATHLETE_FC_REST : refreshedFcRest,
+      raceName: effectiveProfile?.raceName,
+      raceDate: effectiveProfile?.raceDate
+    });
+    const calendarWindow = getCalendarBuildWindow(referenceDate, refreshedConfig.SPORT_START_DATE);
+    const { schedules: builtSchedules, allEvents: builtEvents } = buildCompleteCalendar(
+      rawCourses,
+      calendarWindow.startMonday,
+      calendarWindow.daysCount,
+      refreshedConfig
+    );
+    const freshBaseCalendar = { schedules: builtSchedules, allEvents: builtEvents };
+    baseCalendarRef.current = freshBaseCalendar;
+    setBaseCalendar(freshBaseCalendar);
+
     // Automatically persist fresh activities and wellness to Supabase cloud if authenticated
     if (!shareSlug && user?.id && loadedActivities.length > 0) {
       await enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, loadedActivities));
@@ -489,9 +503,12 @@ export const App: React.FC = () => {
       return updatedState;
     });
 
-    if (!shareSlug && refreshedFcRest === appConfig.ATHLETE_FC_REST && refreshedFcMax === appConfig.ATHLETE_FC_MAX) {
+    if (!shareSlug) {
       // Ensure current week workouts are really created AND scheduled before marking them synced.
-      const workoutSyncResult = await syncPlannedWorkouts(referenceDate);
+      const workoutSyncResult = await syncPlannedWorkouts(referenceDate, undefined, {
+        fcMax: refreshedConfig.ATHLETE_FC_MAX,
+        fcRest: refreshedConfig.ATHLETE_FC_REST
+      });
       if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
         console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
         if (isManualTrigger) {
@@ -508,7 +525,16 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     autoRechargeAll();
-  }, [profile?.icalUrl, appConfig, spectatorData]);
+  }, [
+    profile?.icalUrl,
+    profile?.homeAddress,
+    profile?.campusAddress,
+    profile?.trailAddress,
+    profile?.fcMax,
+    profile?.raceName,
+    profile?.raceDate,
+    spectatorData
+  ]);
 
   // Automatic sync on mobile app resume, tab visibility change, focus, and periodic interval
   useEffect(() => {

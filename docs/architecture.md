@@ -14,7 +14,9 @@ registration is cleaned up after unmount and periodic refresh pauses while hidde
    `src/server/icalFeedClient.ts` validates the URL and redirects.
 2. `src/services/icsParser.ts` parses courses and builds the base academic/training
    calendar using an immutable `AppConfig` snapshot from
-   `src/services/periodizationEngine.ts`.
+   `src/services/periodizationEngine.ts`. Each refresh acquires Garmin/wellness
+   inputs before building that snapshot, so calendar generation and workout push
+   consume the same fresh physiological values without a React-triggered rerun.
 3. `src/services/calendarPipeline.ts` applies postponements and adaptive changes
    to the base calendar. Both the visible calendar and Garmin push requests use
    this projection; derived events are not stored as a second mutable React state.
