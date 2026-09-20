@@ -11,6 +11,7 @@ import {
 import { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay } from './dateUtils';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { calculateSessionTrimp } from './loadEngine';
+import { ACTIVITY_MATCH_POLICY } from './trainingModelConfig';
 
 export { formatDateKey, getGarminLocalDateKey, getMondayWeekKey, formatFriendlyDay };
 
@@ -272,7 +273,7 @@ export function compareWorkoutsWithGarmin(
         // Une séance future (ex: Dimanche) ne peut JAMAIS être liée à une sortie déjà passée (ex: Lundi).
         if (planWeek === actWeek && executedDate >= scheduledDate) {
           const score = scoreActivityMatch(plan, act);
-          if (score >= 50) {
+          if (score >= ACTIVITY_MATCH_POLICY.minimumAutomaticScore) {
             crossCandidates.push({
               plan,
               act,
@@ -311,7 +312,7 @@ export function compareWorkoutsWithGarmin(
     const residualActs = garminActivities.filter(act => {
       if (matchedGarminIds.has(act.activityId)) return false;
       if (getGarminLocalDateKey(act) !== executedDate) return false;
-      return scoreActivityMatch(match.plan, act) >= 50;
+      return scoreActivityMatch(match.plan, act) >= ACTIVITY_MATCH_POLICY.minimumAutomaticScore;
     });
 
     const otherPlansOnDay = plansToEvaluate.filter(p => {
@@ -701,7 +702,7 @@ function evaluateSingleWorkout(
 
 /**
  * Calcule un score de pertinence pour associer une activité Garmin à une séance prescrite.
- * Un score < 50 élimine catégoriquement l'activité comme candidate automatique.
+ * A score below the configured threshold eliminates an automatic candidate.
  */
 function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
   const planType = plan.sportType;
@@ -718,13 +719,13 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
   const effectiveActType = (actType === 'OTHER' || !actType) ? classifiedType : actType;
 
   if (effectiveActType === 'CLIMBING') {
-    return -1000;
+    return ACTIVITY_MATCH_POLICY.incompatibleScore;
   }
   if (effectiveActType === 'CYCLING' && (isPlanRunning || isPlanStrength)) {
-    return -1000;
+    return ACTIVITY_MATCH_POLICY.incompatibleScore;
   }
   if (effectiveActType === 'WALKING' && isPlanRunning) {
-    return -1000;
+    return ACTIVITY_MATCH_POLICY.incompatibleScore;
   }
 
   // 2. Évaluation pour un plan de Course à pied / Trail
@@ -744,7 +745,7 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
 
       if (!hasClearRunningTelemetry) {
         // Activité non course (ex: Rave, profil Autre, soirée, etc.) -> disqualification stricte
-        return -1000;
+        return ACTIVITY_MATCH_POLICY.incompatibleScore;
       }
     }
 
@@ -787,16 +788,16 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
 
     // Si c'est une activité de course ou de vélo, exclusion
     if (actType === 'RUNNING' || actType === 'TRAIL_RUNNING' || actType === 'CYCLING') {
-      return -1000;
+      return ACTIVITY_MATCH_POLICY.incompatibleScore;
     }
 
     if (!isActStrength) {
       // Pour une activité "OTHER", elle ne doit pas avoir de distance ni de cadence de course
       if ((act.distanceKm || 0) > 0.5 || (act.avgCadence || 0) > 120) {
-        return -1000;
+        return ACTIVITY_MATCH_POLICY.incompatibleScore;
       }
       if (act.durationMinutes < 15) {
-        return -1000;
+        return ACTIVITY_MATCH_POLICY.incompatibleScore;
       }
     }
 
@@ -826,7 +827,7 @@ function scoreActivityMatch(plan: CalendarEvent, act: GarminActivity): number {
       actName.includes('mobil');
 
     if (!isActMobility) {
-      return -1000;
+      return ACTIVITY_MATCH_POLICY.incompatibleScore;
     }
     return 100;
   }

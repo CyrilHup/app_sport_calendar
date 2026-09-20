@@ -2,6 +2,7 @@ import { formatDateKey, getGarminLocalDateKey } from './dateUtils';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { getDynamicAthleteProfile, getExpectedHeartRateForEvent } from './garminService';
+import { TRAINING_LOAD_WINDOWS } from './trainingModelConfig';
 
 export interface SessionTrimpOptions {
   avgHeartRate?: number | null;
@@ -315,8 +316,8 @@ export function computeTrainingLoadStats(
   const startDay = new Date(asOfDate);
   startDay.setDate(asOfDate.getDate() - totalDays);
 
-  const ctlDecay = Math.exp(-1 / 42);
-  const atlDecay = Math.exp(-1 / 7);
+  const ctlDecay = Math.exp(-1 / TRAINING_LOAD_WINDOWS.chronicFitnessDays);
+  const atlDecay = Math.exp(-1 / TRAINING_LOAD_WINDOWS.acuteFatigueDays);
 
   for (let i = 0; i <= totalDays; i++) {
     const cur = new Date(startDay);
@@ -351,7 +352,7 @@ export function computeTrainingLoadStats(
   // Trail-specific ACWR (Gabbett model applied exclusively to external mechanical ground impact: Km-Effort)
   let trailAcuteSum = 0;
   let cardioAcuteSum = 0;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < TRAINING_LOAD_WINDOWS.acuteFatigueDays; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
     const dKey = formatDateKey(d);
@@ -361,7 +362,7 @@ export function computeTrainingLoadStats(
 
   let trailChronicSum = 0;
   let trailActiveDaysInLast28 = 0;
-  for (let i = 0; i < 28; i++) {
+  for (let i = 0; i < TRAINING_LOAD_WINDOWS.chronicRatioBaselineDays; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
     const dKey = formatDateKey(d);
@@ -370,7 +371,8 @@ export function computeTrainingLoadStats(
     if (dLoad > 0) trailActiveDaysInLast28++;
   }
   // Plancher minimum de 5 Km-Effort/semaine pour éviter les divisions par zéro lors de la première semaine de plan
-  const trailChronicWeeklyAvg = Math.max(5, Math.round((trailChronicSum / 4) * 10) / 10);
+  const chronicWeeks = TRAINING_LOAD_WINDOWS.chronicRatioBaselineDays / TRAINING_LOAD_WINDOWS.acuteFatigueDays;
+  const trailChronicWeeklyAvg = Math.max(5, Math.round((trailChronicSum / chronicWeeks) * 10) / 10);
   const trailAcuteLoad7d = Math.round(trailAcuteSum * 10) / 10;
   const trailAcwrRatio = Math.round((trailAcuteLoad7d / trailChronicWeeklyAvg) * 100) / 100;
 
@@ -378,7 +380,7 @@ export function computeTrainingLoadStats(
   let calisthenicsAcuteSum = 0;
   let calisthenicsSessionsCount7d = 0;
   let totalSystemicAcuteSum = 0;
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < TRAINING_LOAD_WINDOWS.acuteFatigueDays; i++) {
     const d = new Date(asOfDate);
     d.setDate(asOfDate.getDate() - i);
     const dKey = formatDateKey(d);
@@ -441,7 +443,7 @@ export function computeTrainingLoadStats(
   // 7-day window individual sessions
   const recentSessions7d: RecentSessionLoadItem[] = [];
   const min7d = new Date(asOfDate);
-  min7d.setDate(asOfDate.getDate() - 6);
+  min7d.setDate(asOfDate.getDate() - (TRAINING_LOAD_WINDOWS.acuteFatigueDays - 1));
   const min7dKey = formatDateKey(min7d);
   const asOfDateKey = formatDateKey(asOfDate);
 

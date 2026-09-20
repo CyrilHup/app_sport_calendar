@@ -13,6 +13,7 @@ import { StatsEvolutionModal, EvolutionMetricType } from './StatsEvolutionModal'
 import { getLatestWellnessData, loadWellnessHistory } from '../services/readinessEngine';
 import { computeDynamicAthleteBasePace } from '../services/garminService';
 import { AppConfig, GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
+import { TRAINING_LOAD_WINDOWS } from '../services/trainingModelConfig';
 import {
   Activity,
   Award,
@@ -73,7 +74,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   const wellnessHistory = loadWellnessHistory();
 
   // Computes report for selected timeline scope.
-  // NOTE: Physiological Banister CTL/ATL/TSB & ACWR always evaluate on full 90-day history.
+  // Physiological history is independent from the selected display timeline.
   const report = computeFullStatsReport(
     garminActivities,
     comparisons,
@@ -1137,7 +1138,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                 </button>
               </div>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                Historique modélisé sur 90 jours : Fitness chronique (CTL 42j), Fatigue aiguë (ATL 7j) et Forme (TSB).
+                Historique modélisé sur {TRAINING_LOAD_WINDOWS.physiologicalHistoryDays} jours : Fitness chronique (CTL {TRAINING_LOAD_WINDOWS.chronicFitnessDays}j), Fatigue aiguë (ATL {TRAINING_LOAD_WINDOWS.acuteFatigueDays}j) et Forme (TSB).
               </p>
             </div>
 

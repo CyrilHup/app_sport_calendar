@@ -16,6 +16,7 @@ import {
   parsePaceStringToSeconds,
   QmtRacePrediction
 } from './racePredictorEngine';
+import { TRAINING_LOAD_WINDOWS } from './trainingModelConfig';
 export { DEFAULT_WEEKLY_TARGETS } from './trainingDefaults';
 
 // 100% Backward-compatible re-exports
@@ -911,9 +912,13 @@ export function computeFullStatsReport(
   };
 
   // Training Load & Fatigue (CTL / ATL / TSB / ACWR)
-  // Physiological load & ACWR must ALWAYS be evaluated on the complete 90-day history (rawList)
-  // regardless of the display timeline scope, preserving the 42-day CTL decay and 28-day chronic baseline.
-  const trainingLoad = computeTrainingLoadStats(rawList, asOfDate, 90, athlete);
+  // Training-load history is independent from the selected display timeline.
+  const trainingLoad = computeTrainingLoadStats(
+    rawList,
+    asOfDate,
+    TRAINING_LOAD_WINDOWS.physiologicalHistoryDays,
+    athlete
+  );
 
   // Trail-specific metrics (D-, VAM, GAP)
   const trailSpecific = computeTrailSpecificStats(runActivities);

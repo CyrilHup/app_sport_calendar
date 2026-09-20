@@ -44,6 +44,9 @@ in `src/services/garminAutoSyncService.ts`.
 5. Wellness records from Garmin, local storage, and Supabase merge by their
    `syncedAt` timestamp per day. Missing fields in a newer partial response are
    filled from the older record instead of erasing measurements.
+6. Training-load windows and automatic activity-matching policy live in
+   `trainingModelConfig.ts`. Calculations and UI labels consume the same named
+   values rather than duplicating durations or numeric rejection sentinels.
 
 ## Boundaries and operational notes
 
