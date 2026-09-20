@@ -2,10 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   Calendar,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Copy,
   Download,
   Save,
   Sparkles
@@ -39,16 +35,11 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
     status: 'IDLE' | 'SYNCING' | 'SUCCESS' | 'ERROR';
   } | null>(null);
 
-  const [showAdvancedCalendarOptions, setShowAdvancedCalendarOptions] = useState(false);
-  const [gcalCopied, setGcalCopied] = useState(false);
-
   useEffect(() => {
     if (profile?.icalUrl !== undefined) {
       setProfIcal(profile.icalUrl || '');
     }
   }, [profile?.icalUrl]);
-
-  const subscriptionUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/calendar.ics` : '';
 
   const handleSaveIcalAndRefresh = async () => {
     setProfileSaving(true);
@@ -68,13 +59,6 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
         setGcalSyncProgress(null);
       }, 4000);
     }
-  };
-
-  const handleCopyGcalUrl = () => {
-    if (!subscriptionUrl) return;
-    navigator.clipboard.writeText(subscriptionUrl);
-    setGcalCopied(true);
-    scheduleTimeout(() => setGcalCopied(false), 2000);
   };
 
   return (
@@ -239,66 +223,17 @@ export const CalendarTab: React.FC<CalendarTabProps> = ({
           </div>
         )}
 
-        {/* Advanced export options dropdown */}
+        {/* Exact snapshot export from the same events currently shown in the app. */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
           <button
             type="button"
-            onClick={() => setShowAdvancedCalendarOptions(!showAdvancedCalendarOptions)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              fontSize: '0.74rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: 0
-            }}
+            className="btn-secondary"
+            onClick={() => downloadICSFile(calendarEvents, 'planning_qmt80.ics')}
+            style={{ fontSize: '0.74rem', padding: '6px 12px', justifyContent: 'center' }}
           >
-            <span>Autres options d'export (Abonnement iCal live, Fichier .ics)</span>
-            {showAdvancedCalendarOptions ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            <Download size={13} />
+            <span>Télécharger le calendrier affiché (.ics)</span>
           </button>
-
-          {showAdvancedCalendarOptions && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  readOnly
-                  value={subscriptionUrl}
-                  style={{
-                    flex: 1,
-                    padding: '6px 10px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 4,
-                    color: '#fff',
-                    fontSize: '0.75rem'
-                  }}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={handleCopyGcalUrl}
-                  style={{ padding: '6px 10px', fontSize: '0.75rem' }}
-                >
-                  {gcalCopied ? <CheckCircle2 size={13} color="#10b981" /> : <Copy size={13} />}
-                  <span>{gcalCopied ? 'Copié' : 'Copier URL'}</span>
-                </button>
-              </div>
-
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => downloadICSFile(calendarEvents, 'planning_qmt80.ics')}
-                style={{ fontSize: '0.74rem', padding: '6px 12px', justifyContent: 'center', alignSelf: 'flex-start' }}
-              >
-                <Download size={13} />
-                <span>Télécharger le fichier .ics</span>
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </div>

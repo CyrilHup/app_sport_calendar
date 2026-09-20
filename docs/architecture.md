@@ -16,9 +16,9 @@ in `src/services/garminAutoSyncService.ts`.
 3. `src/services/calendarPipeline.ts` applies postponements and adaptive changes
    to the base calendar. Both the visible calendar and Garmin push requests use
    this projection; derived events are not stored as a second mutable React state.
-4. The same window helper and iCal serializer serve UI downloads and the public
-   subscription endpoint. The subscription endpoint uses server configuration,
-   not an individual user's profile URL.
+4. Snapshot downloads serialize the same canonical event collection currently
+   displayed in the UI. Direct Google synchronization consumes that collection
+   through the App-level calendar action boundary as well.
 
 ## Activities and comparisons
 
@@ -81,8 +81,10 @@ in `src/services/garminAutoSyncService.ts`.
   unavailable wellness endpoint cannot fail the required activity page.
 - `ICAL_FEED_URL` is a server-only variable; do not use a `VITE_` prefix for a URL
   containing a private calendar token.
-- `api/calendar.ts` is a public feed. It should not be used to publish a private
-  academic schedule unless that exposure is intentional.
+- The former public calendar subscription endpoint was removed: it rebuilt a
+  global server calendar that could diverge from the user's profile and expose a
+  private academic feed. The supported paths are explicit snapshot download and
+  authenticated Google synchronization from the canonical visible events.
 - Supabase settings migration is in `supabase_schema.sql`. The API and browser
   code have separate TypeScript checks via `npm run typecheck`.
 
@@ -100,5 +102,3 @@ in `src/services/garminAutoSyncService.ts`.
 - The QMT training prescription, simulator, and several physiological thresholds
   remain race/athlete-specific. They must be separated from reusable scheduling
   logic before claiming the app is configurable for arbitrary races or athletes.
-- The public subscription feed does not mirror per-user profile settings; a
-  user-specific subscription model needs an explicit privacy design.

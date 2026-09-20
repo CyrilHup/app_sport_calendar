@@ -13,7 +13,7 @@ function calendarDaysBetween(start: Date, end: Date): number {
   return Math.round((endUtc - startUtc) / 86_400_000);
 }
 
-/** Canonical window used by the UI, downloads and subscription feed. */
+/** Canonical window used by the UI and exact calendar snapshot downloads. */
 export function getCalendarBuildWindow(
   referenceDate: Date,
   sportStartDate: string,

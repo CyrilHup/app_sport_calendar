@@ -41,7 +41,6 @@ It automatically bridges academic course timetables, daily transit commutes, and
 
 ### 4. 📅 Direct Google Calendar Synchronization (Zero Google Apps Script)
 - **1-Click .ICS File Export:** Instant download of RFC 5545 compliant `.ics` calendar files ready to import directly into Google Calendar in seconds.
-- **Live Subscription Feed (`/api/calendar.ics`):** Real-time subscription endpoint for Google Calendar, Apple Calendar, or mobile devices ("Add from URL").
 - **Direct Google Calendar API (OAuth 2.0):** Optional direct push into primary Google Calendar with color-coding and automatic event update mapping.
 
 ### 5. 📊 High-Density Pro Athlete Telemetry
@@ -112,7 +111,7 @@ Open **[http://localhost:5173/](http://localhost:5173/)** in your browser.
 
 ## 🔒 Privacy & Anonymization
 
-The academic feed URL must be configured as a server-only `ICAL_FEED_URL`, not as a `VITE_` variable: the feed URL may contain a private token. Keep `.env` out of version control. Garmin passwords are kept only for the current browser/app session; users must re-enter them after a full restart. The server caches Garmin OAuth tokens in per-user files for up to 24 hours with owner-only file permissions. The public subscription feed at `/api/calendar.ics` publishes the configured academic and training schedule to anyone with its URL; do not configure a private academic feed there unless this exposure is intended. The application still contains QMT-specific training prescriptions and is not a general coaching product.
+The academic feed URL must be configured as a server-only `ICAL_FEED_URL`, not as a `VITE_` variable: the feed URL may contain a private token. Keep `.env` out of version control. Garmin passwords are kept only for the current browser/app session; users must re-enter them after a full restart. The server caches Garmin OAuth tokens in per-user files for up to 24 hours with owner-only file permissions. Calendar export is an explicit snapshot of the events currently displayed; there is no public endpoint exposing the private academic feed. The application still contains QMT-specific training prescriptions and is not a general coaching product.
 
 Run `npm run typecheck`, `npm test`, and `npm run build` before deployment. The `user_settings` columns in `supabase_schema.sql` must be applied to an existing Supabase database before relying on cross-device override conflict resolution.
 
@@ -134,7 +133,7 @@ Run `npm run typecheck`, `npm test`, and `npm run build` before deployment. The 
 │   │   ├── CalendarView.tsx           # 7-day responsive grid & detailed list
 │   │   ├── WeatherWidget.tsx          # Mont-Royal live weather & gear advisory
 │   │   ├── ComparisonDashboard.tsx    # Garmin telemetry table, status filters & manual pairing
-│   │   ├── GoogleCalendarModal.tsx    # Direct sync, 1-click import & feed subscription
+│   │   ├── account/CalendarTab.tsx    # Academic feed, direct Google sync & snapshot export
 │   │   ├── GarminModal.tsx            # Garmin Connect sync & GPX file import
 │   │   ├── WorkoutDetailModal.tsx     # Session protocol, fueling calculator & gear checklist
 │   │   ├── QMTPlanOverview.tsx        # 6-phase periodization matrix & race strategy
