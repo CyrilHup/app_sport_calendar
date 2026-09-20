@@ -817,7 +817,6 @@ export const App: React.FC = () => {
           allEvents={allEvents}
           referenceDate={referenceDate}
           config={appConfig}
-          onOpenGarminSync={() => handleOpenAccountModal('garmin')}
         />
       )}
 

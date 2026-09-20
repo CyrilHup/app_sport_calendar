@@ -43,7 +43,6 @@ interface StatsDashboardProps {
   comparisons: ActivityComparison[];
   allEvents: CalendarEvent[];
   referenceDate?: Date;
-  onOpenGarminSync?: () => void;
   config?: Readonly<AppConfig>;
 }
 
@@ -85,7 +84,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
     { fcMax: athleteFcMax, fcRest: baselineRhr }
   );
 
-  const { global, running, strength, heartRate, trainingLoad, trailSpecific, qmtPrediction } = report;
+  const { global, running, strength, heartRate, heartRateZones, trainingLoad, trailSpecific, qmtPrediction } = report;
 
   // Max minutes in a week for relative bar chart heights
   const maxWeeklyMinutes = Math.max(...global.weeklyTrend.map(w => w.totalMinutes), 360);
@@ -563,7 +562,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
                 : 'Rythme cardiaque régulier'}
             </span>
             <span style={{ color: 'var(--text-muted)' }}>
-              Cible Z2 &lt; 155 bpm
+              Cible Z2 &lt; {heartRateZones.zone2[1]} bpm
             </span>
           </div>
         </div>
@@ -615,7 +614,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               Plafond d'effort • Borne Z5
             </span>
             <span style={{ fontSize: '0.74rem', color: 'var(--accent-green)', fontWeight: 600 }}>
-              Cible Z2 &lt; {Math.round(athleteFcMax * 0.76)} bpm
+              Cible Z2 &lt; {heartRateZones.zone2[1]} bpm
             </span>
           </div>
 
@@ -1483,7 +1482,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.76rem' }}>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ color: 'var(--accent-green)' }}>Zone 2 (Endurance Fondamentale &lt; 155 bpm)</span>
+                  <span style={{ color: 'var(--accent-green)' }}>Zone 2 (Endurance Fondamentale &lt; {heartRateZones.zone2[1]} bpm)</span>
                   <strong>{running.intensityDistribution.zone2Pct}% ({formatMinutes(running.intensityDistribution.zone2EnduranceMinutes)})</strong>
                 </div>
                 <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px' }}>
@@ -1493,7 +1492,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ color: 'var(--accent-amber)' }}>Zone 3/4 (Tempo & Seuil 155-175 bpm)</span>
+                  <span style={{ color: 'var(--accent-amber)' }}>Zone 3/4 (Tempo & Seuil {heartRateZones.zone2[1]}-{heartRateZones.zone5[0] - 1} bpm)</span>
                   <strong>{running.intensityDistribution.zoneTempoThresholdPct}% ({formatMinutes(running.intensityDistribution.zoneTempoThresholdMinutes)})</strong>
                 </div>
                 <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px' }}>
@@ -1503,7 +1502,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
 
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ color: 'var(--accent-red)' }}>Zone 5 (VO2 Max &gt; 175 bpm)</span>
+                  <span style={{ color: 'var(--accent-red)' }}>Zone 5 (VO2 Max ≥ {heartRateZones.zone5[0]} bpm)</span>
                   <strong>{running.intensityDistribution.zoneMaxPct}% ({formatMinutes(running.intensityDistribution.zoneMaxMinutes)})</strong>
                 </div>
                 <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px' }}>
@@ -1548,6 +1547,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
       <StatsMetricModal
         topic={infoTopic}
         trainingLoad={trainingLoad}
+        heartRateZones={heartRateZones}
         onClose={() => setInfoTopic(null)}
       />
 

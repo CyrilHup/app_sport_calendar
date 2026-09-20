@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { TrainingLoadStats } from '../services/statsEngine';
+import { AthleteHeartRateZones } from '../services/heartRateZones';
 
 export type StatsMetricTopic = 'acwr' | 'banister' | 'aei' | null;
 
@@ -26,9 +27,10 @@ interface StatsMetricModalProps {
   topic: StatsMetricTopic;
   onClose: () => void;
   trainingLoad?: TrainingLoadStats;
+  heartRateZones: AthleteHeartRateZones;
 }
 
-export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClose, trainingLoad }) => {
+export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClose, trainingLoad, heartRateZones }) => {
   if (!topic) return null;
 
   return (
@@ -621,7 +623,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Award size={16} color="var(--primary)" />
-                  Le rôle clé de la Zone 2 (&lt; 155 bpm)
+                  Le rôle clé de la Zone 2 (&lt; {heartRateZones.zone2[1]} bpm)
                 </div>
                 <p style={{ margin: 0 }}>
                   Consacrer au moins <strong>75% à 80%</strong> de vos kilomètres de course en Zone 2 d'endurance fondamentale est le seul moyen de maximiser l'AEI sans épuiser le système nerveux central.

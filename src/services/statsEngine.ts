@@ -17,6 +17,7 @@ import {
   QmtRacePrediction
 } from './racePredictorEngine';
 import { TRAINING_LOAD_WINDOWS } from './trainingModelConfig';
+import { AthleteHeartRateZones, calculateHeartRateZones } from './heartRateZones';
 export { DEFAULT_WEEKLY_TARGETS } from './trainingDefaults';
 
 // 100% Backward-compatible re-exports
@@ -136,6 +137,7 @@ export interface HeartRateStats {
 
 export interface FullStatsReport {
   scope: TimeRangeScope;
+  heartRateZones: AthleteHeartRateZones;
   global: GlobalStats;
   running: RunningStats;
   strength: StrengthStats;
@@ -202,6 +204,10 @@ export function computeFullStatsReport(
   includeBonusActivities: boolean = true,
   athlete?: { fcMax?: number; fcRest?: number }
 ): FullStatsReport {
+  const heartRateZones = calculateHeartRateZones(
+    athlete?.fcMax ?? GLOBAL_APP_CONFIG.ATHLETE_FC_MAX,
+    athlete?.fcRest ?? GLOBAL_APP_CONFIG.ATHLETE_FC_REST
+  );
   // Identify which activities are "Bonus" (unplanned non-prescribed activities)
   const bonusActIds = new Set<string>();
   for (const c of comparisons) {
@@ -720,11 +726,12 @@ export function computeFullStatsReport(
       cadenceCount++;
     }
 
-    // Heart rate zone breakdown
+    // Dashboard bands derived from the same personalized Karvonen zones used
+    // by planning and Garmin workout generation.
     if (r.avgHeartRate) {
-      if (r.avgHeartRate < 155) {
+      if (r.avgHeartRate < heartRateZones.zone2[1]) {
         z2Min += r.durationMinutes;
-      } else if (r.avgHeartRate <= 175) {
+      } else if (r.avgHeartRate < heartRateZones.zone5[0]) {
         zTempoMin += r.durationMinutes;
       } else {
         zMaxMin += r.durationMinutes;
@@ -928,6 +935,7 @@ export function computeFullStatsReport(
 
   return {
     scope,
+    heartRateZones,
     global,
     running,
     strength,

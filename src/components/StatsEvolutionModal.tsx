@@ -23,6 +23,7 @@ import { GarminActivity, GarminWellnessData } from '../types/garmin';
 import { TrainingLoadStats, formatMinutes, PLAN_START_DATE } from '../services/statsEngine';
 import { formatDateKey, parseLocalDate, addDays, getMondayWeekKey, getGarminLocalDateKey } from '../services/dateUtils';
 import { isTrailOrRunning } from '../services/activityClassifier';
+import { calculateHeartRateZones } from '../services/heartRateZones';
 
 export type EvolutionMetricType =
   | 'volume'
@@ -97,6 +98,8 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
   baselineRestingHr = 48,
   initialScope = 'plan'
 }) => {
+  const heartRateZones = calculateHeartRateZones(athleteFcMax, baselineRestingHr);
+  const zone2Ceiling = heartRateZones.zone2[1];
   const [scope, setScope] = useState<'week' | 'plan' | '4w' | 'all'>(initialScope);
   const [hoveredPoint, setHoveredPoint] = useState<PointCoord | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -318,7 +321,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
         u = "bpm";
         invBetter = false;
         refVal = athleteFcMax;
-        adv = `Votre FC Max calibrée est de ${athleteFcMax} bpm. Elle sert de référence pour borner vos zones d'intensité (Zone 2 < 155 bpm). Les séances d'endurance fondamentale ne doivent pas approcher ce plafond.`;
+        adv = `Votre FC Max calibrée est de ${athleteFcMax} bpm. Elle sert de référence pour borner vos zones d'intensité (Zone 2 < ${zone2Ceiling} bpm). Les séances d'endurance fondamentale ne doivent pas approcher ce plafond.`;
 
         const maxActs = filteredActivities.filter(a => (a.maxHeartRate || 0) > 130);
         for (const act of maxActs) {
@@ -442,7 +445,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
       maxSingleSessionKm: maxSingleRun,
       totalElevationGainM: totalElevationM
     };
-  }, [metric, filteredActivities, wellnessHistory, trainingLoad, athleteFcMax, baselineRestingHr, scope, mondayKey, sundayKey, planStart, d4w, todayKey]);
+  }, [metric, filteredActivities, wellnessHistory, trainingLoad, athleteFcMax, baselineRestingHr, zone2Ceiling, scope, mondayKey, sundayKey, planStart, d4w, todayKey]);
 
   // Statistiques calculées sur la série
   const stats = useMemo(() => {

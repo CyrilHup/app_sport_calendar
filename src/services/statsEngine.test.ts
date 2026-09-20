@@ -829,7 +829,47 @@ describe('statsEngine unit tests', () => {
     // Global weekly trend has exactly 3 outings
     expect(report.global.weeklyTrend[0].sessionCount).toBe(3);
   });
-});
 
+  it('uses the personalized Karvonen zones for both distribution and labels', () => {
+    const activities: GarminActivity[] = [
+      {
+        activityId: 'hr-160',
+        activityName: 'Course tempo basse',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-08T08:00:00',
+        durationMinutes: 40,
+        distanceKm: 7,
+        avgHeartRate: 160,
+        source: 'GARMIN_CONNECT'
+      },
+      {
+        activityId: 'hr-185',
+        activityName: 'Course intense',
+        activityType: 'RUNNING',
+        startTimeLocal: '2026-09-09T08:00:00',
+        durationMinutes: 20,
+        distanceKm: 4,
+        avgHeartRate: 185,
+        source: 'GARMIN_CONNECT'
+      }
+    ];
+
+    const report = computeFullStatsReport(
+      activities,
+      [],
+      [],
+      'all',
+      new Date('2026-09-10T12:00:00'),
+      true,
+      { fcMax: 180, fcRest: 60 }
+    );
+
+    expect(report.heartRateZones.zone2[1]).toBe(150);
+    expect(report.heartRateZones.zone5[0]).toBe(170);
+    expect(report.running.intensityDistribution.zone2EnduranceMinutes).toBe(0);
+    expect(report.running.intensityDistribution.zoneTempoThresholdMinutes).toBe(40);
+    expect(report.running.intensityDistribution.zoneMaxMinutes).toBe(20);
+  });
+});
 
 
