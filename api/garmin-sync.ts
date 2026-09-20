@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { normalizeGarminActivities } from '../src/server/garminActivityNormalizer';
+import { fetchGarminWellness, getGarminLocalDate } from '../src/server/garminWellness';
 import { sanitizeGarminText } from '../src/services/garminText';
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
 import { validateGarminRequest } from '../src/server/garminRequest';
@@ -322,14 +323,6 @@ export default async function handler(req: any, res: any) {
     // ----------------------------------------------------
     // WELLNESS & ACTIVITIES EXTRACTION (Concurrent with timeouts)
     // ----------------------------------------------------
-    const timeoutPromise = <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
-      new Promise<T>((resolve, reject) => {
-        const timer = setTimeout(() => resolve(fallback), ms);
-        promise.then(
-          value => { clearTimeout(timer); resolve(value); },
-          error => { clearTimeout(timer); reject(error); }
-        );
-      });
     const requiredWithin = <T>(promise: Promise<T>, ms: number): Promise<T> =>
       new Promise<T>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('Garmin activity page timed out.')), ms);
@@ -340,90 +333,9 @@ export default async function handler(req: any, res: any) {
       });
 
     let wellness: any = null;
-    const getLocalFallbackDate = () => {
-      try {
-        return new Intl.DateTimeFormat('fr-CA', {
-          timeZone: 'America/Montreal',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit'
-        }).format(new Date());
-      } catch {
-        return new Date().toISOString().slice(0, 10);
-      }
-    };
-    const todayStr = body.clientDate
-      ? body.clientDate
-      : getLocalFallbackDate();
-    const today = new Date(todayStr + 'T12:00:00');
+    const todayStr = body.clientDate || getGarminLocalDate();
 
     const syncMode = body.syncMode;
-
-    const fetchSleep = async () => {
-      try {
-        const sleepRes: any = await timeoutPromise(gc.getSleepData(today), 8000, null);
-        if (sleepRes?.dailySleepDTO) {
-          const dto = sleepRes.dailySleepDTO;
-          return {
-            score: dto.sleepScores?.overall?.value || dto.sleepScoreFeedback || undefined,
-            totalMinutes: dto.sleepTimeSeconds ? Math.round(dto.sleepTimeSeconds / 60) : 0,
-            deepMinutes: dto.deepSleepSeconds ? Math.round(dto.deepSleepSeconds / 60) : undefined,
-            remMinutes: dto.remSleepSeconds ? Math.round(dto.remSleepSeconds / 60) : undefined,
-            lightMinutes: dto.lightSleepSeconds ? Math.round(dto.lightSleepSeconds / 60) : undefined,
-            awakeMinutes: dto.awakeSleepSeconds ? Math.round(dto.awakeSleepSeconds / 60) : undefined,
-            qualityMessage: dto.sleepScores?.overall?.qualifierKey || undefined
-          };
-        }
-      } catch (sleepErr) {
-        console.warn('Could not fetch sleep data:', sleepErr);
-      }
-      return null;
-    };
-
-    const fetchHr = async () => {
-      try {
-        const hrRes: any = await timeoutPromise(gc.getHeartRate(today), 8000, null);
-        if (typeof hrRes?.restingHeartRate === 'number') {
-          return hrRes.restingHeartRate;
-        }
-      } catch (hrErr) {
-        console.warn('Could not fetch HR data:', hrErr);
-      }
-      return undefined;
-    };
-
-    const fetchHrv = async () => {
-      try {
-        const hrvRes: any = await timeoutPromise((gc.client as any).get(`https://connectapi.garmin.com/hrv-service/hrv/${todayStr}`), 8000, null);
-        if (hrvRes?.hrvSummary) {
-          const hs = hrvRes.hrvSummary;
-          return {
-            lastNightAvg: hs.lastNightAvg || undefined,
-            weeklyAvg: hs.weeklyAvg || undefined,
-            baselineLow: hs.baseline?.lowUpper || undefined,
-            baselineHigh: hs.baseline?.balancedLow || undefined,
-            status: hs.status || 'UNKNOWN'
-          };
-        }
-      } catch (hrvErr) {
-        console.warn('Could not fetch HRV data:', hrvErr);
-      }
-      return null;
-    };
-
-    const fetchReadiness = async () => {
-      try {
-        const trRes: any = await timeoutPromise((gc.client as any).get(`https://connectapi.garmin.com/metrics-service/metrics/trainingreadiness/${todayStr}`), 8000, null);
-        if (Array.isArray(trRes) && trRes.length > 0 && typeof trRes[0]?.score === 'number') {
-          return trRes[0].score;
-        } else if (typeof trRes?.score === 'number') {
-          return trRes.score;
-        }
-      } catch (trErr) {
-        console.warn('Could not fetch Training Readiness:', trErr);
-      }
-      return undefined;
-    };
 
     let nextOffset: number | null = null;
     let historyTruncated = false;
@@ -444,22 +356,11 @@ export default async function handler(req: any, res: any) {
     };
 
     const includeWellness = action === 'get-wellness' || syncMode !== 'full' || body.offset === 0;
-    const [sleepSummary, restingHeartRate, hrvSummary, trainingReadinessScore, acts] = await Promise.all([
-      includeWellness ? fetchSleep() : Promise.resolve(null),
-      includeWellness ? fetchHr() : Promise.resolve(null),
-      includeWellness ? fetchHrv() : Promise.resolve(null),
-      includeWellness ? fetchReadiness() : Promise.resolve(undefined),
+    const [wellnessResult, acts] = await Promise.all([
+      includeWellness ? fetchGarminWellness(gc, todayStr) : Promise.resolve(null),
       fetchActs()
     ]);
-
-    wellness = includeWellness ? {
-      date: todayStr,
-      sleep: sleepSummary,
-      restingHeartRate,
-      hrv: hrvSummary,
-      trainingReadinessScore,
-      syncedAt: new Date().toISOString()
-    } : null;
+    wellness = wellnessResult;
 
     if (action === 'get-wellness') {
       res.status(200).json({ success: true, wellness });

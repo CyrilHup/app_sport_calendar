@@ -73,6 +73,9 @@ in `src/services/garminAutoSyncService.ts`.
 - The Garmin activity normalizer accepts only records with a stable activity ID
   and parseable start time. It reports skipped malformed records as an incomplete
   sync instead of inventing random IDs or today's date.
+- Optional sleep, resting-heart-rate, HRV, and readiness calls are isolated in
+  `src/server/garminWellness.ts`. Each signal times out independently, so an
+  unavailable wellness endpoint cannot fail the required activity page.
 - `ICAL_FEED_URL` is a server-only variable; do not use a `VITE_` prefix for a URL
   containing a private calendar token.
 - `api/calendar.ts` is a public feed. It should not be used to publish a private
@@ -84,8 +87,10 @@ in `src/services/garminAutoSyncService.ts`.
 
 - Local activity, wellness, and override storage is intentionally shared on one
   device because this is a personal-use app, not a multi-account product.
-- `api/garmin-sync.ts`, `CalendarView.tsx`, `StatsDashboard.tsx`, and several other
-  views are still large and need feature-level decomposition with integration tests.
+- `CalendarView.tsx`, `StatsDashboard.tsx`, and several other views are still
+  large and need feature-level decomposition with integration tests. The Garmin
+  API handler is being decomposed into tested request, pagination, activity,
+  wellness, and replacement adapters.
 - Garmin Connect's installed client library has create/delete/schedule operations
   but no supported update operation. Legacy scheduled workouts without an exact
   stored Garmin ID still need manual handling; they are never guessed by title.
