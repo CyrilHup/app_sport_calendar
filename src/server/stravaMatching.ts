@@ -1,4 +1,4 @@
-import { GarminActivity } from '../types/garmin';
+import { GarminActivity } from '../types/garmin.js';
 
 export interface StravaActivitySummary {
   id: number | string;

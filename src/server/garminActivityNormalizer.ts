@@ -1,5 +1,5 @@
-import { GarminActivity } from '../types/garmin';
-import { classifyGarminActivityType } from '../services/activityClassifier';
+import { GarminActivity } from '../types/garmin.js';
+import { classifyGarminActivityType } from '../services/activityClassifier.js';
 
 const GENERIC_CARDIO_NAMES = new Set([
   'cardio', 'cardio training', 'indoor cardio', 'indoor_cardio', 'entraînement cardio'

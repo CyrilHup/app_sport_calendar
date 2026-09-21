@@ -1,4 +1,4 @@
-import { GarminWellnessData } from '../types/garmin';
+import { GarminWellnessData } from '../types/garmin.js';
 
 interface GarminWellnessClient {
   getSleepData(date: Date): Promise<any>;

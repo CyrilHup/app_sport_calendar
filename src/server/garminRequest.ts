@@ -1,4 +1,4 @@
-import { MAX_FULL_SYNC_ACTIVITIES } from './garminPagination';
+import { MAX_FULL_SYNC_ACTIVITIES } from './garminPagination.js';
 
 export type GarminAction = 'sync' | 'push-workout' | 'get-wellness';
 export type GarminSyncMode = 'full' | 'incremental';

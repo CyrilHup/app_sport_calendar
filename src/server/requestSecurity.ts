@@ -1,4 +1,4 @@
-import { getServerProductionOrigin } from '../services/productionOrigin';
+import { getServerProductionOrigin } from '../services/productionOrigin.js';
 
 export interface AuthenticatedRequestUser {
   id: string;

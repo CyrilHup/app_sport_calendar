@@ -1,4 +1,4 @@
-import { CalendarEvent } from './calendar';
+import { CalendarEvent } from './calendar.js';
 
 export type GarminActivityType =
   | 'RUNNING'

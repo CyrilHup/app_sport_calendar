@@ -1,13 +1,13 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
-import { getServerProductionOrigin } from '../src/services/productionOrigin';
-import { calculateElevationLossM, GarminActivityMatchInput, matchStravaActivities, StravaActivitySummary } from '../src/server/stravaMatching';
+import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
+import { getServerProductionOrigin } from '../src/services/productionOrigin.js';
+import { calculateElevationLossM, GarminActivityMatchInput, matchStravaActivities, StravaActivitySummary } from '../src/server/stravaMatching.js';
 import {
   deleteStravaConnection,
   getStravaConnection,
   StravaConnection,
   upsertStravaConnection
-} from '../src/server/stravaConnectionStore';
+} from '../src/server/stravaConnectionStore.js';
 
 const STRAVA_AUTH_URL = 'https://www.strava.com/oauth';
 // Keep the currently documented API base until Strava's announced hostname

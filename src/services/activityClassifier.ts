@@ -1,5 +1,5 @@
-import { GarminActivity, GarminActivityType } from '../types/garmin';
-import { CalendarEvent } from '../types/calendar';
+import { GarminActivity, GarminActivityType } from '../types/garmin.js';
+import { CalendarEvent } from '../types/calendar.js';
 
 export interface ActivityPredicateInput {
   activityType?: string;
@@ -417,4 +417,3 @@ export function getGarminExecutionBadge(
     icon: '⚡'
   };
 }
-

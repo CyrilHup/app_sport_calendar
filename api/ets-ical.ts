@@ -1,6 +1,6 @@
 // Authenticated proxy for the user's academic iCal feed.
-import { fetchRemoteIcalText, IcalFeedError, resolveRequestedIcalUrl } from '../src/server/icalFeedClient';
-import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
+import { fetchRemoteIcalText, IcalFeedError, resolveRequestedIcalUrl } from '../src/server/icalFeedClient.js';
+import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
 
 export default async function handler(req: any, res: any) {
   ensureResponseHelpers(res);
