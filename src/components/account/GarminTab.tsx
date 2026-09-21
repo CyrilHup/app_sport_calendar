@@ -18,8 +18,12 @@ import {
 import {
   Activity,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   FileUp,
   Gauge,
+  LogIn,
+  LogOut,
   RefreshCw,
   Watch
 } from 'lucide-react';
@@ -53,6 +57,11 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   const scheduleTimeout = useManagedTimeout();
   const {
     user,
+    isConfigured,
+    signIn,
+    signUp,
+    signInWithGoogle,
+    signOut,
     saveCloudGarminCredentials,
     clearCloudGarminCredentials,
     updateProfile
@@ -75,6 +84,13 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   const [stravaStatus, setStravaStatus] = useState<StravaStatus>({ success: true, connected: false });
   const [isStravaProcessing, setIsStravaProcessing] = useState(false);
   const [stravaSyncMsg, setStravaSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const [showSupabaseEmailForm, setShowSupabaseEmailForm] = useState(false);
+  const [supabaseSignUpMode, setSupabaseSignUpMode] = useState(false);
+  const [supabaseEmail, setSupabaseEmail] = useState('');
+  const [supabasePassword, setSupabasePassword] = useState('');
+  const [supabaseDisplayName, setSupabaseDisplayName] = useState('');
+  const [supabaseAuthMsg, setSupabaseAuthMsg] = useState<{ text: string; isError: boolean } | null>(null);
+  const [isSupabaseAuthProcessing, setIsSupabaseAuthProcessing] = useState(false);
 
   useEffect(() => {
     if (user?.user_metadata?.garmin_email) {
@@ -100,7 +116,11 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setStravaStatus({ success: true, connected: false });
+      setStravaSyncMsg(null);
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const callbackStatus = params.get('strava');
     const callbackError = params.get('strava_error');
@@ -118,6 +138,54 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     }
     void refreshStravaStatus();
   }, [user?.id]);
+
+  const handleSupabaseAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSupabaseAuthMsg(null);
+    setIsSupabaseAuthProcessing(true);
+
+    try {
+      const result = supabaseSignUpMode
+        ? await signUp(supabaseEmail.trim(), supabasePassword, supabaseDisplayName.trim())
+        : await signIn(supabaseEmail.trim(), supabasePassword);
+
+      if (result.error) {
+        setSupabaseAuthMsg({ text: result.error, isError: true });
+      } else {
+        setSupabasePassword('');
+        setSupabaseAuthMsg({
+          text: supabaseSignUpMode
+            ? 'Compte créé. Validez votre courriel si Supabase le demande, puis connectez-vous.'
+            : 'Connexion Supabase réussie. Vous pouvez maintenant lier Strava.',
+          isError: false
+        });
+      }
+    } catch (error) {
+      setSupabaseAuthMsg({
+        text: error instanceof Error ? error.message : 'Connexion Supabase impossible.',
+        isError: true
+      });
+    } finally {
+      setIsSupabaseAuthProcessing(false);
+    }
+  };
+
+  const handleSupabaseGoogleSignIn = async () => {
+    setSupabaseAuthMsg(null);
+    setIsSupabaseAuthProcessing(true);
+    const result = await signInWithGoogle();
+    if (result.error) {
+      setSupabaseAuthMsg({ text: result.error, isError: true });
+      setIsSupabaseAuthProcessing(false);
+    }
+  };
+
+  const handleSupabaseSignOut = async () => {
+    setIsSupabaseAuthProcessing(true);
+    await signOut();
+    setSupabaseAuthMsg(null);
+    setIsSupabaseAuthProcessing(false);
+  };
 
   const handleStravaElevationSync = async (activitiesToSync: GarminActivity[] = activities) => {
     if (!user) {
@@ -467,6 +535,156 @@ export const GarminTab: React.FC<GarminTabProps> = ({
             </span>
           </button>
         </div>
+      </div>
+
+      {/* Supabase account used for cloud sync and Strava OAuth */}
+      <div
+        style={{
+          background: 'rgba(139, 92, 246, 0.08)',
+          border: '1px solid rgba(139, 92, 246, 0.28)',
+          borderRadius: 'var(--radius-sm)',
+          padding: '14px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10
+        }}
+      >
+        {user ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <CheckCircle2 size={18} color="#a78bfa" />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>Compte Supabase connecté</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>{user.email || 'Compte authentifié'}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => void handleSupabaseSignOut()}
+                disabled={isSupabaseAuthProcessing}
+                style={{ fontSize: '0.72rem', padding: '5px 9px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+              >
+                <LogOut size={12} />
+                Déconnexion
+              </button>
+            </div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+              Ce compte permet la synchronisation cloud et autorise la liaison sécurisée avec Strava.
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <LogIn size={18} color="#a78bfa" />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>Connexion Supabase requise</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Connectez-vous pour lier Strava et utiliser la synchronisation cloud.
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void handleSupabaseGoogleSignIn()}
+              disabled={!isConfigured || isSupabaseAuthProcessing}
+              style={{ justifyContent: 'center', padding: '8px 12px', fontSize: '0.78rem', background: '#4285F4', borderColor: '#4285F4' }}
+            >
+              <span>{isSupabaseAuthProcessing ? 'Connexion…' : 'Continuer avec Google'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setShowSupabaseEmailForm(previous => !previous);
+                setSupabaseAuthMsg(null);
+              }}
+              aria-expanded={showSupabaseEmailForm}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted)',
+                fontSize: '0.72rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4
+              }}
+            >
+              <span>Ou utiliser courriel et mot de passe</span>
+              {showSupabaseEmailForm ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+
+            {showSupabaseEmailForm && (
+              <form onSubmit={handleSupabaseAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
+                {supabaseSignUpMode && (
+                  <input
+                    type="text"
+                    placeholder="Nom ou prénom"
+                    value={supabaseDisplayName}
+                    onChange={e => setSupabaseDisplayName(e.target.value)}
+                    required
+                    style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
+                  />
+                )}
+                <input
+                  type="email"
+                  required
+                  placeholder="Courriel"
+                  value={supabaseEmail}
+                  onChange={e => setSupabaseEmail(e.target.value)}
+                  style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
+                />
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="Mot de passe"
+                  value={supabasePassword}
+                  onChange={e => setSupabasePassword(e.target.value)}
+                  style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
+                />
+                <button type="submit" className="btn-secondary" disabled={!isConfigured || isSupabaseAuthProcessing} style={{ justifyContent: 'center', padding: '7px' }}>
+                  {isSupabaseAuthProcessing ? 'Chargement…' : supabaseSignUpMode ? "S'inscrire" : 'Se connecter'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupabaseSignUpMode(previous => !previous);
+                    setSupabaseAuthMsg(null);
+                  }}
+                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.72rem', cursor: 'pointer' }}
+                >
+                  {supabaseSignUpMode ? 'Déjà un compte ? Se connecter' : "Pas encore de compte ? S'inscrire"}
+                </button>
+              </form>
+            )}
+
+            {!isConfigured && (
+              <div style={{ color: '#fbbf24', fontSize: '0.7rem' }}>
+                Supabase n’est pas configuré dans les variables publiques de l’application.
+              </div>
+            )}
+            {supabaseAuthMsg && (
+              <div
+                role="status"
+                style={{
+                  color: supabaseAuthMsg.isError ? '#f87171' : '#34d399',
+                  background: supabaseAuthMsg.isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                  padding: '6px 9px',
+                  borderRadius: 4,
+                  fontSize: '0.72rem'
+                }}
+              >
+                {supabaseAuthMsg.text}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Strava terrain enrichment */}
