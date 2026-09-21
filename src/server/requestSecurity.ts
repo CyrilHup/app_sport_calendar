@@ -1,4 +1,4 @@
-import { getProductionOrigin } from '../services/runtimeUrls';
+import { getServerProductionOrigin } from '../services/productionOrigin';
 
 export interface AuthenticatedRequestUser {
   id: string;
@@ -35,7 +35,7 @@ function configuredAllowedOrigins(): Set<string> {
     .filter(Boolean);
 
   return new Set([
-    getProductionOrigin(),
+    getServerProductionOrigin(),
     'capacitor://localhost',
     'http://localhost',
     'http://localhost:5173',

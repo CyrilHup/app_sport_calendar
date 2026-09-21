@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity';
-import { getProductionOrigin } from '../src/services/runtimeUrls';
+import { getServerProductionOrigin } from '../src/services/productionOrigin';
 import { calculateElevationLossM, GarminActivityMatchInput, matchStravaActivities, StravaActivitySummary } from '../src/server/stravaMatching';
 import {
   deleteStravaConnection,
@@ -69,7 +69,7 @@ function readQuery(req: any): Record<string, string> {
 }
 
 function getStravaRedirectUri(): string {
-  return env('STRAVA_REDIRECT_URI') || `${getProductionOrigin()}/api/strava-sync?action=callback`;
+  return env('STRAVA_REDIRECT_URI') || `${getServerProductionOrigin()}/api/strava-sync?action=callback`;
 }
 
 function getStravaConfig(): { clientId: string; clientSecret: string; stateSecret: string } {
@@ -128,13 +128,13 @@ function safeReturnOrigin(req: any): string {
     .map(value => value.trim())
     .filter(Boolean);
   const allowed = new Set([
-    getProductionOrigin(),
+    getServerProductionOrigin(),
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'capacitor://localhost',
     ...configuredOrigins
   ]);
-  return allowed.has(requestedOrigin) ? requestedOrigin : getProductionOrigin();
+  return allowed.has(requestedOrigin) ? requestedOrigin : getServerProductionOrigin();
 }
 
 function redirectToApp(res: any, origin: string, status: string, details?: string): void {
@@ -360,7 +360,7 @@ export default async function handler(req: any, res: any) {
   // OAuth callback is intentionally unauthenticated: its signed state binds
   // the callback to the user who initiated the flow.
   if (req.method === 'GET' && action === 'callback') {
-    const returnOrigin = getProductionOrigin();
+    const returnOrigin = getServerProductionOrigin();
     try {
       const error = query.error;
       const rawState = query.state;

@@ -11,7 +11,9 @@ import { validateGarminRequest } from '../src/server/garminRequest';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination';
 import { finishWorkoutReplacement, verifyReplaceableWorkout } from '../src/server/garminWorkoutReplacement';
 
-const require = createRequire(import.meta.url);
+// Resolve from the project root so the handler works in both Vercel's ESM
+// build and local/CommonJS middleware without relying on import.meta.url.
+const require = createRequire(path.join(process.cwd(), 'package.json'));
 let garminPkg: any;
 try {
   garminPkg = require('@flow-js/garmin-connect');
