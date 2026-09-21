@@ -844,6 +844,7 @@ export const App: React.FC = () => {
           onClose={() => setAccountModal(prev => ({ ...prev, isOpen: false }))}
           initialTab={accountModal.tab}
           garminState={garminState}
+          garminActivities={garminActivities}
           onUpdateGarminState={handleUpdateGarminState}
           onActivitiesSynced={handleActivitiesSynced}
           calendarEvents={allEvents}

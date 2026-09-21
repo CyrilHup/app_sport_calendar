@@ -465,7 +465,17 @@ export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
   return {
     ...a,
     activityName: actName,
-    activityType: type
+    activityType: type,
+    // Backfill provenance for activities saved before the Strava enrichment
+    // fields existed. Corrected activities already carry their original
+    // Garmin value and must keep it untouched.
+    garminElevationGainM: a.garminElevationGainM ?? (
+      a.elevationSource === 'STRAVA_CORRECTED' ? undefined : a.elevationGainM
+    ),
+    garminElevationLossM: a.garminElevationLossM ?? (
+      a.elevationSource === 'STRAVA_CORRECTED' ? undefined : a.elevationLossM
+    ),
+    elevationSource: a.elevationSource || (a.source === 'GPX_IMPORT' ? 'GPX_IMPORT' : 'GARMIN_CONNECT')
   };
 }
 

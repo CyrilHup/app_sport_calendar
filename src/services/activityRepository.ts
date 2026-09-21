@@ -6,6 +6,36 @@ function nonEmptyFields(activity: GarminActivity): Partial<GarminActivity> {
   ) as Partial<GarminActivity>;
 }
 
+function isStravaElevation(activity?: Partial<GarminActivity>): boolean {
+  return activity?.elevationSource === 'STRAVA_CORRECTED' || Boolean(activity?.stravaActivityId);
+}
+
+function mergeActivity(existing: GarminActivity, incoming: GarminActivity): GarminActivity {
+  const merged = {
+    ...nonEmptyFields(existing),
+    ...nonEmptyFields(incoming)
+  } as GarminActivity;
+
+  // Garmin remains the canonical activity source, but a corrected Strava
+  // elevation is authoritative for the terrain fields. A later Garmin sync
+  // must not silently restore the less useful value.
+  const existingHasStravaElevation = isStravaElevation(existing);
+  const incomingHasStravaElevation = isStravaElevation(incoming);
+  if (existingHasStravaElevation && !incomingHasStravaElevation) {
+    merged.elevationGainM = existing.elevationGainM;
+    merged.elevationLossM = existing.elevationLossM;
+    merged.elevationSource = existing.elevationSource;
+    merged.elevationUpdatedAt = existing.elevationUpdatedAt;
+    merged.stravaActivityId = existing.stravaActivityId;
+  }
+
+  // Preserve the original Garmin values even when a partial response arrives
+  // from Garmin Connect after the Strava enrichment.
+  merged.garminElevationGainM = existing.garminElevationGainM ?? incoming.garminElevationGainM;
+  merged.garminElevationLossM = existing.garminElevationLossM ?? incoming.garminElevationLossM;
+  return merged;
+}
+
 /**
  * Deterministic merge used at every Garmin/local/cloud boundary.
  * Sources are ordered oldest to newest. Later non-empty values win conflicts;
@@ -21,10 +51,7 @@ export function mergeGarminActivities(...sources: GarminActivity[][]): GarminAct
         byId.set(activity.activityId, activity);
         continue;
       }
-      byId.set(activity.activityId, {
-        ...nonEmptyFields(existing),
-        ...nonEmptyFields(activity)
-      } as GarminActivity);
+      byId.set(activity.activityId, mergeActivity(existing, activity));
     }
   }
 

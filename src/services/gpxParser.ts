@@ -91,6 +91,8 @@ export function parseGPXString(gpxText: string, fileName: string): GarminActivit
     durationMinutes,
     distanceKm: distanceKm > 0 ? distanceKm : undefined,
     elevationGainM: elevationGainM > 0 ? elevationGainM : undefined,
+    garminElevationGainM: elevationGainM > 0 ? elevationGainM : undefined,
+    elevationSource: 'GPX_IMPORT',
     calories: Math.round(durationMinutes * 8.5),
     source: 'GPX_IMPORT'
   };

@@ -22,6 +22,7 @@ interface AccountModalProps {
   onClose: () => void;
   initialTab?: AccountModalTab;
   garminState: GarminSyncState;
+  garminActivities: GarminActivity[];
   onUpdateGarminState: (state: GarminSyncState) => void;
   onActivitiesSynced: (activities: GarminActivity[]) => void;
   calendarEvents: CalendarEvent[];
@@ -35,6 +36,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onClose,
   initialTab = 'profile',
   garminState,
+  garminActivities,
   onUpdateGarminState,
   onActivitiesSynced,
   calendarEvents,
@@ -226,6 +228,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
           {activeTab === 'garmin' && (
             <GarminTab
               garminState={garminState}
+              activities={garminActivities}
               onUpdateGarminState={onUpdateGarminState}
               onActivitiesSynced={onActivitiesSynced}
               onRefreshAll={onRefreshAll}

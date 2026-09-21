@@ -68,6 +68,34 @@ describe('canonical data pipeline helpers', () => {
     expect(merged.avgCadence).toBe(174);
   });
 
+  it('keeps corrected Strava elevation when Garmin is synchronized again', () => {
+    const garmin = activity({
+      elevationGainM: 110,
+      elevationLossM: 105,
+      garminElevationGainM: 110,
+      garminElevationLossM: 105,
+      elevationSource: 'GARMIN_CONNECT'
+    });
+    const corrected = activity({
+      elevationGainM: 413,
+      elevationLossM: 398,
+      garminElevationGainM: 110,
+      garminElevationLossM: 105,
+      elevationSource: 'STRAVA_CORRECTED',
+      stravaActivityId: 'strava-1',
+      elevationUpdatedAt: '2026-09-20T12:00:00.000Z'
+    });
+
+    const [afterEnrichment] = mergeGarminActivities([garmin], [corrected]);
+    const [afterGarminRefresh] = mergeGarminActivities([afterEnrichment], [garmin]);
+
+    expect(afterGarminRefresh.elevationGainM).toBe(413);
+    expect(afterGarminRefresh.elevationLossM).toBe(398);
+    expect(afterGarminRefresh.elevationSource).toBe('STRAVA_CORRECTED');
+    expect(afterGarminRefresh.garminElevationGainM).toBe(110);
+    expect(afterGarminRefresh.stravaActivityId).toBe('strava-1');
+  });
+
   it('selects one deduplicated day view from activities and comparisons', () => {
     const actual = activity();
     const comparison: ActivityComparison = {

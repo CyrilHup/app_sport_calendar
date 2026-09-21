@@ -105,6 +105,24 @@ CREATE POLICY "Users manage own settings"
   ON public.user_settings FOR ALL 
   USING (auth.uid() = user_id);
 
+-- 3b. Connexion Strava côté serveur.
+-- Les jetons OAuth ne sont jamais exposés au client : la clé service-role
+-- utilisée par l'API serveur contourne cette RLS, tandis qu'aucune politique
+-- client n'est créée sur cette table.
+CREATE TABLE IF NOT EXISTS public.strava_connections (
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
+  strava_athlete_id TEXT NOT NULL,
+  athlete_name TEXT,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  scope TEXT,
+  last_sync_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.strava_connections ENABLE ROW LEVEL SECURITY;
+
 -- 4. Table des Données Wellness (FC repos quotidienne, VRC, Sommeil)
 CREATE TABLE IF NOT EXISTS public.wellness (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
