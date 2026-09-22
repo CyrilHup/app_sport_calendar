@@ -34,7 +34,7 @@ export interface GarminTabProps {
   activities: GarminActivity[];
   onUpdateGarminState: (state: GarminSyncState) => void;
   onActivitiesSynced: (activities: GarminActivity[]) => void;
-  onRefreshAll: () => void;
+  onRefreshFromSyncedGarmin: () => void;
   onUpdateFcMax?: (fcMax: number) => void;
 }
 
@@ -43,7 +43,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   activities,
   onUpdateGarminState,
   onActivitiesSynced,
-  onRefreshAll,
+  onRefreshFromSyncedGarmin,
   onUpdateFcMax
 }) => {
   const scheduleTimeout = useManagedTimeout();
@@ -187,7 +187,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
         isError: false
       });
 
-      onRefreshAll();
+      onRefreshFromSyncedGarmin();
     } else {
       // Any partial sync can still return valid activities. Expose them without
       // presenting the overall Garmin sync as complete.

@@ -1,6 +1,17 @@
+export interface RefreshRequest {
+  manual?: boolean;
+  /** False when Garmin activities were just fetched by the manual full-history flow. */
+  refreshGarmin?: boolean;
+}
+
+export interface EffectiveRefreshRequest {
+  manual: boolean;
+  refreshGarmin: boolean;
+}
+
 export interface LatestRerunCoordinator {
-  run(manual?: boolean): Promise<void>;
-  setWorker(worker: (manual: boolean) => Promise<void>): void;
+  run(request?: RefreshRequest): Promise<void>;
+  setWorker(worker: (request: EffectiveRefreshRequest) => Promise<void>): void;
   isRunning(): boolean;
 }
 
@@ -9,7 +20,7 @@ export interface LatestRerunCoordinator {
  * follow-up run. A manual request is never lost when it arrives during a run.
  */
 export function createLatestRerunCoordinator(
-  initialWorker: (manual: boolean) => Promise<void>,
+  initialWorker: (request: EffectiveRefreshRequest) => Promise<void>,
   options: {
     onRunningChange?: (running: boolean) => void;
     onError?: (error: unknown) => void;
@@ -17,8 +28,7 @@ export function createLatestRerunCoordinator(
 ): LatestRerunCoordinator {
   let worker = initialWorker;
   let active: Promise<void> | null = null;
-  let rerunQueued = false;
-  let manualQueued = false;
+  let queued: EffectiveRefreshRequest | null = null;
 
   return {
     setWorker(nextWorker) {
@@ -29,26 +39,25 @@ export function createLatestRerunCoordinator(
       return active !== null;
     },
 
-    run(manual = false) {
-      manualQueued ||= manual;
-      if (active) {
-        rerunQueued = true;
-        return active;
-      }
+    run(request = {}) {
+      const incoming = { manual: request.manual === true, refreshGarmin: request.refreshGarmin !== false };
+      queued = queued
+        ? { manual: queued.manual || incoming.manual, refreshGarmin: queued.refreshGarmin || incoming.refreshGarmin }
+        : incoming;
+      if (active) return active;
 
       active = (async () => {
         options.onRunningChange?.(true);
         try {
-          do {
-            rerunQueued = false;
-            const currentManual = manualQueued;
-            manualQueued = false;
+          while (queued) {
+            const current = queued;
+            queued = null;
             try {
-              await worker(currentManual);
+              await worker(current);
             } catch (error) {
               options.onError?.(error);
             }
-          } while (rerunQueued);
+          }
         } finally {
           active = null;
           options.onRunningChange?.(false);

@@ -27,6 +27,7 @@ interface AccountModalProps {
   onActivitiesSynced: (activities: GarminActivity[]) => void;
   calendarEvents: CalendarEvent[];
   onRefreshAll: () => void;
+  onRefreshFromSyncedGarmin: () => void;
   isRecharging: boolean;
   lastSyncTime?: string;
 }
@@ -41,6 +42,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onActivitiesSynced,
   calendarEvents,
   onRefreshAll,
+  onRefreshFromSyncedGarmin,
   isRecharging,
   lastSyncTime
 }) => {
@@ -231,7 +233,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               activities={garminActivities}
               onUpdateGarminState={onUpdateGarminState}
               onActivitiesSynced={onActivitiesSynced}
-              onRefreshAll={onRefreshAll}
+              onRefreshFromSyncedGarmin={onRefreshFromSyncedGarmin}
             />
           )}
 

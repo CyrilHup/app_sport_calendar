@@ -10,16 +10,16 @@ function deferred() {
 describe('createLatestRerunCoordinator', () => {
   it('coalesces concurrent requests into one latest rerun', async () => {
     const first = deferred();
-    const calls: boolean[] = [];
-    const worker = vi.fn(async (manual: boolean) => {
-      calls.push(manual);
+    const calls: Array<{ manual: boolean; refreshGarmin: boolean }> = [];
+    const worker = vi.fn(async request => {
+      calls.push(request);
       if (calls.length === 1) await first.promise;
     });
     const coordinator = createLatestRerunCoordinator(worker);
 
-    const active = coordinator.run(false);
-    const concurrent = coordinator.run(false);
-    coordinator.run(false);
+    const active = coordinator.run();
+    const concurrent = coordinator.run();
+    coordinator.run();
 
     expect(concurrent).toBe(active);
     expect(worker).toHaveBeenCalledTimes(1);
@@ -27,23 +27,49 @@ describe('createLatestRerunCoordinator', () => {
     await active;
 
     expect(worker).toHaveBeenCalledTimes(2);
-    expect(calls).toEqual([false, false]);
+    expect(calls).toEqual([
+      { manual: false, refreshGarmin: true },
+      { manual: false, refreshGarmin: true }
+    ]);
   });
 
   it('preserves a manual request queued during an automatic refresh', async () => {
     const first = deferred();
-    const calls: boolean[] = [];
-    const coordinator = createLatestRerunCoordinator(async manual => {
-      calls.push(manual);
+    const calls: Array<{ manual: boolean; refreshGarmin: boolean }> = [];
+    const coordinator = createLatestRerunCoordinator(async request => {
+      calls.push(request);
       if (calls.length === 1) await first.promise;
     });
 
-    const active = coordinator.run(false);
-    coordinator.run(true);
+    const active = coordinator.run();
+    coordinator.run({ manual: true, refreshGarmin: false });
     first.resolve();
     await active;
 
-    expect(calls).toEqual([false, true]);
+    expect(calls).toEqual([
+      { manual: false, refreshGarmin: true },
+      { manual: true, refreshGarmin: false }
+    ]);
+  });
+
+  it('keeps a Garmin fetch when any concurrent request requires fresh data', async () => {
+    const first = deferred();
+    const calls: Array<{ manual: boolean; refreshGarmin: boolean }> = [];
+    const coordinator = createLatestRerunCoordinator(async request => {
+      calls.push(request);
+      if (calls.length === 1) await first.promise;
+    });
+
+    const active = coordinator.run({ refreshGarmin: false });
+    coordinator.run({ manual: true, refreshGarmin: false });
+    coordinator.run();
+    first.resolve();
+    await active;
+
+    expect(calls).toEqual([
+      { manual: false, refreshGarmin: false },
+      { manual: true, refreshGarmin: true }
+    ]);
   });
 
   it('releases the lock after errors and reports running state', async () => {

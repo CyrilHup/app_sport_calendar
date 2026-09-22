@@ -27,7 +27,7 @@ import { getLocalSyncTimestamp, markLocalSyncUpdated, setLocalSyncTimestamp, sho
 import { syncCurrentWeekWorkoutsToGarmin } from './services/garminAutoSyncService';
 import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } from './services/storageService';
 import { SyncErrorModal, SyncErrorInfo } from './components/SyncErrorModal';
-import { createLatestRerunCoordinator, LatestRerunCoordinator } from './services/asyncCoordinator';
+import { createLatestRerunCoordinator, LatestRerunCoordinator, RefreshRequest } from './services/asyncCoordinator';
 import { createCloudMutationQueue, type CloudMutationDomain } from './services/cloudMutationQueue';
 import { isValidGarminMaxHeartRate } from './services/garminTrainingPolicy';
 import { registerAutoRefreshTriggers } from './services/autoRefreshTriggers';
@@ -155,8 +155,8 @@ export const App: React.FC = () => {
     mutation: () => Promise<boolean>
   ): Promise<boolean> => cloudMutationQueueRef.current!.enqueue(domain, mutation), []);
 
-  const autoRechargeAll = useCallback((isManualTrigger = false): Promise<void> => {
-    return refreshCoordinatorRef.current!.run(isManualTrigger);
+  const autoRechargeAll = useCallback((request: RefreshRequest = {}): Promise<void> => {
+    return refreshCoordinatorRef.current!.run(request);
   }, []);
 
   const retryCloudSync = async () => {
@@ -354,7 +354,7 @@ export const App: React.FC = () => {
   const currentPeriodContext = getPeriodizationContext(referenceDate, appConfig);
 
   // Function to recharge both ÉTS iCal and Garmin Connect (Mobile & Web)
-  refreshCoordinatorRef.current.setWorker(async (isManualTrigger = false) => {
+  refreshCoordinatorRef.current.setWorker(async ({ manual: isManualTrigger, refreshGarmin }) => {
     const snapshot = appStateRef.current;
     const referenceDate = new Date();
     const { user, profile, garminActivities } = snapshot;
@@ -399,7 +399,7 @@ export const App: React.FC = () => {
       saveGarminCredentials(creds);
     }
 
-    if (!shareSlug && (!creds?.email || !creds?.password)) {
+    if (refreshGarmin && !shareSlug && (!creds?.email || !creds?.password)) {
       // Si aucun identifiant n'est renseigné et que l'utilisateur a cliqué sur Synchro
       if (isManualTrigger) {
         setSyncError({
@@ -409,7 +409,7 @@ export const App: React.FC = () => {
           isMissingCreds: true
         });
       }
-    } else if (!shareSlug) {
+    } else if (refreshGarmin && !shareSlug) {
       try {
         // Synchronisation incrémentielle systématique des activités récentes et wellness
         const result = await syncWithGarminAPI(creds || undefined, { mode: 'incremental' });
@@ -524,8 +524,11 @@ export const App: React.FC = () => {
 
   });
 
+  const hasInitializedProfileRefreshRef = useRef(false);
   useEffect(() => {
-    autoRechargeAll();
+    const refreshGarmin = !hasInitializedProfileRefreshRef.current;
+    hasInitializedProfileRefreshRef.current = true;
+    void autoRechargeAll({ refreshGarmin });
   }, [
     profile?.icalUrl,
     profile?.homeAddress,
@@ -706,7 +709,7 @@ export const App: React.FC = () => {
         garminActivities={garminActivities}
         referenceDate={referenceDate}
         onOpenAccountModal={handleOpenAccountModal}
-        onRefreshAll={() => autoRechargeAll(true)}
+        onRefreshAll={() => autoRechargeAll({ manual: true })}
         isRecharging={isRecharging}
         lastSyncTime={lastSyncTime}
         userDisplayName={profile?.displayName}
@@ -756,7 +759,7 @@ export const App: React.FC = () => {
           weeklyStats={weeklyStats}
           comparisons={comparisons}
           onOpenAccountModal={handleOpenAccountModal}
-          onRefreshAll={() => autoRechargeAll(true)}
+          onRefreshAll={() => autoRechargeAll({ manual: true })}
           isRecharging={isRecharging}
           lastSyncTime={lastSyncTime}
           onSelectPeriodizationTab={() => setActiveTab('periodization')}
@@ -849,7 +852,8 @@ export const App: React.FC = () => {
           onUpdateGarminState={handleUpdateGarminState}
           onActivitiesSynced={handleActivitiesSynced}
           calendarEvents={allEvents}
-          onRefreshAll={() => autoRechargeAll(true)}
+          onRefreshAll={() => autoRechargeAll({ manual: true })}
+          onRefreshFromSyncedGarmin={() => autoRechargeAll({ manual: true, refreshGarmin: false })}
           isRecharging={isRecharging}
           lastSyncTime={lastSyncTime}
         />
@@ -858,7 +862,7 @@ export const App: React.FC = () => {
         <SyncErrorModal
           error={syncError}
           onClose={() => setSyncError(null)}
-          onRetry={() => autoRechargeAll(true)}
+          onRetry={() => autoRechargeAll({ manual: true })}
           onOpenGarminSettings={() => {
             setSyncError(null);
             handleOpenAccountModal('garmin');
