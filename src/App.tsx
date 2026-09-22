@@ -12,7 +12,8 @@ import { getDynamicAthleteProfile, loadGarminCredentials, loadGarminCredentialsA
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
-import { buildOverridesFromActions, clearAdaptiveOverrides, loadAdaptiveOverrides, saveAdaptiveOverrides } from './services/adaptivePlanEngine';
+import { buildOverridesFromActions, loadAdaptivePlanState, saveAdaptivePlanState } from './services/adaptivePlanEngine';
+import { parseAdaptivePlanState, serializeAdaptivePlanState, WeeklyDecision } from './services/adaptivePlanStore';
 import { buildEffectiveCalendar, selectCalendarEventsById } from './services/calendarPipeline';
 import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
 import { isTrailOrRunning } from './services/activityClassifier';
@@ -52,7 +53,10 @@ export const App: React.FC = () => {
   }, []);
   const [baseCalendar, setBaseCalendar] = useState<{ schedules: DailySchedule[]; allEvents: CalendarEvent[] }>({ schedules: [], allEvents: [] });
   const [postponeOverrides, setPostponeOverrides] = useState<Record<string, WorkoutPostponeOverride>>(loadPostponeOverrides());
-  const [adaptiveOverrides, setAdaptiveOverrides] = useState<Record<string, AdaptiveWorkoutOverride>>(loadAdaptiveOverrides());
+  const [initialAdaptiveState] = useState(loadAdaptivePlanState);
+  const [adaptiveOverrides, setAdaptiveOverrides] = useState<Record<string, AdaptiveWorkoutOverride>>(initialAdaptiveState.overrides);
+  const [weeklyDecisions, setWeeklyDecisions] = useState<Record<string, WeeklyDecision>>(initialAdaptiveState.weeklyDecisions);
+  const [hydratedAdaptiveUserId, setHydratedAdaptiveUserId] = useState<string | null>(null);
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
   const [baselineFcRest, setBaselineFcRest] = useState(getBaselineRestingHeartRate());
@@ -110,7 +114,8 @@ export const App: React.FC = () => {
     garminState,
     manualPairs,
     postponeOverrides,
-    adaptiveOverrides
+    adaptiveOverrides,
+    weeklyDecisions
   });
   appStateRef.current = {
     user,
@@ -119,8 +124,12 @@ export const App: React.FC = () => {
     garminState,
     manualPairs,
     postponeOverrides,
-    adaptiveOverrides
+    adaptiveOverrides,
+    weeklyDecisions
   };
+
+  const adaptivePlanPayload = (overrides: Record<string, AdaptiveWorkoutOverride>, decisions: Record<string, WeeklyDecision>) =>
+    JSON.parse(serializeAdaptivePlanState({ overrides, weeklyDecisions: decisions })) as Record<string, unknown>;
 
   const refreshCoordinatorRef = useRef<LatestRerunCoordinator | null>(null);
   if (!refreshCoordinatorRef.current) {
@@ -177,7 +186,7 @@ export const App: React.FC = () => {
           ));
         } else if (domain === 'adaptiveOverrides') {
           await enqueueCloudMutation(domain, () => syncOverridesToCloud(userId, {
-            adaptiveOverrides: appStateRef.current.adaptiveOverrides,
+            adaptiveOverrides: adaptivePlanPayload(appStateRef.current.adaptiveOverrides, appStateRef.current.weeklyDecisions),
             adaptiveUpdatedAt: getLocalSyncTimestamp(domain) || markLocalSyncUpdated(domain)
           }));
         } else if (domain === 'postponeOverrides') {
@@ -302,23 +311,25 @@ export const App: React.FC = () => {
         try {
           const cloudOverrides = await fetchOverridesFromCloud(user.id);
           if (cancelled) return;
-          const localAdaptive = loadAdaptiveOverrides();
+          const localAdaptive = loadAdaptivePlanState();
           const localPostpones = loadPostponeOverrides();
           const localAdaptiveUpdatedAt = getLocalSyncTimestamp('adaptiveOverrides');
           const localPostponeUpdatedAt = getLocalSyncTimestamp('postponeOverrides');
 
           if (cloudOverrides && shouldAdoptCloudValue(cloudOverrides.adaptiveOverrides.updatedAt, localAdaptiveUpdatedAt)) {
-            const value = cloudOverrides.adaptiveOverrides.value as Record<string, AdaptiveWorkoutOverride>;
-            appStateRef.current.adaptiveOverrides = value;
-            setAdaptiveOverrides(value);
-            saveAdaptiveOverrides(value);
+            const value = parseAdaptivePlanState(cloudOverrides.adaptiveOverrides.value);
+            appStateRef.current.adaptiveOverrides = value.overrides;
+            appStateRef.current.weeklyDecisions = value.weeklyDecisions;
+            setAdaptiveOverrides(value.overrides);
+            setWeeklyDecisions(value.weeklyDecisions);
+            saveAdaptivePlanState(value);
             if (cloudOverrides.adaptiveOverrides.updatedAt) {
               setLocalSyncTimestamp('adaptiveOverrides', cloudOverrides.adaptiveOverrides.updatedAt);
             }
-          } else if (Object.keys(localAdaptive).length > 0 || localAdaptiveUpdatedAt) {
+          } else if (Object.keys(localAdaptive.overrides).length > 0 || Object.keys(localAdaptive.weeklyDecisions).length > 0 || localAdaptiveUpdatedAt) {
             const updatedAt = localAdaptiveUpdatedAt || markLocalSyncUpdated('adaptiveOverrides');
             await enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
-              adaptiveOverrides: localAdaptive,
+              adaptiveOverrides: adaptivePlanPayload(localAdaptive.overrides, localAdaptive.weeklyDecisions),
               adaptiveUpdatedAt: updatedAt
             }));
           }
@@ -343,7 +354,10 @@ export const App: React.FC = () => {
         }
 
         // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
-        if (!cancelled) await autoRechargeAll();
+        if (!cancelled) {
+          await autoRechargeAll();
+          if (!cancelled) setHydratedAdaptiveUserId(user.id);
+        }
       })().catch(error => {
         if (!cancelled) console.warn('Could not hydrate account data:', error);
       });
@@ -630,42 +644,43 @@ export const App: React.FC = () => {
 
   const handleApplyAdaptivePlan = (actions: AdaptiveWorkoutAction[]) => {
     const currentMonday = getMondayOfWeek(referenceDate);
+    const weekStart = formatDateKey(currentMonday);
+    if (appStateRef.current.weeklyDecisions[weekStart]) return;
     const activeWeekDates: string[] = [];
-    // Couvre l'ensemble de l'horizon actif de 14 jours (semaine courante + semaine suivante)
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 7; i++) {
       const d = new Date(currentMonday);
       d.setDate(d.getDate() + i);
       activeWeekDates.push(formatDateKey(d));
     }
 
+    const now = new Date();
+    const protectedIds = new Set(allEvents
+      .filter(event => new Date(event.startDate).getTime() <= now.getTime())
+      .map(event => event.id));
+    for (const comparison of comparisons) {
+      if (comparison.actualActivity && comparison.plannedEvent) protectedIds.add(comparison.plannedEvent.id);
+    }
     const overrides = buildOverridesFromActions(
       actions,
       appStateRef.current.adaptiveOverrides,
       formatDateKey(referenceDate),
-      activeWeekDates
+      activeWeekDates,
+      protectedIds
     );
+    const decisions = {
+      ...appStateRef.current.weeklyDecisions,
+      [weekStart]: { weekStart, decidedAt: now.toISOString() }
+    };
     appStateRef.current.adaptiveOverrides = overrides;
+    appStateRef.current.weeklyDecisions = decisions;
     setAdaptiveOverrides(overrides);
-    saveAdaptiveOverrides(overrides);
+    setWeeklyDecisions(decisions);
+    saveAdaptivePlanState({ overrides, weeklyDecisions: decisions });
     const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
-    syncTransformedCalendar();
+    if (actions.length > 0) syncTransformedCalendar();
     if (user?.id) {
       void enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
-        adaptiveOverrides: overrides,
-        adaptiveUpdatedAt: updatedAt
-      }));
-    }
-  };
-
-  const handleRevertAdaptivePlan = () => {
-    appStateRef.current.adaptiveOverrides = {};
-    setAdaptiveOverrides({});
-    clearAdaptiveOverrides();
-    const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
-    syncTransformedCalendar();
-    if (user?.id) {
-      void enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
-        adaptiveOverrides: {},
+        adaptiveOverrides: adaptivePlanPayload(overrides, decisions),
         adaptiveUpdatedAt: updatedAt
       }));
     }
@@ -790,8 +805,9 @@ export const App: React.FC = () => {
           garminActivities={garminActivities}
           athlete={athleteVitals}
           adaptiveOverrides={adaptiveOverrides}
+          weeklyDecisions={weeklyDecisions}
+          adaptivePlanReady={baseCalendar.schedules.length > 0 && !isRecharging && (!user?.id || hydratedAdaptiveUserId === user.id)}
           onApplyAdaptivePlan={handleApplyAdaptivePlan}
-          onRevertAdaptivePlan={handleRevertAdaptivePlan}
           onOpenGarminSync={() => handleOpenAccountModal('garmin')}
           onSyncGarminWorkouts={syncPlannedWorkouts}
         />

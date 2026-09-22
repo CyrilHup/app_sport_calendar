@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   ArrowRight,
   CalendarClock,
-  RotateCcw,
   Calendar,
   AlertTriangle,
   Sparkles,
@@ -31,7 +30,7 @@ import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation, getBaselineRestingHeartRate } from '../services/readinessEngine';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { formatDateKey, formatTime, formatFriendlyDay, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
+import { formatDateKey, formatTime, formatFriendlyDay, toLocalDateKey, parseLocalDate, addDays, getMondayOfWeek } from '../services/dateUtils';
 import { computeTrainingLoadStats, calculateSessionTrimp } from '../services/statsEngine';
 import { evaluateAdaptivePlanStatus, isAutoAdaptEnabled, setAutoAdaptEnabled } from '../services/adaptivePlanEngine';
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
@@ -45,6 +44,8 @@ import { getDynamicAthleteProfile } from '../services/garminService';
 import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
 import { MobilityEventChip } from './MobilityEventChip';
 import { ACWR_POLICY } from '../services/trainingModelConfig';
+import { WeeklyDecision } from '../services/adaptivePlanStore';
+import { projectWeeklyAdaptivePlan } from '../services/weeklyAdaptivePlan';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -63,8 +64,9 @@ interface CalendarViewProps {
   garminActivities?: GarminActivity[];
   athlete?: { fcMax: number; fcRest: number };
   adaptiveOverrides?: Record<string, AdaptiveWorkoutOverride>;
+  weeklyDecisions?: Record<string, WeeklyDecision>;
+  adaptivePlanReady?: boolean;
   onApplyAdaptivePlan?: (actions: AdaptiveWorkoutAction[]) => void;
-  onRevertAdaptivePlan?: () => void;
   onOpenGarminSync?: () => void;
 }
 
@@ -560,8 +562,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   garminActivities = [],
   athlete,
   adaptiveOverrides = {},
+  weeklyDecisions = {},
+  adaptivePlanReady = true,
   onApplyAdaptivePlan,
-  onRevertAdaptivePlan,
   onOpenGarminSync
 }) => {
   const scheduleTimeout = useManagedTimeout();
@@ -574,6 +577,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     [garminActivities, athlete]
   );
   const todayKey = referenceDateStr || formatDateKey(effectiveRefDate);
+  const currentWeekStart = formatDateKey(getMondayOfWeek(effectiveRefDate));
+  const weeklyDecision = weeklyDecisions[currentWeekStart];
   const currentTodayIndex = schedules.findIndex(s => s.date === todayKey);
   const currentWeekOffset = currentTodayIndex >= 0 ? Math.floor(currentTodayIndex / 7) : 0;
 
@@ -704,43 +709,31 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     );
   }, [trainingLoad, readiness, activeHorizonSportSessions, adaptiveOverrides, effectiveRefDate, completedIds]);
 
+  const weeklyProjection = useMemo(() => projectWeeklyAdaptivePlan(
+    garminActivities,
+    activeHorizonSportSessions,
+    readiness,
+    currentWeekStart,
+    new Date(),
+    completedIds,
+    athlete
+  ), [garminActivities, activeHorizonSportSessions, readiness, currentWeekStart, completedIds, athlete]);
+
   const totalTrimpSavedByAdaptation = useMemo(() => {
-    return adaptiveStatus.recommendedActions.reduce((sum, act) => {
+    return weeklyProjection.actions.reduce((sum, act) => {
       const orig = calculateSessionTrimp(act.originalDurationMinutes, act.originalTitle, act.originalTitle).trimp;
       const adapt = calculateSessionTrimp(act.adaptedDurationMinutes, act.adaptedSportType || act.adaptedTitle, act.adaptedTitle).trimp;
       return sum + Math.max(0, orig - adapt);
     }, 0);
-  }, [adaptiveStatus.recommendedActions]);
+  }, [weeklyProjection.actions]);
 
   const formatFriendlyDateStr = formatFriendlyDay;
 
-  // Auto-Pilot permanent : application automatique continue pour maintenir le Sweet Spot sur le microcycle actif et la semaine prochaine
+  // Une seule décision par semaine, persistée même si aucune adaptation n'est nécessaire.
   useEffect(() => {
-    if (!isAutoAdaptEnabled() || !onApplyAdaptivePlan) return;
-    if (adaptiveStatus.recommendedActions.length === 0) return;
-
-    // Ne déclencher que si au moins une action recommandée n'est pas encore appliquée dans les overrides OU dans les schedules
-    const hasUnappliedActions = adaptiveStatus.recommendedActions.some(act => {
-      const existing = adaptiveOverrides[act.eventId];
-      if (!existing) return true;
-
-      // Vérifier si la séance dans schedules n'est pas encore transformée
-      const currentSession = activeHorizonSportSessions.find(s => s.id === act.eventId);
-      if (currentSession && currentSession.durationMinutes !== act.adaptedDurationMinutes) {
-        return true;
-      }
-
-      return (
-        existing.adaptedDurationMinutes !== act.adaptedDurationMinutes ||
-        existing.adaptedElevationM !== act.adaptedElevationM ||
-        existing.adaptedSportType !== act.adaptedSportType
-      );
-    });
-
-    if (hasUnappliedActions) {
-      onApplyAdaptivePlan(adaptiveStatus.recommendedActions);
-    }
-  }, [adaptiveStatus.recommendedActions, adaptiveOverrides, activeHorizonSportSessions, onApplyAdaptivePlan]);
+    if (!adaptivePlanReady || weeklyDecision || !isAutoAdaptEnabled() || !onApplyAdaptivePlan) return;
+    onApplyAdaptivePlan(weeklyProjection.actions);
+  }, [adaptivePlanReady, weeklyDecision, weeklyProjection.actions, onApplyAdaptivePlan]);
 
   const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
@@ -972,7 +965,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             Revenir à cette semaine
           </button>
         </div>
-      ) : adaptiveStatus.hasActiveAdaptations ? (
+      ) : isViewingNextWeek ? (
+        <div className="proactive-coach-banner">
+          <CalendarClock size={16} />
+          <span>La semaine prochaine sera évaluée et figée à son début, avec la charge réellement accumulée d'ici là.</span>
+        </div>
+      ) : weeklyDecision ? (
         <div
           style={{
             background: adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
@@ -1021,42 +1019,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <ShieldCheck size={16} color={adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#38bdf8' : '#10b981'} />
             )}
             <div>
-              <strong>{isViewingNextWeek ? 'Plan Adaptatif — Semaine Prochaine (Anticipation) :' : 'Plan Adaptatif Actif (Auto-Pilot) :'}</strong> {
-                adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
-                  ? <>Vos séances de trail sont allégées pour limiter la surcharge mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚠️ Surcharge</strong>) et viser le Sweet Spot (&lt; {ACWR_POLICY.moderateAbove}). Calisthénie maintenue.</>
-                  : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
-                  ? <>Dénivelé modéré préventivement (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚡ Vigilance</strong>) pour viser le Sweet Spot ({ACWR_POLICY.underloadBelow} – {ACWR_POLICY.moderateAbove}). Calisthénie maintenue.</>
-                  : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
-                  ? <>Séances calibrées pour une montée progressive (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} 🔵 Sous-charge</strong>). Calisthénie maintenue.</>
-                  : <>Vos sorties de trail sont calibrées pour respecter votre tolérance mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ✅ Sweet Spot</strong>). Calisthénie maintenue.</>
-              }
+              <strong>Plan de la semaine figé.</strong> Le score ACWR actuel est {adaptiveStatus.trailAcwrRatio} ; il peut évoluer avec les activités réalisées, sans modifier rétroactivement les séances décidées cette semaine.
             </div>
           </div>
-          {onRevertAdaptivePlan && Object.keys(adaptiveOverrides).length > 0 && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => {
-                triggerHapticFeedback('light');
-                onRevertAdaptivePlan();
-              }}
-              style={{
-                fontSize: '0.74rem',
-                padding: '4px 10px',
-                borderRadius: 4,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                color: 'var(--text-secondary)'
-              }}
-              title="Rétablir le programme nominal d'origine"
-            >
-              <RotateCcw size={12} /> Rétablir plan nominal
-            </button>
-          )}
         </div>
-      ) : adaptiveStatus.injuryRiskLevel === 'HIGH' && adaptiveStatus.recommendedActions.length > 0 ? (
+      ) : adaptiveStatus.injuryRiskLevel === 'HIGH' && weeklyProjection.actions.length > 0 ? (
         <div
           style={{
             background: 'rgba(239, 68, 68, 0.08)',
@@ -1090,25 +1057,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   -{totalTrimpSavedByAdaptation} TRIMP économisés
                 </span>
               )}
-              {onApplyAdaptivePlan && (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => onApplyAdaptivePlan(adaptiveStatus.recommendedActions)}
-                  style={{
-                    fontSize: '0.74rem',
-                    padding: '5px 12px',
-                    background: 'var(--primary)',
-                    color: 'white',
-                    borderRadius: 4,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}
-                >
-                  <Sparkles size={13} /> Appliquer l'adaptation anti-blessure
-                </button>
-              )}
             </div>
           </div>
           <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
@@ -1118,7 +1066,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             💡 <strong>Pourquoi adapter la séance ?</strong> L’ACWR mécanique compare les Km-Effort de course des 7 derniers jours à leur moyenne hebdomadaire sur 28 jours. Réduire la durée ou le D+ d’une séance future peut limiter la prochaine charge aiguë ; le ratio réel sera recalculé après les activités effectuées.
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '2px' }}>
-            {adaptiveStatus.recommendedActions.map((act, idx) => (
+            {weeklyProjection.actions.map((act, idx) => (
               <span
                 key={idx}
                 style={{
@@ -1147,7 +1095,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </span>
           </div>
         </div>
-      ) : adaptiveStatus.injuryRiskLevel === 'MODERATE' && adaptiveStatus.recommendedActions.length > 0 ? (
+      ) : adaptiveStatus.injuryRiskLevel === 'MODERATE' && weeklyProjection.actions.length > 0 ? (
         <div
           style={{
             background: 'rgba(245, 158, 11, 0.08)',
@@ -1169,21 +1117,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               {totalTrimpSavedByAdaptation > 0 && ` (-${totalTrimpSavedByAdaptation} TRIMP si adapté)`}
             </span>
           </div>
-          {onApplyAdaptivePlan && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => onApplyAdaptivePlan(adaptiveStatus.recommendedActions)}
-              style={{
-                fontSize: '0.74rem',
-                padding: '4px 10px',
-                color: '#fbbf24',
-                borderColor: 'rgba(245, 158, 11, 0.4)'
-              }}
-            >
-              <Sparkles size={12} /> Moduler les côtes (-{totalTrimpSavedByAdaptation} TRIMP)
-            </button>
-          )}
         </div>
       ) : proactiveRec.shouldAdapt && todaySchedule?.sportSession && !todayContext.isPlannedSessionCompleted ? (
         <div className="proactive-coach-banner">

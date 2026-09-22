@@ -26,6 +26,32 @@ import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
 
 describe('Adaptive Plan Engine', () => {
+  it('preserves a started workout when locking a revised current-week plan', () => {
+    const started = {
+      eventId: 'started', date: '2026-09-07', originalTitle: 'Footing', adaptedTitle: 'Footing réduit',
+      originalDurationMinutes: 60, adaptedDurationMinutes: 40, adaptationReason: 'charge',
+      coachingCue: 'Rester facile', createdAt: '2026-09-07T07:00:00Z'
+    };
+    const future = { ...started, eventId: 'future', date: '2026-09-08' };
+    const result = buildOverridesFromActions([], { started, future }, '2026-09-07',
+      ['2026-09-07', '2026-09-08'], new Set(['started']));
+    expect(result).toEqual({ started });
+  });
+
+  it('does not attach a date-based override to a changed or already completed workout', () => {
+    const event = mockWeeklySportEvents[1];
+    const override = {
+      eventId: event.id, date: '2026-09-08', originalTitle: event.title,
+      adaptedTitle: 'Séance allégée', originalDurationMinutes: event.durationMinutes,
+      adaptedDurationMinutes: 35, originalSportType: event.sportType,
+      adaptationReason: 'Charge', coachingCue: 'Facile', createdAt: '2026-09-08T19:00:00Z'
+    };
+    const changed = { ...event, title: 'Nouvelle séance du même jour' };
+    const completed = { ...event, metadata: { isCompleted: true } };
+    expect(applyAdaptiveModifications([], [changed], { [event.id]: override }).allEvents[0]).toEqual(changed);
+    expect(applyAdaptiveModifications([], [completed], { [event.id]: override }).allEvents[0]).toEqual(completed);
+  });
+
   const mockBaseReadiness: ReadinessEvaluation = {
     score: 85,
     status: 'OPTIMAL',
@@ -591,6 +617,4 @@ describe('Adaptive Plan Engine', () => {
     }
   });
 });
-
-
 

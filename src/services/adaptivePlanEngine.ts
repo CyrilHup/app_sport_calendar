@@ -7,9 +7,10 @@ import {
 } from '../types/calendar';
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
-import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storageService';
+import { STORAGE_KEYS, storageGet, storageSet } from './storageService';
 import { toLocalDateKey } from './dateUtils';
 import { ACWR_POLICY } from './trainingModelConfig';
+import { AdaptivePlanState, parseAdaptivePlanState, serializeAdaptivePlanState } from './adaptivePlanStore';
 
 export const ADAPTIVE_PLAN_STORAGE_KEY = STORAGE_KEYS.ADAPTIVE_OVERRIDES;
 
@@ -17,12 +18,12 @@ export const ADAPTIVE_PLAN_STORAGE_KEY = STORAGE_KEYS.ADAPTIVE_OVERRIDES;
  * Charge les adaptations actives du plan depuis le localStorage.
  * Auto-assainit les corruptions éventuelles (ex: séances majeures écrasées à 0m).
  */
-export function loadAdaptiveOverrides(): Record<string, AdaptiveWorkoutOverride> {
-  const loaded = storageGet<Record<string, AdaptiveWorkoutOverride>>(ADAPTIVE_PLAN_STORAGE_KEY, {});
+export function loadAdaptivePlanState(): AdaptivePlanState {
+  const loaded = parseAdaptivePlanState(storageGet<unknown>(ADAPTIVE_PLAN_STORAGE_KEY, {}));
   const sanitized: Record<string, AdaptiveWorkoutOverride> = {};
   let hadCorrupted = false;
 
-  for (const [id, ov] of Object.entries(loaded)) {
+  for (const [id, ov] of Object.entries(loaded.overrides)) {
     const titleLower = (ov.originalTitle || ov.adaptedTitle || '').toLowerCase();
     const isMajorWorkout = (ov.originalDurationMinutes && ov.originalDurationMinutes >= 50) ||
       titleLower.includes('côte') ||
@@ -39,24 +40,14 @@ export function loadAdaptiveOverrides(): Record<string, AdaptiveWorkoutOverride>
   }
 
   if (hadCorrupted) {
-    storageSet(ADAPTIVE_PLAN_STORAGE_KEY, sanitized);
+    saveAdaptivePlanState({ ...loaded, overrides: sanitized });
   }
 
-  return sanitized;
+  return { ...loaded, overrides: sanitized };
 }
 
-/**
- * Sauvegarde les adaptations actives du plan dans le localStorage.
- */
-export function saveAdaptiveOverrides(overrides: Record<string, AdaptiveWorkoutOverride>): void {
-  storageSet(ADAPTIVE_PLAN_STORAGE_KEY, overrides);
-}
-
-/**
- * Supprime toutes les adaptations actives du plan (rétablissement du plan nominal).
- */
-export function clearAdaptiveOverrides(): void {
-  storageRemove(ADAPTIVE_PLAN_STORAGE_KEY);
+export function saveAdaptivePlanState(state: AdaptivePlanState): void {
+  storageSet(ADAPTIVE_PLAN_STORAGE_KEY, JSON.parse(serializeAdaptivePlanState(state)));
 }
 
 export const AUTO_ADAPT_STORAGE_KEY = STORAGE_KEYS.AUTO_ADAPT_ENABLED;
@@ -374,7 +365,8 @@ export function buildOverridesFromActions(
   actions: AdaptiveWorkoutAction[],
   existingOverrides: Record<string, AdaptiveWorkoutOverride> = {},
   todayKey?: string,
-  activeMicrocycleDates?: string[]
+  activeMicrocycleDates?: string[],
+  protectedEventIds: Set<string> = new Set()
 ): Record<string, AdaptiveWorkoutOverride> {
   const overrides: Record<string, AdaptiveWorkoutOverride> = { ...existingOverrides };
 
@@ -383,14 +375,14 @@ export function buildOverridesFromActions(
   if (activeMicrocycleDates && activeMicrocycleDates.length > 0) {
     const activeDateSet = new Set(activeMicrocycleDates);
     for (const [id, ov] of Object.entries(overrides)) {
-      if (activeDateSet.has(ov.date) && (!todayKey || ov.date >= todayKey)) {
+      if (activeDateSet.has(ov.date) && (!todayKey || ov.date >= todayKey) && !protectedEventIds.has(id)) {
         delete overrides[id];
       }
     }
   } else if (todayKey) {
     // Fallback : préserver les adaptations passées
     for (const [id, ov] of Object.entries(overrides)) {
-      if (ov.date >= todayKey) {
+      if (ov.date >= todayKey && !protectedEventIds.has(id)) {
         delete overrides[id];
       }
     }
@@ -399,7 +391,7 @@ export function buildOverridesFromActions(
   // 2. Ajouter ou rafraîchir les adaptations recommandées
   const nowIso = new Date().toISOString();
   for (const act of actions) {
-    if (!todayKey || act.date >= todayKey) {
+    if ((!todayKey || act.date >= todayKey) && !protectedEventIds.has(act.eventId)) {
       overrides[act.eventId] = {
         eventId: act.eventId,
         date: act.date,
@@ -427,6 +419,19 @@ export function buildOverridesFromActions(
   return overrides;
 }
 
+/** A date-only generated ID is not enough to identify the same workout after a rebuild. */
+function matchesAdaptiveOverride(event: CalendarEvent, override?: AdaptiveWorkoutOverride): override is AdaptiveWorkoutOverride {
+  if (!override || event.category !== 'sport' || event.metadata?.isPostponedPlaceholder) return false;
+  const eventDate = toLocalDateKey(event.startDate);
+  if (eventDate !== override.date && event.metadata?.originalDate !== override.date) return false;
+  if (event.metadata?.isCompleted && new Date(override.createdAt).getTime() >= new Date(event.startDate).getTime()) return false;
+  if (event.title !== override.originalTitle || event.durationMinutes !== override.originalDurationMinutes) return false;
+  if (override.originalSportType && event.sportType !== override.originalSportType) return false;
+  if (override.originalElevationM !== undefined && event.metadata?.targetElevationM !== undefined &&
+      event.metadata.targetElevationM !== override.originalElevationM) return false;
+  return true;
+}
+
 /**
  * Applique les modifications adaptatives sur les plannings quotidiens et les événements du calendrier.
  */
@@ -451,7 +456,7 @@ export function applyAdaptiveModifications(
 
     const updatedEvents = sched.events.map(ev => {
       const override = overridesMap.get(ev.id);
-      if (!override) return ev;
+      if (!matchesAdaptiveOverride(ev, override)) return ev;
 
       const isRest = override.adaptedDurationMinutes === 0;
       const startDate = new Date(ev.startDate);
@@ -502,7 +507,7 @@ export function applyAdaptiveModifications(
   // Cloner et mettre à jour allEvents
   const updatedAllEvents: CalendarEvent[] = baseAllEvents.map(ev => {
     const override = overridesMap.get(ev.id);
-    if (!override) return ev;
+    if (!matchesAdaptiveOverride(ev, override)) return ev;
 
     const isRest = override.adaptedDurationMinutes === 0;
     const startDate = new Date(ev.startDate);
