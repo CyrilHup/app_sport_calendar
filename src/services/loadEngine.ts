@@ -2,7 +2,7 @@ import { formatDateKey, getGarminLocalDateKey } from './dateUtils';
 import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { getDynamicAthleteProfile, getExpectedHeartRateForEvent } from './garminService';
-import { TRAINING_LOAD_WINDOWS } from './trainingModelConfig';
+import { ACWR_POLICY, classifyAcwr, TRAINING_LOAD_WINDOWS } from './trainingModelConfig';
 
 export interface SessionTrimpOptions {
   avgHeartRate?: number | null;
@@ -263,7 +263,7 @@ export function calculateSessionTrimp(
 /**
  * Calcule la Charge Chronique (CTL - Fitness), la Charge Aiguë (ATL - Fatigue),
  * l'Équilibre de Stress (TSB - Forme) et le Ratio Aigu/Chronique (ACWR).
- * L'ACWR pour le risque de blessure est calculé exclusivement sur la Course & le Trail,
+ * L'ACWR descriptif est calculé exclusivement sur la Course & le Trail,
  * en isolant la calisthénie et le renforcement sans impact.
  */
 export function computeTrainingLoadStats(
@@ -311,7 +311,7 @@ export function computeTrainingLoadStats(
   let prevCtl = 0;
   let prevAtl = 0;
 
-  const warmupDays = 35;
+  const warmupDays = TRAINING_LOAD_WINDOWS.warmupDays;
   const totalDays = daysToAnalyze + warmupDays;
   const startDay = new Date(asOfDate);
   startDay.setDate(asOfDate.getDate() - totalDays);
@@ -372,7 +372,7 @@ export function computeTrainingLoadStats(
   }
   // Plancher minimum de 5 Km-Effort/semaine pour éviter les divisions par zéro lors de la première semaine de plan
   const chronicWeeks = TRAINING_LOAD_WINDOWS.chronicRatioBaselineDays / TRAINING_LOAD_WINDOWS.acuteFatigueDays;
-  const trailChronicWeeklyAvg = Math.max(5, Math.round((trailChronicSum / chronicWeeks) * 10) / 10);
+  const trailChronicWeeklyAvg = Math.max(ACWR_POLICY.minimumChronicWeeklyKmEffort, Math.round((trailChronicSum / chronicWeeks) * 10) / 10);
   const trailAcuteLoad7d = Math.round(trailAcuteSum * 10) / 10;
   const trailAcwrRatio = Math.round((trailAcuteLoad7d / trailChronicWeeklyAvg) * 100) / 100;
 
@@ -390,27 +390,22 @@ export function computeTrainingLoadStats(
   }
 
   // Detect calibration/cold-start
-  const isCalibrating = trailActiveDaysInLast28 < 3 && trailAcuteSum > 0;
+  const isCalibrating = trailActiveDaysInLast28 < ACWR_POLICY.minimumActiveDays && trailAcuteSum > 0;
+  const acwrStatus: TrainingLoadStats['acwrStatus'] = classifyAcwr(trailAcwrRatio, trailActiveDaysInLast28, trailAcuteSum);
+  let acwrLabel = `Plage de référence mécanique (${ACWR_POLICY.underloadBelow} - ${ACWR_POLICY.moderateAbove}) : charge de course proche de la moyenne récente en Km-Effort.`;
+  let acwrActionAdvice = 'Conservez une progression adaptée à vos sensations et à votre récupération ; ce ratio seul ne prédit pas une blessure.';
 
-  let acwrStatus: TrainingLoadStats['acwrStatus'] = 'OPTIMAL';
-  let acwrLabel = 'Sweet Spot Mécanique (0.8 - 1.3) : Volume et dénivelé (Km-Effort) parfaitement tolérés par vos tendons et genoux. Calisthénie sans impact.';
-  let acwrActionAdvice = 'Charge d\'impact Trail parfaitement assimilée. Poursuivez sur cette régularité sans dépasser +10% de Km-Effort par semaine.';
-
-  if (isCalibrating && trailAcwrRatio > 1.4) {
-    acwrStatus = 'CALIBRATING';
-    acwrLabel = 'Reprise / Calibration Mécanique : Données d\'impacts (Km-Effort 28j) en cours d\'accumulation suite à la reprise. Calisthénie sans choc exclue.';
-    acwrActionAdvice = 'Privilégiez 80% de votre volume en endurance fondamentale (Zone 2) et veillez à vos jours de repos.';
-  } else if (trailAcwrRatio < 0.8) {
-    acwrStatus = 'UNDERLOAD';
-    acwrLabel = 'Sous-charge Mécanique (< 0.8) : Stimulus mécanique de course allégé ou période de récupération active.';
-    acwrActionAdvice = 'Pieds et tendons frais. Profitez-en pour le renforcement postural et la mobilité.';
-  } else if (trailAcwrRatio > 1.5) {
-    acwrStatus = 'DANGER_HIGH_RISK';
-    acwrLabel = 'Zone Critique Mécanique (> 1.5) : Augmentation rapide du volume d\'impact course (+50% vs moyenne sur 4 semaines). Risque tendineux élevé.';
-    acwrActionAdvice = 'Allégez la prochaine séance de côtes ou écourtez la sortie longue. Maintenez la calisthénie sans chocs.';
-  } else if (trailAcwrRatio > 1.3) {
-    acwrStatus = 'MODERATE_RISK';
-    acwrLabel = 'Zone d\'Attention Mécanique (1.3 - 1.5) : Montée de charge mécanique soutenue. Surveillez mollets, genoux et tendons d\'Achille.';
+  if (acwrStatus === 'CALIBRATING') {
+    acwrLabel = 'Calibration mécanique : historique de course insuffisant pour interpréter solidement le ratio sur 28 jours.';
+    acwrActionAdvice = 'Accumulez davantage de données de course avant de tirer une conclusion de ce ratio.';
+  } else if (acwrStatus === 'UNDERLOAD') {
+    acwrLabel = `Sous-charge Mécanique (< ${ACWR_POLICY.underloadBelow}) : Stimulus mécanique de course allégé ou période de récupération active.`;
+    acwrActionAdvice = 'La charge récente est inférieure à la moyenne ; tenez compte du contexte de repos, de reprise et de vos sensations.';
+  } else if (acwrStatus === 'DANGER_HIGH_RISK') {
+    acwrLabel = `Hausse de charge mécanique (> ${ACWR_POLICY.highAbove}) : les Km-Effort récents dépassent nettement la moyenne hebdomadaire sur 28 jours.`;
+    acwrActionAdvice = 'Une adaptation du plan peut limiter la charge prévue, sans garantir une évolution précise du ratio ni du risque individuel.';
+  } else if (acwrStatus === 'MODERATE_RISK') {
+    acwrLabel = `Charge mécanique soutenue (${ACWR_POLICY.moderateAbove} - ${ACWR_POLICY.highAbove}) : les Km-Effort récents dépassent la moyenne hebdomadaire sur 28 jours.`;
     acwrActionAdvice = 'Maintenez les allures d\'endurance sans forcer et surveillez les courbatures.';
   }
 
@@ -437,8 +432,8 @@ export function computeTrainingLoadStats(
       : (acwrStatus === 'UNDERLOAD'
         ? 'Sous-charge Mécanique'
         : (acwrStatus === 'DANGER_HIGH_RISK'
-          ? 'Pic Critique d\'Impacts (> 1.5)'
-          : 'Charge Mécanique Soutenue (1.3 - 1.5)')));
+          ? `Pic Critique d'Impacts (> ${ACWR_POLICY.highAbove})`
+          : `Charge Mécanique Soutenue (${ACWR_POLICY.moderateAbove} - ${ACWR_POLICY.highAbove})`)));
 
   // 7-day window individual sessions
   const recentSessions7d: RecentSessionLoadItem[] = [];

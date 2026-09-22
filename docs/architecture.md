@@ -58,6 +58,10 @@ registration is cleaned up after unmount and periodic refresh pauses while hidde
 6. Training-load windows and automatic activity-matching policy live in
    `trainingModelConfig.ts`. Calculations and UI labels consume the same named
    values rather than duplicating durations or numeric rejection sentinels.
+   ACWR boundaries, cold-start classification, and gauge geometry also use
+   that policy. The ratio describes recorded running/trail Km-Effort; changes
+   to future workouts cannot retroactively change today's measured ratio or
+   establish individual injury risk.
 
 ## Boundaries and operational notes
 

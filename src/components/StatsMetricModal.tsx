@@ -20,6 +20,7 @@ import {
 
 import { TrainingLoadStats } from '../services/statsEngine';
 import { AthleteHeartRateZones } from '../services/heartRateZones';
+import { ACWR_POLICY } from '../services/trainingModelConfig';
 
 export type StatsMetricTopic = 'acwr' | 'banister' | 'aei' | null;
 
@@ -103,12 +104,12 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
             </div>
             <div>
               <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>
-                {topic === 'acwr' && 'Modèle ACWR & Prévention des Blessures'}
+                {topic === 'acwr' && 'Ratio de charge mécanique ACWR'}
                 {topic === 'banister' && 'Modèle Banister : Fitness, Fatigue & Forme'}
                 {topic === 'aei' && 'Efficacité Aérobie & Fréquence Cardiaque'}
               </h3>
               <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-                {topic === 'acwr' && 'Recherche scientifique du Dr Tim Gabbett (British Journal of Sports Medicine)'}
+                {topic === 'acwr' && 'Indicateur descriptif de la charge de course, non diagnostic médical'}
                 {topic === 'banister' && 'Modélisation impulsion-réponse à deux composantes (Dr Eric Banister)'}
                 {topic === 'aei' && 'Indice AEI & volume d\'éjection systolique'}
               </p>
@@ -150,7 +151,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
         >
           {topic === 'acwr' && (
             <>
-              {/* Le concept clé : Découplage Scientifique */}
+              {/* Les deux mesures suivies par l'application */}
               <div
                 style={{
                   background: 'rgba(245, 158, 11, 0.08)',
@@ -160,20 +161,20 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                 }}
               >
                 <div style={{ fontWeight: 800, color: '#f59e0b', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <ShieldCheck size={18} /> Découplage Scientifique : Charge Mécanique (Tendons) vs Cardio (Cœur)
+                  <ShieldCheck size={18} /> Charge mécanique de course et charge physiologique
                 </div>
                 <p style={{ margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
-                  En trail et ultra-running, <strong>votre cœur s'adapte en quelques semaines, mais vos tendons, genoux et périostes mettent 6 à 9 mois</strong> à se remodeler.
+                  L’application suit séparément les Km-Effort des sorties de course et la charge physiologique estimée. Ces mesures ne décrivent pas à elles seules votre capacité de récupération.
                 </p>
                 <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
-                  Le cardio a un <strong>angle mort critique</strong> : en descente de trail ($D^-$), la fréquence cardiaque est basse (~135 bpm) alors que l'impact mécanique sur la rotule et les tendons atteint <strong>3 à 5 fois votre poids</strong> à chaque foulée. C'est pourquoi l'indicateur anti-blessure <strong>ACWR de Tim Gabbett</strong> mesure exclusivement la <strong>Charge Mécanique Externe en Km-Effort (ITRA)</strong>, tandis que le modèle <strong>Banister</strong> suit votre fatigue cardiaque.
+                  La fréquence cardiaque et la distance avec dénivelé représentent des aspects différents d’une séance. Le ratio ci-dessous utilise seulement les Km-Effort calculés pour les activités de course et de trail ; il ne prédit pas une blessure individuelle.
                 </p>
               </div>
 
-              {/* Formule mathématique ITRA */}
+              {/* Formules utilisées dans l'application */}
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '8px' }}>
-                  📐 Standard International Trail (ITRA / FFA) :
+                  📐 Calcul utilisé par l’application :
                 </div>
                 <div
                   style={{
@@ -330,7 +331,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                 </div>
               )}
 
-              {/* ⚡ Pourquoi cliquer sur « Simplifier » réduit la charge ? */}
+              {/* Effet différé des adaptations sur la charge mesurée */}
               <div
                 style={{
                   background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.08))',
@@ -340,26 +341,26 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                 }}
               >
                 <div style={{ fontWeight: 800, color: '#34d399', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Zap size={16} /> Pourquoi cliquer sur « Simplifier mes séances » ou « Adapter » protège vos tendons ?
+                  <Zap size={16} /> Comment une adaptation peut-elle influencer la charge future ?
                 </div>
                 <p style={{ margin: '0 0 8px 0', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-                  Le bouton <strong>« Simplifier » / « Appliquer l'adaptation »</strong> allège immédiatement vos contraintes d'impacts au sol dès qu'une surcharge est détectée :
+                  Le bouton <strong>« Simplifier » / « Appliquer l'adaptation »</strong> modifie le plan futur. Il ne change pas les activités déjà effectuées ni l’ACWR affiché aujourd’hui.
                 </p>
                 <ol style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--text-secondary)' }}>
                   <li>
-                    <strong style={{ color: '#ffffff' }}>1. Baisse immédiate du Numérateur Aigu (Km-Effort 7j) :</strong>
+                    <strong style={{ color: '#ffffff' }}>1. Charge mécanique prévue :</strong>
                     <br />
-                    En remplaçant par exemple une séance de côtes sur le Mont-Royal (8 km + 450m D+ = <strong>12.5 Km-Effort</strong>) par un footing doux sur herbe ou plat (5 km + 0m D+ = <strong>5.0 Km-Effort</strong>), vous retirez immédiatement <strong>7.5 Km-Effort</strong> d'impacts traumatisants !
+                    Dans un exemple de plan, remplacer 8 km avec 450 m D+ (12,5 Km-Effort) par 5 km plats (5 Km-Effort) réduit la charge mécanique prévue de 7,5 Km-Effort.
                   </li>
                   <li>
-                    <strong style={{ color: '#ffffff' }}>2. Stabilité de la Base Chronique (28j) :</strong>
+                    <strong style={{ color: '#ffffff' }}>2. Activités réellement effectuées :</strong>
                     <br />
-                    La charge chronique est la moyenne des 4 dernières semaines. Cette économie de 7.5 Km-Effort ne fait baisser le dénominateur que de 7.5 ÷ 4 = <strong>1.87 Km-Effort</strong>.
+                    Le ratio est recalculé à partir des sorties enregistrées. Une séance future n’entre dans les fenêtres de 7 et 28 jours qu’une fois effectuée et synchronisée.
                   </li>
                   <li>
-                    <strong style={{ color: '#ffffff' }}>3. Effet de levier immédiat sur le ratio :</strong>
+                    <strong style={{ color: '#ffffff' }}>3. Interprétation prudente :</strong>
                     <br />
-                    Comme le numérateur chute 4 fois plus fort que le dénominateur, le ratio ACWR plonge instantanément vers le <strong>Sweet Spot (0.8 - 1.3)</strong>. Vos tendons et genoux récupèrent immédiatement, et la calisthénie reste active pour gainer vos muscles !
+                    Une adaptation peut limiter une hausse future du ratio, sans garantir une valeur cible ni prédire une blessure individuelle.
                   </li>
                 </ol>
               </div>
@@ -368,40 +369,40 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <ShieldCheck size={16} color="var(--accent-green)" />
-                  Pourquoi la calisthénie / renforcement est isolée du risque de blessure ?
+                  Pourquoi le renforcement est-il séparé de cet indicateur ?
                 </div>
                 <p style={{ margin: '0 0 8px 0' }}>
-                  En trail, les blessures de surcharge (tendinite d'Achille, syndrome de l'essuie-glace, périostite) sont provoquées par les <strong>ondes de choc répétées et les freinages excentriques</strong> des pas de course.
+                  Ce ratio suit uniquement la charge mécanique estimée des activités de course et de trail en Km-Effort.
                 </p>
                 <p style={{ margin: 0 }}>
-                  Vos séances de <strong>calisthénie</strong> (tractions, dips, gainage) et de mobilité ne créent <strong>aucun impact articulaire au sol</strong>. Elles sont donc comptabilisées dans votre fatigue générale (Banister), mais <strong>exclues du ratio ACWR de blessure tendineuse</strong> pour éviter les fausses alertes.
+                  Le renforcement et la mobilité ne sont pas ajoutés à ce ratio. Cela ne signifie pas qu’ils sont sans fatigue ni sans risque ; ils restent pris en compte séparément dans la charge générale de l’application.
                 </p>
               </div>
 
-              {/* Les 4 Zones de Gabbett */}
+              {/* Zones de la politique de l'application */}
               <div>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '10px' }}>
-                  🎯 Les 4 Zones d'Interprétation :
+                  🎯 Zones d’interprétation configurées dans l’application :
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(56, 189, 248, 0.08)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #38bdf8' }}>
-                    <strong style={{ color: '#38bdf8', minWidth: '85px' }}>&lt; 0.8</strong>
+                    <strong style={{ color: '#38bdf8', minWidth: '85px' }}>&lt; {ACWR_POLICY.underloadBelow}</strong>
                     <div>
                       <strong style={{ color: '#ffffff' }}>Sous-charge : </strong>
-                      Risque de désentraînement ou d'atrophie tendineuse. Les tendons perdent leur rigidité protectrice.
+                      Charge récente inférieure à la moyenne des quatre dernières semaines.
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(16, 185, 129, 0.1)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
-                    <strong style={{ color: '#10b981', minWidth: '85px' }}>0.8 – 1.3</strong>
+                    <strong style={{ color: '#10b981', minWidth: '85px' }}>{ACWR_POLICY.underloadBelow} – {ACWR_POLICY.moderateAbove}</strong>
                     <div>
                       <strong style={{ color: '#ffffff' }}>Sweet Spot (Zone Optimale) : </strong>
-                      Surcompensation idéale. Le risque de blessure est inférieur à 5%. Votre corps s'adapte sans casser.
+                      Plage de référence utilisée par les règles de l’application, sans garantie de sécurité individuelle.
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(245, 158, 11, 0.1)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #f59e0b' }}>
-                    <strong style={{ color: '#f59e0b', minWidth: '85px' }}>1.3 – 1.5</strong>
+                    <strong style={{ color: '#f59e0b', minWidth: '85px' }}>{ACWR_POLICY.moderateAbove} – {ACWR_POLICY.highAbove}</strong>
                     <div>
                       <strong style={{ color: '#ffffff' }}>Surcharge Modérée : </strong>
                       Progression rapide mais vigilance requise. Veillez au sommeil et à l'hydratation, surveillez les raideurs au réveil.
@@ -409,10 +410,10 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(239, 68, 68, 0.1)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #ef4444' }}>
-                    <strong style={{ color: '#ef4444', minWidth: '85px' }}>&gt; 1.5</strong>
+                    <strong style={{ color: '#ef4444', minWidth: '85px' }}>&gt; {ACWR_POLICY.highAbove}</strong>
                     <div>
                       <strong style={{ color: '#ffffff' }}>Zone de Danger : </strong>
-                      Le risque de blessure est multiplié par 2 à 4. Réduisez immédiatement le kilométrage de la semaine.
+                      Hausse de charge récente relativement à la moyenne. Ce seuil déclenche une proposition d’adaptation, pas un diagnostic médical.
                     </div>
                   </div>
                 </div>

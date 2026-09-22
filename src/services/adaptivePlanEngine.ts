@@ -9,6 +9,7 @@ import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
 import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storageService';
 import { toLocalDateKey } from './dateUtils';
+import { ACWR_POLICY } from './trainingModelConfig';
 
 export const ADAPTIVE_PLAN_STORAGE_KEY = STORAGE_KEYS.ADAPTIVE_OVERRIDES;
 
@@ -114,11 +115,11 @@ export function evaluateAdaptivePlanStatus(
   const recommendedActions: AdaptiveWorkoutAction[] = [];
 
   let injuryRiskLevel: 'SAFE' | 'MODERATE' | 'HIGH' = 'SAFE';
-  let headline = 'Progression Optimale (Sweet Spot 0.8 – 1.3)';
-  let explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (zone saine 0.8 – 1.3). La charge d'impacts au sol (${trailAcute} Km-Effort) est parfaitement assimilée par vos tendons et genoux. La calisthénie (${calisSessions} séance(s), ${calisAcute} TRIMP) est isolée et ne génère aucun choc articulaire.`;
+  let headline = `Progression Optimale (Sweet Spot ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove})`;
+  let explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (zone saine ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}). La charge d'impacts au sol (${trailAcute} Km-Effort) est parfaitement assimilée par vos tendons et genoux. La calisthénie (${calisSessions} séance(s), ${calisAcute} TRIMP) est isolée et ne génère aucun choc articulaire.`;
 
   // 1. DANGER ZONE : ACWR Trail > 1.5 ou surmenage sévère (TSB < -25)
-  if (trailAcwrRatio > 1.5 || tsb < -25) {
+  if (trailAcwrRatio > ACWR_POLICY.highAbove || tsb < -25) {
     injuryRiskLevel = 'HIGH';
     headline = '⚠️ Alerte Surcharge Mécanique (Risque Blessure Articulaire Élevé)';
     explanation = `Pic de charge aiguë mécanique détecté (ACWR ${trailAcwrRatio} > 1.5 en Km-Effort${tsb < -25 ? `, TSB ${tsb}` : ''}). Vos structures tendineuses et articulaires (Achille, rotule, périoste) sont sous haute tension. Le coach adaptatif allège drastiquement les Km-Effort et le D+ de la semaine pour désamorcer le risque sans perdre le socle aérobie pour le QMT-80.`;
@@ -263,7 +264,7 @@ export function evaluateAdaptivePlanStatus(
     }
   }
   // 2. MODERATE RISK : ACWR Trail 1.3 - 1.5 ou Récupération Garmin dégradée
-  else if (trailAcwrRatio > 1.3 || readiness.status === 'LOW' || readiness.score < 50) {
+  else if (trailAcwrRatio > ACWR_POLICY.moderateAbove || readiness.status === 'LOW' || readiness.score < 50) {
     injuryRiskLevel = 'MODERATE';
     headline = '⚡ Charge Mécanique Soutenue : Vigilance Recommandée';
     explanation = `Votre ratio ACWR mécanique (${trailAcwrRatio}) est dans la zone d'attention (1.3 – 1.5)${readiness.status === 'LOW' || readiness.score < 50 ? ' et votre score de récupération Garmin est bas' : ''}. Vos articulations absorbent une hausse rapide de Km-Effort. Vous pouvez maintenir l'entraînement en modérant le dénivelé en côte pour éviter d'entrer en zone rouge.`;
@@ -312,7 +313,7 @@ export function evaluateAdaptivePlanStatus(
     }
   }
   // 3. UNDERLOAD : ACWR Trail < 0.8 (Sous-charge relative)
-  else if (trailAcwrRatio < 0.8) {
+  else if (trailAcwrRatio < ACWR_POLICY.underloadBelow) {
     injuryRiskLevel = 'SAFE';
     headline = '🔵 Sous-charge Mécanique (< 0.8) : Consolidation Progressive';
     explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (< 0.8, zone de sous-charge). Vos tendons et articulations sont reposés mais sous-stimulés par rapport au volume cible. Selon le modèle de Tim Gabbett, consolidez progressivement vos Km-Effort en endurance fondamentale (Zone 2) sans hausses brutales de volume.`;

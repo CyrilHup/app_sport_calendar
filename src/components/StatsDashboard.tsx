@@ -10,6 +10,7 @@ import {
 } from '../services/statsEngine';
 import { StatsMetricModal, StatsMetricTopic } from './StatsMetricModal';
 import { StatsEvolutionModal, EvolutionMetricType } from './StatsEvolutionModal';
+import { AcwrGauge } from './AcwrGauge';
 import { getLatestWellnessData, loadWellnessHistory } from '../services/readinessEngine';
 import { computeDynamicAthleteBasePace } from '../services/garminService';
 import { AppConfig, GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
@@ -960,7 +961,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         </div>
       </div>
 
-      {/* 4. Section Charge Physiologique, Prévention Blessures (ACWR) & Modèle Banister */}
+      {/* 4. Charge physiologique et ratio mécanique ACWR */}
       <div
         style={{
           background: 'var(--bg-surface)',
@@ -977,7 +978,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ShieldAlert size={17} color="var(--primary)" />
-                Risque de Blessure & Sweet Spot ACWR (Modèle de Tim Gabbett)
+                Ratio de charge mécanique ACWR (Km-Effort)
               </h3>
               <button
                 onClick={() => setInfoTopic('acwr')}
@@ -1034,71 +1035,12 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
           </span>
         </div>
 
-        {/* Jauge Colorée ACWR */}
-        <div style={{ position: 'relative', paddingTop: '16px', paddingBottom: '22px' }}>
-          <div
-            style={{
-              display: 'flex',
-              height: '14px',
-              borderRadius: '9999px',
-              overflow: 'hidden',
-              background: 'rgba(255,255,255,0.05)'
-            }}
-          >
-            <div style={{ width: '40%', background: '#38bdf8', opacity: 0.85 }} title="Sous-charge (<0.8)" />
-            <div style={{ width: '25%', background: '#10b981', opacity: 0.95 }} title="Zone Optimale Sweet Spot (0.8 - 1.3)" />
-            <div style={{ width: '10%', background: '#f59e0b', opacity: 0.9 }} title="Surcharge Modérée (1.3 - 1.5)" />
-            <div style={{ width: '25%', background: '#ef4444', opacity: 0.85 }} title="Risque de Blessure (>1.5)" />
-          </div>
-
-          {/* Curseur de position */}
-          {(() => {
-            const pinPct = Math.min(98, Math.max(2, (trainingLoad.acwrRatio / 2.0) * 100));
-            return (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '4px',
-                  left: `${pinPct}%`,
-                  transform: 'translateX(-50%)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  pointerEvents: 'none'
-                }}
-              >
-                <span
-                  style={{
-                    background: 'var(--bg-main)',
-                    border: '1px solid var(--primary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.72rem',
-                    fontWeight: 800,
-                    padding: '2px 7px',
-                    borderRadius: '4px',
-                    whiteSpace: 'nowrap',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.5)'
-                  }}
-                >
-                  ▼ {trainingLoad.acwrRatio}
-                </span>
-              </div>
-            );
-          })()}
-
-          {/* Légende échelle sous la jauge */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '6px' }}>
-            <span style={{ color: '#38bdf8' }}>0.0 - 0.8 : Sous-charge</span>
-            <span style={{ color: '#10b981', fontWeight: 700 }}>0.8 - 1.3 : Sweet Spot (Progression Sûre)</span>
-            <span style={{ color: '#f59e0b' }}>1.3 - 1.5 : Surcharge</span>
-            <span style={{ color: '#ef4444' }}>&gt; 1.5 : Risque Élevé</span>
-          </div>
-        </div>
+        <AcwrGauge ratio={trainingLoad.acwrRatio} />
 
         {/* Diagnostic & Conseil d'action direct */}
         <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div>
-            <strong style={{ color: 'var(--text-primary)' }}>Diagnostic Anti-blessure :</strong> {trainingLoad.acwrLabel}
+            <strong style={{ color: 'var(--text-primary)' }}>Lecture de la charge :</strong> {trainingLoad.acwrLabel}
           </div>
           {trainingLoad.acwrActionAdvice && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-green)', fontWeight: 600, fontSize: '0.78rem' }}>

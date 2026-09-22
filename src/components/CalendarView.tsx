@@ -44,6 +44,7 @@ import { useManagedTimeout } from '../hooks/useManagedTimeout';
 import { getDynamicAthleteProfile } from '../services/garminService';
 import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
 import { MobilityEventChip } from './MobilityEventChip';
+import { ACWR_POLICY } from '../services/trainingModelConfig';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -974,19 +975,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       ) : adaptiveStatus.hasActiveAdaptations ? (
         <div
           style={{
-            background: adaptiveStatus.trailAcwrRatio > 1.5
+            background: adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
               ? 'rgba(239, 68, 68, 0.08)'
-              : adaptiveStatus.trailAcwrRatio > 1.3
+              : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
               ? 'rgba(245, 158, 11, 0.08)'
-              : adaptiveStatus.trailAcwrRatio < 0.8
+              : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
               ? 'rgba(56, 189, 248, 0.08)'
               : 'rgba(16, 185, 129, 0.08)',
             border: `1px solid ${
-              adaptiveStatus.trailAcwrRatio > 1.5
+              adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
                 ? 'rgba(239, 68, 68, 0.35)'
-                : adaptiveStatus.trailAcwrRatio > 1.3
+                : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
                 ? 'rgba(245, 158, 11, 0.35)'
-                : adaptiveStatus.trailAcwrRatio < 0.8
+                : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
                 ? 'rgba(56, 189, 248, 0.35)'
                 : 'rgba(16, 185, 129, 0.35)'
             }`,
@@ -1005,27 +1006,27 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             alignItems: 'center',
             gap: '8px',
             fontSize: '0.8rem',
-            color: adaptiveStatus.trailAcwrRatio > 1.5
+            color: adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
               ? '#f87171'
-              : adaptiveStatus.trailAcwrRatio > 1.3
+              : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
               ? '#fbbf24'
-              : adaptiveStatus.trailAcwrRatio < 0.8
+              : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
               ? '#38bdf8'
               : '#34d399',
             flex: 1
           }}>
-            {adaptiveStatus.trailAcwrRatio > 1.3 ? (
-              <ShieldAlert size={16} color={adaptiveStatus.trailAcwrRatio > 1.5 ? '#ef4444' : '#f59e0b'} />
+            {adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove ? (
+              <ShieldAlert size={16} color={adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove ? '#ef4444' : '#f59e0b'} />
             ) : (
-              <ShieldCheck size={16} color={adaptiveStatus.trailAcwrRatio < 0.8 ? '#38bdf8' : '#10b981'} />
+              <ShieldCheck size={16} color={adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#38bdf8' : '#10b981'} />
             )}
             <div>
               <strong>{isViewingNextWeek ? 'Plan Adaptatif — Semaine Prochaine (Anticipation) :' : 'Plan Adaptatif Actif (Auto-Pilot) :'}</strong> {
-                adaptiveStatus.trailAcwrRatio > 1.5
-                  ? <>Vos séances de trail sont allégées pour désamorcer la surcharge mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚠️ Surcharge</strong>) et vous ramener dans le Sweet Spot (&lt; 1.3). Calisthénie maintenue.</>
-                  : adaptiveStatus.trailAcwrRatio > 1.3
-                  ? <>Dénivelé modéré préventivement (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚡ Vigilance</strong>) pour sécuriser le Sweet Spot (0.8 – 1.3). Calisthénie maintenue.</>
-                  : adaptiveStatus.trailAcwrRatio < 0.8
+                adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
+                  ? <>Vos séances de trail sont allégées pour limiter la surcharge mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚠️ Surcharge</strong>) et viser le Sweet Spot (&lt; {ACWR_POLICY.moderateAbove}). Calisthénie maintenue.</>
+                  : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
+                  ? <>Dénivelé modéré préventivement (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ⚡ Vigilance</strong>) pour viser le Sweet Spot ({ACWR_POLICY.underloadBelow} – {ACWR_POLICY.moderateAbove}). Calisthénie maintenue.</>
+                  : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
                   ? <>Séances calibrées pour une montée progressive (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} 🔵 Sous-charge</strong>). Calisthénie maintenue.</>
                   : <>Vos sorties de trail sont calibrées pour respecter votre tolérance mécanique (ACWR actuel : <strong>{adaptiveStatus.trailAcwrRatio} ✅ Sweet Spot</strong>). Calisthénie maintenue.</>
               }
@@ -1114,7 +1115,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             {adaptiveStatus.explanation}
           </p>
           <div style={{ background: 'rgba(0, 0, 0, 0.3)', padding: '6px 10px', borderRadius: 4, fontSize: '0.73rem', color: '#93c5fd', lineHeight: 1.4 }}>
-            💡 <strong>Pourquoi cliquer ici réduit la charge ?</strong> La charge aiguë (7j) additionne directement les TRIMPs des séances de course. En allégeant la durée et le D+, vous retirez {totalTrimpSavedByAdaptation > 0 ? `${totalTrimpSavedByAdaptation} TRIMP` : 'de la charge'} directement du numérateur ACWR sans impacter significativement votre socle chronique (28j), ce qui fait replonger le ratio dans le Sweet Spot (&lt; 1.3).
+            💡 <strong>Pourquoi adapter la séance ?</strong> L’ACWR mécanique compare les Km-Effort de course des 7 derniers jours à leur moyenne hebdomadaire sur 28 jours. Réduire la durée ou le D+ d’une séance future peut limiter la prochaine charge aiguë ; le ratio réel sera recalculé après les activités effectuées.
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '2px' }}>
             {adaptiveStatus.recommendedActions.map((act, idx) => (
@@ -1241,8 +1242,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       ) : (
         <div
           style={{
-            background: adaptiveStatus.trailAcwrRatio < 0.8 ? 'rgba(56, 189, 248, 0.05)' : 'rgba(16, 185, 129, 0.05)',
-            border: `1px solid ${adaptiveStatus.trailAcwrRatio < 0.8 ? 'rgba(56, 189, 248, 0.22)' : 'rgba(16, 185, 129, 0.22)'}`,
+            background: adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? 'rgba(56, 189, 248, 0.05)' : 'rgba(16, 185, 129, 0.05)',
+            border: `1px solid ${adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? 'rgba(56, 189, 248, 0.22)' : 'rgba(16, 185, 129, 0.22)'}`,
             borderRadius: 'var(--radius-sm)',
             padding: '8px 12px',
             marginBottom: '12px',
@@ -1252,13 +1253,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             flexWrap: 'wrap',
             gap: 6,
             fontSize: '0.76rem',
-            color: adaptiveStatus.trailAcwrRatio < 0.8 ? '#7dd3fc' : '#6ee7b7'
+            color: adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#7dd3fc' : '#6ee7b7'
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Activity size={14} color={adaptiveStatus.trailAcwrRatio < 0.8 ? '#38bdf8' : '#10b981'} />
+            <Activity size={14} color={adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#38bdf8' : '#10b981'} />
             <span>
-              <strong>{adaptiveStatus.trailAcwrRatio < 0.8 ? '🔵 Sous-charge Trail (< 0.8) :' : '🟢 Sweet Spot Tim Gabbett (0.8 – 1.3) :'}</strong> ACWR mécanique à <strong>{adaptiveStatus.trailAcwrRatio}</strong>. {adaptiveStatus.trailAcwrRatio < 0.8 ? 'Consolidez votre base en Zone 2.' : 'Charge d\'impact parfaitement assimilée.'}
+              <strong>{adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? `🔵 Sous-charge Trail (< ${ACWR_POLICY.underloadBelow}) :` : `🟢 Sweet Spot (${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}) :`}</strong> ACWR mécanique à <strong>{adaptiveStatus.trailAcwrRatio}</strong>. {adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? 'Consolidez votre base en Zone 2.' : 'Charge d\'impact parfaitement assimilée.'}
             </span>
           </div>
           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
