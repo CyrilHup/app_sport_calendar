@@ -1196,8 +1196,11 @@ body {
 /* Evening Mobility Chip */
 .mobility-daily-chip {
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
+  text-align: left;
+  font-family: inherit;
   padding: 4px 8px;
   border-radius: var(--radius-xs);
   background: rgba(16, 185, 129, 0.06);

@@ -43,6 +43,7 @@ import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAg
 import { useManagedTimeout } from '../hooks/useManagedTimeout';
 import { getDynamicAthleteProfile } from '../services/garminService';
 import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
+import { MobilityEventChip } from './MobilityEventChip';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -1456,22 +1457,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                   {/* Mobilité du soir */}
                   {mobilityEvent && (filter === 'all' || filter === 'mobility') && (
-                    <div
-                      className="mobility-daily-chip"
-                      onClick={() => {
-                        setSelectedEvent(mobilityEvent);
+                    <MobilityEventChip
+                      event={mobilityEvent}
+                      onSelect={event => {
+                        setSelectedEvent(event);
                         setSelectedComparison(null);
                         setSelectedUnifiedGroup(null);
                       }}
-                      title="20 min d'étirements et de mobilité du soir"
-                      style={isSingleDayView ? { padding: '8px 12px', fontSize: '0.75rem' } : undefined}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>🧘</span>
-                        <span style={{ fontWeight: 600 }}>Mobilité 22h00 (20m)</span>
-                      </div>
-                      <CheckCircle2 size={13} color="#10b981" />
-                    </div>
+                      variant={isSingleDayView ? 'day' : 'grid'}
+                    />
                   )}
                 </>
               )}
@@ -1828,21 +1822,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                     {/* Mobilité */}
                     {mobilityEvent && (filter === 'all' || filter === 'mobility') && (
-                      <div
-                        className="mobility-daily-chip"
-                        onClick={() => {
-                          setSelectedEvent(mobilityEvent);
+                      <MobilityEventChip
+                        event={mobilityEvent}
+                        onSelect={event => {
+                          setSelectedEvent(event);
                           setSelectedComparison(null);
                           setSelectedUnifiedGroup(null);
                         }}
-                        style={{ padding: '10px 12px', fontSize: '0.78rem' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span>🧘</span>
-                          <span style={{ fontWeight: 600 }}>Mobilité 22h00 (20m)</span>
-                        </div>
-                        <CheckCircle2 size={13} color="#10b981" />
-                      </div>
+                        variant="list"
+                      />
                     )}
                   </div>
                 )}
