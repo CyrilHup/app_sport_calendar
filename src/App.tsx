@@ -12,7 +12,7 @@ import { getDynamicAthleteProfile, loadGarminCredentials, loadGarminCredentialsA
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
-import { buildOverridesFromActions, loadAdaptivePlanState, saveAdaptivePlanState } from './services/adaptivePlanEngine';
+import { buildOverridesFromActions, isAutoAdaptEnabled, loadAdaptivePlanState, saveAdaptivePlanState } from './services/adaptivePlanEngine';
 import { parseAdaptivePlanState, serializeAdaptivePlanState, WeeklyDecision } from './services/adaptivePlanStore';
 import { buildEffectiveCalendar, selectCalendarEventsById } from './services/calendarPipeline';
 import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
@@ -57,6 +57,7 @@ export const App: React.FC = () => {
   const [adaptiveOverrides, setAdaptiveOverrides] = useState<Record<string, AdaptiveWorkoutOverride>>(initialAdaptiveState.overrides);
   const [weeklyDecisions, setWeeklyDecisions] = useState<Record<string, WeeklyDecision>>(initialAdaptiveState.weeklyDecisions);
   const [hydratedAdaptiveUserId, setHydratedAdaptiveUserId] = useState<string | null>(null);
+  const adaptiveCloudLoadedUserRef = useRef<string | null>(null);
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(loadGarminSyncState());
   const [baselineFcRest, setBaselineFcRest] = useState(getBaselineRestingHeartRate());
@@ -206,6 +207,20 @@ export const App: React.FC = () => {
     eventIds?: string[],
     vitalsOverride?: { fcMax: number; fcRest: number }
   ) => {
+    const accountId = appStateRef.current.user?.id;
+    const weekStart = formatDateKey(getMondayOfWeek(syncDate));
+    if ((accountId && adaptiveCloudLoadedUserRef.current !== accountId) ||
+        (isAutoAdaptEnabled() && !appStateRef.current.weeklyDecisions[weekStart])) {
+      return Promise.resolve({
+        success: false,
+        pushedCount: 0,
+        totalWeekWorkouts: 0,
+        alreadyUpToDate: false,
+        results: [],
+        reason: 'ERROR' as const,
+        error: 'Le plan hebdomadaire est en cours de préparation. Réessayez une fois le plan figé.'
+      });
+    }
     const { allEvents: currentEvents } = buildEffectiveCalendar(
       baseCalendarRef.current,
       appStateRef.current.postponeOverrides,
@@ -352,6 +367,7 @@ export const App: React.FC = () => {
         } catch (e) {
           console.warn('Could not sync cloud overrides:', e);
         }
+        if (!cancelled) adaptiveCloudLoadedUserRef.current = user.id;
 
         // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
         if (!cancelled) {
@@ -518,7 +534,10 @@ export const App: React.FC = () => {
       return updatedState;
     });
 
-    if (!shareSlug) {
+    const currentWeekStart = formatDateKey(getMondayOfWeek(referenceDate));
+    const adaptiveDataReady = !user?.id || adaptiveCloudLoadedUserRef.current === user.id;
+    const weekPlanReady = !isAutoAdaptEnabled() || Boolean(appStateRef.current.weeklyDecisions[currentWeekStart]);
+    if (!shareSlug && adaptiveDataReady && weekPlanReady) {
       // Ensure current week workouts are really created AND scheduled before marking them synced.
       const workoutSyncResult = await syncPlannedWorkouts(referenceDate, undefined, {
         fcMax: refreshedConfig.ATHLETE_FC_MAX,
@@ -677,7 +696,7 @@ export const App: React.FC = () => {
     setWeeklyDecisions(decisions);
     saveAdaptivePlanState({ overrides, weeklyDecisions: decisions });
     const updatedAt = markLocalSyncUpdated('adaptiveOverrides');
-    if (actions.length > 0) syncTransformedCalendar();
+    syncTransformedCalendar();
     if (user?.id) {
       void enqueueCloudMutation('adaptiveOverrides', () => syncOverridesToCloud(user.id, {
         adaptiveOverrides: adaptivePlanPayload(overrides, decisions),

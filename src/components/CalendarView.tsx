@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ActivityComparison } from '../types/garmin';
 import {
@@ -644,6 +644,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       }
     }
   }, [schedules, todayKey, hasInitializedOffset]);
+
+  const previousTodayRef = useRef({ key: todayKey, weekOffset: currentWeekOffset });
+  useEffect(() => {
+    const previous = previousTodayRef.current;
+    if (previous.key !== todayKey && hasInitializedOffset) {
+      // Follow the date rollover only if the user was viewing the old current week.
+      if (weekOffset === previous.weekOffset || weekOffset * 7 >= schedules.length) {
+        setWeekOffset(currentWeekOffset);
+        if (currentTodayIndex >= 0) setActiveDayIndex(currentTodayIndex % 7);
+      }
+    }
+    previousTodayRef.current = { key: todayKey, weekOffset: currentWeekOffset };
+  }, [todayKey, currentWeekOffset, currentTodayIndex, hasInitializedOffset, schedules.length, weekOffset]);
 
   const todayWellness = getWellnessForDate(todayKey);
   const todayContext = selectDayActivityContext(todayKey, garminActivities, comparisons);

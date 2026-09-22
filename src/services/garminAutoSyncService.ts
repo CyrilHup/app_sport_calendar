@@ -327,9 +327,8 @@ export function syncCurrentWeekWorkoutsToGarmin(
 ): Promise<AutoSyncResult> {
   const key = workoutSyncRequestKey(events, referenceDate, options);
   if (autoSyncInFlight) {
-    if (key === activeRequestKey) {
-      queuedRequest = null;
-    } else {
+    // An already-running duplicate must not erase a newer changed calendar.
+    if (key !== activeRequestKey) {
       queuedRequest = { events, referenceDate, options, key };
     }
     return autoSyncInFlight;
