@@ -290,12 +290,6 @@ function isTableMissingError(error: any): boolean {
   );
 }
 
-function isMissingColumnError(error: any): boolean {
-  const code = String(error?.code || '');
-  const message = String(error?.message || '').toLowerCase();
-  return code === '42703' || code === 'PGRST204' || (message.includes('column') && message.includes('does not exist'));
-}
-
 export function resetWellnessTableAvailability(): void {
   isWellnessTableAvailable = null;
 }
@@ -407,7 +401,7 @@ export async function syncPairsToCloud(
 ): Promise<boolean> {
   if (!isSupabaseConfigured() || !userId) return false;
   try {
-    let { error } = await supabase
+    const { error } = await supabase
       .from('user_settings')
       .upsert({
         user_id: userId,
@@ -415,12 +409,6 @@ export async function syncPairsToCloud(
         manual_pairs_updated_at: updatedAt,
         updated_at: updatedAt
       }, { onConflict: 'user_id' });
-
-    if (error && isMissingColumnError(error)) {
-      ({ error } = await supabase
-        .from('user_settings')
-        .upsert({ user_id: userId, manual_pairs: pairs, updated_at: updatedAt }, { onConflict: 'user_id' }));
-    }
 
     return !error;
   } catch (err) {
@@ -438,19 +426,11 @@ export async function fetchPairsFromCloud(userId: string): Promise<{
 } | null> {
   if (!isSupabaseConfigured() || !userId) return null;
   try {
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('user_settings')
       .select('manual_pairs, manual_pairs_updated_at, updated_at')
       .eq('user_id', userId)
       .single();
-
-    if (error && isMissingColumnError(error)) {
-      ({ data, error } = await supabase
-        .from('user_settings')
-        .select('manual_pairs, updated_at')
-        .eq('user_id', userId)
-        .single() as any);
-    }
 
     if (error || !data) return null;
     return {
@@ -490,18 +470,9 @@ export async function syncOverridesToCloud(
       payload.postpone_overrides_updated_at = overrides.postponeUpdatedAt || payload.updated_at;
     }
 
-    let { error } = await supabase
+    const { error } = await supabase
       .from('user_settings')
       .upsert(payload, { onConflict: 'user_id' });
-
-    if (error && isMissingColumnError(error)) {
-      const legacyPayload = { ...payload };
-      delete legacyPayload.adaptive_overrides_updated_at;
-      delete legacyPayload.postpone_overrides_updated_at;
-      ({ error } = await supabase
-        .from('user_settings')
-        .upsert(legacyPayload, { onConflict: 'user_id' }));
-    }
 
     if (error) {
       console.warn('Error saving overrides to cloud:', error);
@@ -523,19 +494,11 @@ export async function fetchOverridesFromCloud(userId: string): Promise<{
 } | null> {
   if (!isSupabaseConfigured() || !userId) return null;
   try {
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('user_settings')
       .select('adaptive_overrides, postpone_overrides, adaptive_overrides_updated_at, postpone_overrides_updated_at, updated_at')
       .eq('user_id', userId)
       .single();
-
-    if (error && isMissingColumnError(error)) {
-      ({ data, error } = await supabase
-        .from('user_settings')
-        .select('adaptive_overrides, postpone_overrides, updated_at')
-        .eq('user_id', userId)
-        .single() as any);
-    }
 
     if (error || !data) return null;
     return {
