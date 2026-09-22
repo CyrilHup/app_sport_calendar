@@ -29,6 +29,7 @@ import { STORAGE_KEYS, storageGet, storageSet, storageGetRaw, storageSetRaw } fr
 import { SyncErrorModal, SyncErrorInfo } from './components/SyncErrorModal';
 import { createLatestRerunCoordinator, LatestRerunCoordinator } from './services/asyncCoordinator';
 import { createCloudMutationQueue, type CloudMutationDomain } from './services/cloudMutationQueue';
+import { isValidGarminMaxHeartRate } from './services/garminTrainingPolicy';
 import { registerAutoRefreshTriggers } from './services/autoRefreshTriggers';
 
 const CalendarView = React.lazy(() => import('./components/CalendarView').then(module => ({ default: module.CalendarView })));
@@ -57,7 +58,7 @@ export const App: React.FC = () => {
   const [baselineFcRest, setBaselineFcRest] = useState(getBaselineRestingHeartRate());
   const [detectedFcMax, setDetectedFcMax] = useState<number | undefined>(() => {
     const value = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
-    return value > 140 && value < 240 ? value : undefined;
+    return isValidGarminMaxHeartRate(value) ? value : undefined;
   });
   const [manualPairs, setManualPairs] = useState<Record<string, string>>(loadManualPairs());
   const [activeTab, setActiveTab] = useState<'calendar' | 'compare' | 'periodization' | 'stats'>('calendar');
@@ -446,7 +447,7 @@ export const App: React.FC = () => {
     const refreshedFcRest = getBaselineRestingHeartRate();
     setBaselineFcRest(refreshedFcRest);
     const cachedFcMax = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
-    const validCachedFcMax = cachedFcMax > 140 && cachedFcMax < 240 ? cachedFcMax : undefined;
+    const validCachedFcMax = isValidGarminMaxHeartRate(cachedFcMax) ? cachedFcMax : undefined;
     setDetectedFcMax(validCachedFcMax);
     const refreshedFcMax = appStateRef.current.profile?.fcMax ?? validCachedFcMax ?? appConfig.ATHLETE_FC_MAX;
     appStateRef.current.garminActivities = loadedActivities;

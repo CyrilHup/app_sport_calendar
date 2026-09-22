@@ -6,6 +6,7 @@ import os from 'os';
 import { normalizeGarminActivities } from '../src/server/garminActivityNormalizer.js';
 import { fetchGarminWellness, getGarminLocalDate } from '../src/server/garminWellness.js';
 import { sanitizeGarminText } from '../src/services/garminText.js';
+import { GARMIN_TRAINING_POLICY, isValidGarminMaxHeartRate, isValidRecordedHeartRatePeak } from '../src/services/garminTrainingPolicy.js';
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
 import { validateGarminRequest } from '../src/server/garminRequest.js';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
@@ -261,7 +262,7 @@ export default async function handler(req: any, res: any) {
             }
           } else if (st.targetPaceMinKm) {
             const baseSec = parsePaceSeconds(st.targetPaceMinKm);
-            const margin = st.targetPaceMarginSeconds || 18;
+            const margin = st.targetPaceMarginSeconds || GARMIN_TRAINING_POLICY.defaultPaceMarginSeconds;
             if (baseSec > 0) {
               const slow = baseSec + margin;
               const fast = Math.max(30, baseSec - margin);
@@ -376,7 +377,7 @@ export default async function handler(req: any, res: any) {
       try {
         const userSettings: any = await requiredWithin(gc.getUserSettings(), 5_000);
         const settingsMax = userSettings?.userData?.maxHeartRate || userSettings?.userProfile?.maxHeartRate || userSettings?.maxHeartRate;
-        if (typeof settingsMax === 'number' && settingsMax > 140 && settingsMax < 240) {
+        if (isValidGarminMaxHeartRate(settingsMax)) {
           athleteMaxHr = Math.round(settingsMax);
         }
       } catch (settingsErr) {
@@ -388,7 +389,7 @@ export default async function handler(req: any, res: any) {
     if (activities.length > 0) {
       const recordedPeaks = activities
         .map((a: any) => a.maxHeartRate)
-        .filter((hr: any) => typeof hr === 'number' && hr > 150 && hr < 240);
+        .filter(isValidRecordedHeartRatePeak);
       if (recordedPeaks.length > 0) {
         const peakRecorded = Math.max(...recordedPeaks);
         if (!athleteMaxHr || peakRecorded > athleteMaxHr) {

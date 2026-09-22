@@ -71,6 +71,10 @@ registration is cleaned up after unmount and periodic refresh pauses while hidde
 - Garmin activity synchronization no longer sends workouts from a potentially
   stale calendar in the account tab. The central refresh rebuilds the plan first,
   then passes the same athlete profile used for the UI preview into workout push.
+- Garmin-derived max-HR validation, recorded-peak bounds, trail/flat thresholds,
+  fallback pace, HR-reserve fractions and pace margins live in
+  `garminTrainingPolicy.ts`. The browser and Garmin API use the same validation
+  contract; explicit user profile bounds remain owned by `AppConfig`.
 - Refresh, calendar actions, and workout details now request pushes through one
   App-level entry point. It reads the current base calendar and overrides before
   calling the queued Garmin sync service; views no longer submit their own
