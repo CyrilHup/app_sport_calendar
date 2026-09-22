@@ -40,6 +40,7 @@ export function parseGPXString(gpxText: string, fileName: string): GarminActivit
   let firstTime: Date | null = null;
   let lastTime: Date | null = null;
   let validTrackpoints = 0;
+  let invalidTimeOrder = false;
 
   while ((match = trackpointPattern.exec(gpxText)) !== null) {
     const attributes = match[1];
@@ -53,10 +54,9 @@ export function parseGPXString(gpxText: string, fileName: string): GarminActivit
     const parsedElevation = rawElevation === undefined ? NaN : Number(rawElevation);
     const elevation = Number.isFinite(parsedElevation) ? parsedElevation : null;
     const pointTime = readValidDate(body.match(/<time\b[^>]*>([^<]+)<\/time>/i)?.[1]);
-    if (pointTime) {
-      if (!firstTime) firstTime = pointTime;
-      lastTime = pointTime;
-    }
+    if (!pointTime || (lastTime && pointTime.getTime() < lastTime.getTime())) invalidTimeOrder = true;
+    if (pointTime && !firstTime) firstTime = pointTime;
+    if (pointTime) lastTime = pointTime;
 
     if (previous) {
       distanceMeters += haversineMeters(previous.latitude, previous.longitude, latitude, longitude);
@@ -70,11 +70,10 @@ export function parseGPXString(gpxText: string, fileName: string): GarminActivit
 
   if (validTrackpoints === 0) throw new Error('Le fichier GPX ne contient aucun point de parcours valide.');
 
-  const topLevelTime = readValidDate(gpxText.match(/<time\b[^>]*>([^<]+)<\/time>/i)?.[1]);
-  const startTime = firstTime || topLevelTime || new Date();
-  const durationMinutes = firstTime && lastTime
-    ? Math.max(1, Math.round((lastTime.getTime() - firstTime.getTime()) / 60_000))
-    : 45;
+  if (invalidTimeOrder || !firstTime || !lastTime || lastTime.getTime() <= firstTime.getTime()) {
+    throw new Error('La trace GPX doit contenir des points horodatés dans l’ordre pour créer une activité datée.');
+  }
+  const durationMinutes = Math.max(1, Math.round((lastTime.getTime() - firstTime.getTime()) / 60_000));
   const distanceKm = Number((distanceMeters / 1000).toFixed(2));
   const elevationGainM = Math.round(elevationGainMeters);
 
@@ -87,11 +86,10 @@ export function parseGPXString(gpxText: string, fileName: string): GarminActivit
     activityId: contentId(gpxText),
     activityName: name,
     activityType,
-    startTimeLocal: startTime.toISOString(),
+    startTimeLocal: firstTime.toISOString(),
     durationMinutes,
     distanceKm: distanceKm > 0 ? distanceKm : undefined,
     elevationGainM: elevationGainM > 0 ? elevationGainM : undefined,
-    garminElevationGainM: elevationGainM > 0 ? elevationGainM : undefined,
     elevationSource: 'GPX_IMPORT',
     calories: Math.round(durationMinutes * 8.5),
     source: 'GPX_IMPORT'

@@ -21,7 +21,7 @@ export interface GarminActivity {
   distanceKm?: number;
   elevationGainM?: number;
   elevationLossM?: number;
-  /** Original Garmin/GPX values retained for audit and fallback purposes. */
+  /** Original Garmin values retained when Strava corrects the effective terrain fields. */
   garminElevationGainM?: number;
   garminElevationLossM?: number;
   /** Provider used for the effective elevation values above. */

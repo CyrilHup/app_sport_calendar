@@ -343,9 +343,12 @@ export const GarminTab: React.FC<GarminTabProps> = ({
             text: `✅ "${parsed.activityName}" importée (${parsed.durationMinutes} min, +${parsed.elevationGainM || 0}m D+).`,
             isError: false
           });
-        } catch {
+        } catch (error) {
           setIsGarminProcessing(false);
-          setGarminSyncMsg({ text: '❌ Erreur de lecture du fichier GPX.', isError: true });
+          setGarminSyncMsg({
+            text: `❌ ${error instanceof Error ? error.message : 'Erreur de lecture du fichier GPX.'}`,
+            isError: true
+          });
         }
       }
     };

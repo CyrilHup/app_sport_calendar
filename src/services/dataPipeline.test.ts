@@ -96,6 +96,37 @@ describe('canonical data pipeline helpers', () => {
     expect(afterGarminRefresh.stravaActivityId).toBe('strava-1');
   });
 
+  it('keeps the newest Strava correction regardless of local/cloud merge order', () => {
+    const older = activity({
+      elevationGainM: 300,
+      elevationLossM: 280,
+      elevationSource: 'STRAVA_CORRECTED',
+      stravaActivityId: 'strava-1',
+      elevationUpdatedAt: '2026-09-19T12:00:00.000Z'
+    });
+    const newer = activity({
+      elevationGainM: 420,
+      elevationLossM: 410,
+      elevationSource: 'STRAVA_CORRECTED',
+      stravaActivityId: 'strava-1',
+      elevationUpdatedAt: '2026-09-20T12:00:00.000Z'
+    });
+
+    for (const sources of [[[older], [newer]], [[newer], [older]]]) {
+      const [merged] = mergeGarminActivities(...sources);
+      expect(merged.elevationGainM).toBe(420);
+      expect(merged.elevationLossM).toBe(410);
+      expect(merged.elevationUpdatedAt).toBe('2026-09-20T12:00:00.000Z');
+    }
+  });
+
+  it('does not preserve a GPX value under a Garmin provenance field', () => {
+    const imported = activity({ source: 'GPX_IMPORT', elevationGainM: 120, garminElevationGainM: 120 });
+    const [merged] = mergeGarminActivities([imported], [activity({ source: 'GPX_IMPORT', elevationGainM: 130 })]);
+    expect(merged.elevationGainM).toBe(130);
+    expect(merged.garminElevationGainM).toBeUndefined();
+  });
+
   it('selects one deduplicated day view from activities and comparisons', () => {
     const actual = activity();
     const comparison: ActivityComparison = {

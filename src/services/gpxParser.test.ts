@@ -17,11 +17,27 @@ describe('parseGPXString', () => {
     expect(first.durationMinutes).toBe(20);
     expect(first.distanceKm).toBeGreaterThan(2);
     expect(first.elevationGainM).toBe(10);
+    expect(first.garminElevationGainM).toBeUndefined();
     expect(first.startTimeLocal).toBe('2026-09-16T12:00:00.000Z');
   });
 
   it('rejects files with no usable trackpoint', () => {
     expect(() => parseGPXString('<gpx><trkpt lat="NaN" lon="0"/></gpx>', 'bad.gpx'))
       .toThrow('aucun point');
+  });
+
+  it('rejects a route without trackpoint times instead of inventing a date and duration', () => {
+    const route = '<gpx><trk><trkseg><trkpt lat="45.5" lon="-73.6"><ele>10</ele></trkpt><trkpt lat="45.6" lon="-73.6"><ele>20</ele></trkpt></trkseg></trk></gpx>';
+    expect(() => parseGPXString(route, 'route.gpx')).toThrow('points horodatés');
+  });
+
+  it('rejects reversed trackpoint times', () => {
+    const reversed = '<gpx><trk><trkseg><trkpt lat="45.5" lon="-73.6"><time>2026-09-16T12:20:00Z</time></trkpt><trkpt lat="45.6" lon="-73.6"><time>2026-09-16T12:00:00Z</time></trkpt></trkseg></trk></gpx>';
+    expect(() => parseGPXString(reversed, 'reverse.gpx')).toThrow('points horodatés');
+  });
+
+  it('rejects a partial track whose middle point has no time', () => {
+    const partial = '<gpx><trk><trkseg><trkpt lat="45.5" lon="-73.6"><time>2026-09-16T12:00:00Z</time></trkpt><trkpt lat="45.6" lon="-73.6"/><trkpt lat="45.7" lon="-73.6"><time>2026-09-16T12:20:00Z</time></trkpt></trkseg></trk></gpx>';
+    expect(() => parseGPXString(partial, 'partial.gpx')).toThrow('points horodatés');
   });
 });

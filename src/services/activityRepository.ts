@@ -10,6 +10,11 @@ function isStravaElevation(activity?: Partial<GarminActivity>): boolean {
   return activity?.elevationSource === 'STRAVA_CORRECTED' || Boolean(activity?.stravaActivityId);
 }
 
+function correctionTime(activity: Partial<GarminActivity>): number {
+  const time = Date.parse(activity.elevationUpdatedAt || '');
+  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+}
+
 function mergeActivity(existing: GarminActivity, incoming: GarminActivity): GarminActivity {
   const merged = {
     ...nonEmptyFields(existing),
@@ -21,18 +26,27 @@ function mergeActivity(existing: GarminActivity, incoming: GarminActivity): Garm
   // must not silently restore the less useful value.
   const existingHasStravaElevation = isStravaElevation(existing);
   const incomingHasStravaElevation = isStravaElevation(incoming);
-  if (existingHasStravaElevation && !incomingHasStravaElevation) {
-    merged.elevationGainM = existing.elevationGainM;
-    merged.elevationLossM = existing.elevationLossM;
-    merged.elevationSource = existing.elevationSource;
-    merged.elevationUpdatedAt = existing.elevationUpdatedAt;
-    merged.stravaActivityId = existing.stravaActivityId;
+  if (existingHasStravaElevation || incomingHasStravaElevation) {
+    const keepExisting = existingHasStravaElevation && (
+      !incomingHasStravaElevation || correctionTime(existing) > correctionTime(incoming)
+    );
+    const authoritative = keepExisting ? existing : incoming;
+    const other = keepExisting ? incoming : existing;
+    merged.elevationGainM = authoritative.elevationGainM ?? other.elevationGainM;
+    merged.elevationLossM = authoritative.elevationLossM ?? other.elevationLossM;
+    merged.elevationSource = 'STRAVA_CORRECTED';
+    merged.elevationUpdatedAt = authoritative.elevationUpdatedAt ?? other.elevationUpdatedAt;
+    merged.stravaActivityId = authoritative.stravaActivityId ?? other.stravaActivityId;
   }
 
   // Preserve the original Garmin values even when a partial response arrives
   // from Garmin Connect after the Strava enrichment.
-  merged.garminElevationGainM = existing.garminElevationGainM ?? incoming.garminElevationGainM;
-  merged.garminElevationLossM = existing.garminElevationLossM ?? incoming.garminElevationLossM;
+  merged.garminElevationGainM = merged.source === 'GARMIN_CONNECT'
+    ? incoming.garminElevationGainM ?? existing.garminElevationGainM
+    : undefined;
+  merged.garminElevationLossM = merged.source === 'GARMIN_CONNECT'
+    ? incoming.garminElevationLossM ?? existing.garminElevationLossM
+    : undefined;
   return merged;
 }
 
