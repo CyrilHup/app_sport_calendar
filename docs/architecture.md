@@ -1,7 +1,7 @@
 # Data flow and ownership
 
-The application has an academic iCal feed, Garmin Connect, Strava elevation
-corrections, GPX imports, and Supabase storage. A calendar refresh is coordinated by `src/services/asyncCoordinator.ts`
+The application has an academic iCal feed, Garmin Connect, GPX imports, and
+Supabase storage. A calendar refresh is coordinated by `src/services/asyncCoordinator.ts`
 and `src/App.tsx`; simultaneous refresh triggers coalesce into one active run and
 one latest rerun. Garmin workout pushes have their own latest-request coordinator
 in `src/services/garminAutoSyncService.ts`. Automatic foreground/visibility
@@ -31,9 +31,9 @@ registration is cleaned up after unmount and periodic refresh pauses while hidde
 
 1. Garmin and GPX records merge through `src/services/activityRepository.ts`.
    `activityId` is the identity key; later non-empty fields win, while
-   earlier-only metrics survive partial responses. The latest timestamped Strava
-   correction wins terrain conflicts independently of source order; original
-   Garmin elevation fields are reserved for Garmin records. GPX imports require
+   earlier-only metrics survive partial responses. Legacy third-party elevation
+   corrections are reduced to their original Garmin values when available.
+   GPX imports require
    ordered timestamps on every valid trackpoint, so reimport never invents a
    new activity date. Source order is explicit
    at each boundary (local → cloud during login, cached → live Garmin refresh).

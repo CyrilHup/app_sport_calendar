@@ -10,7 +10,7 @@ export type GarminActivityType =
   | 'CLIMBING'
   | 'OTHER';
 
-export type ElevationSource = 'GARMIN_CONNECT' | 'STRAVA_CORRECTED' | 'GPX_IMPORT';
+export type ElevationSource = 'GARMIN_CONNECT' | 'GPX_IMPORT';
 
 export interface GarminActivity {
   activityId: string;
@@ -21,13 +21,8 @@ export interface GarminActivity {
   distanceKm?: number;
   elevationGainM?: number;
   elevationLossM?: number;
-  /** Original Garmin values retained when Strava corrects the effective terrain fields. */
-  garminElevationGainM?: number;
-  garminElevationLossM?: number;
   /** Provider used for the effective elevation values above. */
   elevationSource?: ElevationSource;
-  elevationUpdatedAt?: string;
-  stravaActivityId?: string;
   avgHeartRate?: number;
   maxHeartRate?: number;
   avgCadence?: number;

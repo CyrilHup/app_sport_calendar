@@ -28,14 +28,6 @@ import {
   Watch
 } from 'lucide-react';
 import { useManagedTimeout } from '../../hooks/useManagedTimeout';
-import {
-  applyStravaElevationEnrichments,
-  disconnectStrava,
-  getStravaAuthorizationUrl,
-  getStravaStatus,
-  StravaStatus,
-  syncStravaElevation
-} from '../../services/stravaService';
 
 export interface GarminTabProps {
   garminState: GarminSyncState;
@@ -81,9 +73,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.password);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => isGarminAutoSyncEnabled());
   const [targetMode, setTargetMode] = useState<GarminWorkoutTargetMode>(() => getGarminWorkoutTargetMode());
-  const [stravaStatus, setStravaStatus] = useState<StravaStatus>({ success: true, connected: false });
-  const [isStravaProcessing, setIsStravaProcessing] = useState(false);
-  const [stravaSyncMsg, setStravaSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [showSupabaseEmailForm, setShowSupabaseEmailForm] = useState(false);
   const [supabaseSignUpMode, setSupabaseSignUpMode] = useState(false);
   const [supabaseEmail, setSupabaseEmail] = useState('');
@@ -109,36 +98,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     });
   }, []);
 
-  const refreshStravaStatus = async () => {
-    if (!user) return;
-    const status = await getStravaStatus();
-    setStravaStatus(status);
-  };
-
-  useEffect(() => {
-    if (!user) {
-      setStravaStatus({ success: true, connected: false });
-      setStravaSyncMsg(null);
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-    const callbackStatus = params.get('strava');
-    const callbackError = params.get('strava_error');
-    if (callbackStatus) {
-      params.delete('strava');
-      params.delete('strava_error');
-      const nextQuery = params.toString();
-      window.history.replaceState({}, document.title, `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`);
-      setStravaSyncMsg({
-        text: callbackStatus === 'connected'
-          ? '✅ Compte Strava connecté. Vous pouvez synchroniser les altitudes.'
-          : `❌ ${callbackError || 'La connexion Strava a échoué.'}`,
-        isError: callbackStatus !== 'connected'
-      });
-    }
-    void refreshStravaStatus();
-  }, [user?.id]);
-
   const handleSupabaseAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSupabaseAuthMsg(null);
@@ -156,7 +115,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
         setSupabaseAuthMsg({
           text: supabaseSignUpMode
             ? 'Compte créé. Validez votre courriel si Supabase le demande, puis connectez-vous.'
-            : 'Connexion Supabase réussie. Vous pouvez maintenant lier Strava.',
+            : 'Connexion Supabase réussie. La synchronisation cloud est active.',
           isError: false
         });
       }
@@ -185,64 +144,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     await signOut();
     setSupabaseAuthMsg(null);
     setIsSupabaseAuthProcessing(false);
-  };
-
-  const handleStravaElevationSync = async (activitiesToSync: GarminActivity[] = activities) => {
-    if (!user) {
-      setStravaSyncMsg({ text: 'Connectez-vous à l’application avant de lier Strava.', isError: true });
-      return;
-    }
-
-    setIsStravaProcessing(true);
-    setStravaSyncMsg({ text: 'Recherche des activités correspondantes et récupération des altitudes Strava…', isError: false });
-    const result = await syncStravaElevation(activitiesToSync);
-    if (result.success) {
-      if (result.enrichments.length > 0) {
-        onActivitiesSynced(applyStravaElevationEnrichments(activitiesToSync, result.enrichments));
-      }
-      setStravaStatus(previous => ({
-        ...previous,
-        success: true,
-        connected: result.connected,
-        athleteName: result.athleteName || previous.athleteName,
-        lastSyncAt: result.lastSyncAt
-      }));
-      setStravaSyncMsg({
-        text: `✅ ${result.enrichedCount} activité(s) enrichie(s) par Strava${result.unmatchedCount ? `, ${result.unmatchedCount} sans correspondance` : ''}.`,
-        isError: false
-      });
-    } else {
-      setStravaSyncMsg({ text: `❌ ${result.error || 'Synchronisation Strava impossible.'}`, isError: true });
-    }
-    setIsStravaProcessing(false);
-  };
-
-  const handleStravaConnect = async () => {
-    if (!user) {
-      setStravaSyncMsg({ text: 'Connectez-vous à l’application avant de lier Strava.', isError: true });
-      return;
-    }
-    setIsStravaProcessing(true);
-    setStravaSyncMsg({ text: 'Préparation de la connexion Strava…', isError: false });
-    const result = await getStravaAuthorizationUrl();
-    if (!result.success || !result.authorizationUrl) {
-      setStravaSyncMsg({ text: `❌ ${result.error || 'Connexion Strava impossible.'}`, isError: true });
-      setIsStravaProcessing(false);
-      return;
-    }
-    window.location.assign(result.authorizationUrl);
-  };
-
-  const handleStravaDisconnect = async () => {
-    setIsStravaProcessing(true);
-    const result = await disconnectStrava();
-    if (result.success) {
-      setStravaStatus({ success: true, connected: false });
-      setStravaSyncMsg({ text: 'Compte Strava dissocié. Les valeurs déjà enrichies restent conservées dans l’historique.', isError: false });
-    } else {
-      setStravaSyncMsg({ text: `❌ ${result.error || 'Dissociation Strava impossible.'}`, isError: true });
-    }
-    setIsStravaProcessing(false);
   };
 
   const handleGarminAPISync = async (e?: React.FormEvent, mode: 'incremental' | 'full' = 'incremental') => {
@@ -540,7 +441,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
         </div>
       </div>
 
-      {/* Supabase account used for cloud sync and Strava OAuth */}
+      {/* Supabase account used for cloud sync */}
       <div
         style={{
           background: 'rgba(139, 92, 246, 0.08)',
@@ -574,7 +475,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
               </button>
             </div>
             <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-              Ce compte permet la synchronisation cloud et autorise la liaison sécurisée avec Strava.
+              Ce compte permet la synchronisation cloud de vos activités et réglages.
             </div>
           </>
         ) : (
@@ -584,7 +485,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
               <div>
                 <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>Connexion Supabase requise</div>
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                  Connectez-vous pour lier Strava et utiliser la synchronisation cloud.
+                  Connectez-vous pour utiliser la synchronisation cloud.
                 </div>
               </div>
             </div>
@@ -688,112 +589,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
             )}
           </>
         )}
-      </div>
-
-      {/* Strava terrain enrichment */}
-      <div
-        style={{
-          background: 'rgba(252, 76, 2, 0.08)',
-          border: '1px solid rgba(252, 76, 2, 0.28)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10
-        }}
-      >
-        {stravaSyncMsg && (
-          <div
-            role="status"
-            style={{
-              padding: '8px 10px',
-              borderRadius: 5,
-              background: stravaSyncMsg.isError ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-              color: stravaSyncMsg.isError ? '#f87171' : '#34d399',
-              fontSize: '0.75rem'
-            }}
-          >
-            {stravaSyncMsg.text}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Activity size={18} color="#fc4c02" />
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>Altitude Strava</span>
-                {stravaStatus.connected && (
-                  <span
-                    style={{
-                      fontSize: '0.68rem',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      color: '#34d399',
-                      padding: '2px 7px',
-                      borderRadius: 9999,
-                      fontWeight: 700
-                    }}
-                  >
-                    Lié
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                {stravaStatus.connected
-                  ? (stravaStatus.athleteName || 'Source Strava active')
-                  : 'Strava devient la source de référence pour le D+ et le D−'}
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {!stravaStatus.connected ? (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleStravaConnect}
-                disabled={isStravaProcessing || !user}
-                style={{ fontSize: '0.75rem', padding: '6px 12px', background: '#fc4c02', borderColor: '#fc4c02' }}
-              >
-                Lier Strava
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => void handleStravaElevationSync()}
-                  disabled={isStravaProcessing || activities.length === 0}
-                  style={{ fontSize: '0.75rem', padding: '6px 12px', background: '#fc4c02', borderColor: '#fc4c02' }}
-                >
-                  <RefreshCw size={13} className={isStravaProcessing ? 'spin-animation' : ''} />
-                  {isStravaProcessing ? 'Synchronisation…' : 'Synchroniser les altitudes'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => void handleStravaDisconnect()}
-                  disabled={isStravaProcessing}
-                  style={{ fontSize: '0.72rem', padding: '5px 9px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
-                >
-                  Dissocier
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-
-        {stravaStatus.lastSyncAt && (
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-            Dernière synchronisation : {new Date(stravaStatus.lastSyncAt).toLocaleString('fr-CA')}
-          </div>
-        )}
-        {stravaStatus.error && !stravaStatus.connected && (
-          <div style={{ fontSize: '0.68rem', color: '#fbbf24' }}>{stravaStatus.error}</div>
-        )}
-        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-          Garmin reste la source de l’activité, de la FC et de la charge. Seules les métriques de terrain sont remplacées lorsqu’une correspondance Strava fiable est trouvée.
-        </div>
       </div>
 
       {/* Synchronisation Automatique de la Semaine (Toggle Row) */}

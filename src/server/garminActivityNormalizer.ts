@@ -52,8 +52,6 @@ export function normalizeGarminActivity(raw: unknown): GarminActivity | null {
     distanceKm,
     elevationGainM: a.elevationGain !== undefined && a.elevationGain !== null ? Math.round(a.elevationGain) : undefined,
     elevationLossM: a.elevationLoss !== undefined && a.elevationLoss !== null ? Math.round(a.elevationLoss) : undefined,
-    garminElevationGainM: a.elevationGain !== undefined && a.elevationGain !== null ? Math.round(a.elevationGain) : undefined,
-    garminElevationLossM: a.elevationLoss !== undefined && a.elevationLoss !== null ? Math.round(a.elevationLoss) : undefined,
     elevationSource: 'GARMIN_CONNECT',
     avgHeartRate: a.averageHR ? Math.round(a.averageHR) : undefined,
     maxHeartRate: a.maxHR ? Math.round(a.maxHR) : undefined,

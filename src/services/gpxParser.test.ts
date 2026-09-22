@@ -17,7 +17,7 @@ describe('parseGPXString', () => {
     expect(first.durationMinutes).toBe(20);
     expect(first.distanceKm).toBeGreaterThan(2);
     expect(first.elevationGainM).toBe(10);
-    expect(first.garminElevationGainM).toBeUndefined();
+    expect('garminElevationGainM' in first).toBe(false);
     expect(first.startTimeLocal).toBe('2026-09-16T12:00:00.000Z');
   });
 

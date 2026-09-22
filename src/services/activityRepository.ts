@@ -6,48 +6,38 @@ function nonEmptyFields(activity: GarminActivity): Partial<GarminActivity> {
   ) as Partial<GarminActivity>;
 }
 
-function isStravaElevation(activity?: Partial<GarminActivity>): boolean {
-  return activity?.elevationSource === 'STRAVA_CORRECTED' || Boolean(activity?.stravaActivityId);
-}
+type LegacyElevation = GarminActivity & {
+  garminElevationGainM?: number;
+  garminElevationLossM?: number;
+  elevationUpdatedAt?: string;
+  stravaActivityId?: string;
+};
 
-function correctionTime(activity: Partial<GarminActivity>): number {
-  const time = Date.parse(activity.elevationUpdatedAt || '');
-  return Number.isFinite(time) ? time : Number.NEGATIVE_INFINITY;
+/** Removes retired elevation metadata and restores original Garmin values when available. */
+export function normalizeActivityElevation(activity: GarminActivity): GarminActivity {
+  const legacy = activity as LegacyElevation;
+  const {
+    garminElevationGainM,
+    garminElevationLossM,
+    elevationUpdatedAt: _elevationUpdatedAt,
+    stravaActivityId: _stravaActivityId,
+    ...clean
+  } = legacy;
+  const wasCorrected = (activity as { elevationSource?: string }).elevationSource === 'STRAVA_CORRECTED';
+  if (!wasCorrected) return clean;
+  return {
+    ...clean,
+    elevationGainM: garminElevationGainM ?? clean.elevationGainM,
+    elevationLossM: garminElevationLossM ?? clean.elevationLossM,
+    elevationSource: activity.source === 'GPX_IMPORT' ? 'GPX_IMPORT' : 'GARMIN_CONNECT'
+  };
 }
 
 function mergeActivity(existing: GarminActivity, incoming: GarminActivity): GarminActivity {
-  const merged = {
+  return {
     ...nonEmptyFields(existing),
     ...nonEmptyFields(incoming)
   } as GarminActivity;
-
-  // Garmin remains the canonical activity source, but a corrected Strava
-  // elevation is authoritative for the terrain fields. A later Garmin sync
-  // must not silently restore the less useful value.
-  const existingHasStravaElevation = isStravaElevation(existing);
-  const incomingHasStravaElevation = isStravaElevation(incoming);
-  if (existingHasStravaElevation || incomingHasStravaElevation) {
-    const keepExisting = existingHasStravaElevation && (
-      !incomingHasStravaElevation || correctionTime(existing) > correctionTime(incoming)
-    );
-    const authoritative = keepExisting ? existing : incoming;
-    const other = keepExisting ? incoming : existing;
-    merged.elevationGainM = authoritative.elevationGainM ?? other.elevationGainM;
-    merged.elevationLossM = authoritative.elevationLossM ?? other.elevationLossM;
-    merged.elevationSource = 'STRAVA_CORRECTED';
-    merged.elevationUpdatedAt = authoritative.elevationUpdatedAt ?? other.elevationUpdatedAt;
-    merged.stravaActivityId = authoritative.stravaActivityId ?? other.stravaActivityId;
-  }
-
-  // Preserve the original Garmin values even when a partial response arrives
-  // from Garmin Connect after the Strava enrichment.
-  merged.garminElevationGainM = merged.source === 'GARMIN_CONNECT'
-    ? incoming.garminElevationGainM ?? existing.garminElevationGainM
-    : undefined;
-  merged.garminElevationLossM = merged.source === 'GARMIN_CONNECT'
-    ? incoming.garminElevationLossM ?? existing.garminElevationLossM
-    : undefined;
-  return merged;
 }
 
 /**
@@ -60,12 +50,13 @@ export function mergeGarminActivities(...sources: GarminActivity[][]): GarminAct
   for (const activities of sources) {
     for (const activity of activities || []) {
       if (!activity?.activityId) continue;
+      const normalized = normalizeActivityElevation(activity);
       const existing = byId.get(activity.activityId);
       if (!existing) {
-        byId.set(activity.activityId, activity);
+        byId.set(activity.activityId, normalized);
         continue;
       }
-      byId.set(activity.activityId, mergeActivity(existing, activity));
+      byId.set(activity.activityId, mergeActivity(existing, normalized));
     }
   }
 

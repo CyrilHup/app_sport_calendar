@@ -68,12 +68,10 @@ describe('canonical data pipeline helpers', () => {
     expect(merged.avgCadence).toBe(174);
   });
 
-  it('keeps corrected Strava elevation when Garmin is synchronized again', () => {
+  it('restores original Garmin elevation from a retired correction in local/cloud data', () => {
     const garmin = activity({
       elevationGainM: 110,
       elevationLossM: 105,
-      garminElevationGainM: 110,
-      garminElevationLossM: 105,
       elevationSource: 'GARMIN_CONNECT'
     });
     const corrected = activity({
@@ -84,47 +82,23 @@ describe('canonical data pipeline helpers', () => {
       elevationSource: 'STRAVA_CORRECTED',
       stravaActivityId: 'strava-1',
       elevationUpdatedAt: '2026-09-20T12:00:00.000Z'
-    });
+    } as unknown as Partial<GarminActivity>);
 
     const [afterEnrichment] = mergeGarminActivities([garmin], [corrected]);
     const [afterGarminRefresh] = mergeGarminActivities([afterEnrichment], [garmin]);
 
-    expect(afterGarminRefresh.elevationGainM).toBe(413);
-    expect(afterGarminRefresh.elevationLossM).toBe(398);
-    expect(afterGarminRefresh.elevationSource).toBe('STRAVA_CORRECTED');
-    expect(afterGarminRefresh.garminElevationGainM).toBe(110);
-    expect(afterGarminRefresh.stravaActivityId).toBe('strava-1');
-  });
-
-  it('keeps the newest Strava correction regardless of local/cloud merge order', () => {
-    const older = activity({
-      elevationGainM: 300,
-      elevationLossM: 280,
-      elevationSource: 'STRAVA_CORRECTED',
-      stravaActivityId: 'strava-1',
-      elevationUpdatedAt: '2026-09-19T12:00:00.000Z'
-    });
-    const newer = activity({
-      elevationGainM: 420,
-      elevationLossM: 410,
-      elevationSource: 'STRAVA_CORRECTED',
-      stravaActivityId: 'strava-1',
-      elevationUpdatedAt: '2026-09-20T12:00:00.000Z'
-    });
-
-    for (const sources of [[[older], [newer]], [[newer], [older]]]) {
-      const [merged] = mergeGarminActivities(...sources);
-      expect(merged.elevationGainM).toBe(420);
-      expect(merged.elevationLossM).toBe(410);
-      expect(merged.elevationUpdatedAt).toBe('2026-09-20T12:00:00.000Z');
-    }
+    expect(afterGarminRefresh.elevationGainM).toBe(110);
+    expect(afterGarminRefresh.elevationLossM).toBe(105);
+    expect(afterGarminRefresh.elevationSource).toBe('GARMIN_CONNECT');
+    expect('garminElevationGainM' in afterGarminRefresh).toBe(false);
+    expect('stravaActivityId' in afterGarminRefresh).toBe(false);
   });
 
   it('does not preserve a GPX value under a Garmin provenance field', () => {
-    const imported = activity({ source: 'GPX_IMPORT', elevationGainM: 120, garminElevationGainM: 120 });
+    const imported = activity({ source: 'GPX_IMPORT', elevationGainM: 120, garminElevationGainM: 120 } as Partial<GarminActivity>);
     const [merged] = mergeGarminActivities([imported], [activity({ source: 'GPX_IMPORT', elevationGainM: 130 })]);
     expect(merged.elevationGainM).toBe(130);
-    expect(merged.garminElevationGainM).toBeUndefined();
+    expect('garminElevationGainM' in merged).toBe(false);
   });
 
   it('selects one deduplicated day view from activities and comparisons', () => {

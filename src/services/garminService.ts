@@ -19,7 +19,7 @@ import { getApiUrl } from './apiConfig';
 import { saveWellnessData, getBaselineRestingHeartRate } from './readinessEngine';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { formatDateKey, toLocalDateKey } from './dateUtils';
-import { mergeGarminActivities } from './activityRepository';
+import { mergeGarminActivities, normalizeActivityElevation } from './activityRepository';
 import { GARMIN_TRAINING_POLICY, isValidGarminMaxHeartRate, isValidRecordedHeartRatePeak } from './garminTrainingPolicy';
 
 
@@ -446,6 +446,7 @@ async function getGarminApiHeaders(): Promise<Record<string, string>> {
  * E.g., climbing/bouldering/grimp activities logged as 'OTHER' or generic are mapped to 'CLIMBING'.
  */
 export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
+  const normalized = normalizeActivityElevation(a);
   let type = a.activityType;
   if (type === 'OTHER' || !type) {
     type = classifyGarminActivityType(a.garminTypeKey, a.activityName);
@@ -464,19 +465,9 @@ export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
   }
 
   return {
-    ...a,
+    ...normalized,
     activityName: actName,
-    activityType: type,
-    // Backfill provenance for activities saved before the Strava enrichment
-    // fields existed. Corrected activities already carry their original
-    // Garmin value and must keep it untouched.
-    garminElevationGainM: a.source === 'GARMIN_CONNECT'
-      ? a.garminElevationGainM ?? (a.elevationSource === 'STRAVA_CORRECTED' ? undefined : a.elevationGainM)
-      : undefined,
-    garminElevationLossM: a.source === 'GARMIN_CONNECT'
-      ? a.garminElevationLossM ?? (a.elevationSource === 'STRAVA_CORRECTED' ? undefined : a.elevationLossM)
-      : undefined,
-    elevationSource: a.elevationSource || (a.source === 'GPX_IMPORT' ? 'GPX_IMPORT' : 'GARMIN_CONNECT')
+    activityType: type
   };
 }
 

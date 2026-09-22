@@ -44,7 +44,7 @@ It automatically bridges academic course timetables, daily transit commutes, and
 - **Direct Google Calendar API (OAuth 2.0):** Optional direct push into primary Google Calendar with color-coding and automatic event update mapping.
 
 ### 5. 📊 High-Density Pro Athlete Telemetry
-- Clean, compact metrics layout inspired by **Intervals.icu** and **Strava Pro Analytics**.
+- Clean, compact metrics layout inspired by sports analytics dashboards.
 - No bulky floating cards or AI templates: sleek tabular alignment (`tabular-nums`), interactive filters, and unified weekly volume/elevation telemetry progress bars.
 
 ---
