@@ -524,6 +524,7 @@ export async function syncWithGarminAPI(
     mode?: 'full' | 'incremental';
   }
 ): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string; syncMode?: string }> {
+  const startingLocalOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
   let combinedActivities = loadStoredGarminActivities();
   try {
     const credsToUse = (credentials?.email && credentials?.password)
@@ -586,6 +587,12 @@ export async function syncWithGarminAPI(
           count: combinedActivities.length,
           error: data?.error || 'Échec de la récupération des activités Garmin Connect.'
         };
+      }
+
+      // A response from the previous account must not repopulate the new
+      // account's device cache after a sign-in switch.
+      if (storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) !== startingLocalOwner) {
+        return { success: false, activities: [], count: 0, error: 'Le compte a changé pendant la synchronisation Garmin.' };
       }
 
       const freshActivities: GarminActivity[] = Array.isArray(data.activities)

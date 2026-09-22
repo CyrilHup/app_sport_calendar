@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { syncWithGarminAPI } from './garminService';
+import { STORAGE_KEYS } from './storageService';
 
 vi.mock('./supabaseClient', () => ({
   getSupabaseAccessToken: vi.fn().mockResolvedValue('test-access-token')
@@ -97,5 +98,23 @@ describe('full Garmin pagination', () => {
     expect(result.error).toContain('network unavailable');
     expect(result.activities.map(item => item.activityId)).toEqual(['one']);
     expect(result.count).toBe(1);
+  });
+
+  it('does not save a late response after the local account changes', async () => {
+    localStorage.setItem(STORAGE_KEYS.ACCOUNT_DATA_OWNER, 'account-a');
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => {
+      localStorage.setItem(STORAGE_KEYS.ACCOUNT_DATA_OWNER, 'account-b');
+      return new Response(JSON.stringify({
+        success: true,
+        activities: [activity('account-a-run')],
+        nextOffset: null
+      }), { status: 200 });
+    }));
+
+    const result = await syncWithGarminAPI({ email: 'a@example.com', password: 'secret' });
+
+    expect(result.success).toBe(false);
+    expect(result.activities).toEqual([]);
+    expect(localStorage.getItem(STORAGE_KEYS.GARMIN_ACTIVITIES)).toBeNull();
   });
 });

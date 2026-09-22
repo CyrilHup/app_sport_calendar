@@ -24,6 +24,7 @@ export const STORAGE_KEYS = {
   AUTO_ADAPT_ENABLED: 'sport_calendar_auto_adapt_enabled',
   CACHED_ETS_ICS: 'cached_ets_ics',
   SYNC_METADATA: 'sport_calendar_sync_metadata_v1',
+  ACCOUNT_DATA_OWNER: 'sport_calendar_account_data_owner_v1',
 
   // Télémétrie et Bien-être
   WELLNESS_HISTORY: 'garmin_wellness_history',

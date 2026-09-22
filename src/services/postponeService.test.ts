@@ -63,7 +63,9 @@ describe('Workout Postpone Service', () => {
       saturdayWorkout.id,
       '2026-09-05',
       '2026-09-06',
-      'Fatigue le samedi, course effectuée dimanche'
+      'Fatigue le samedi, course effectuée dimanche',
+      undefined,
+      saturdayWorkout
     );
 
     const { schedules, allEvents } = applyPostponements(baseSchedules, baseEvents, overrides);
@@ -88,6 +90,12 @@ describe('Workout Postpone Service', () => {
     // Vérification allEvents
     expect(allEvents.length).toBe(1);
     expect(allEvents[0].startDate.startsWith('2026-09-06')).toBe(true);
+    expect(overrides[saturdayWorkout.id].originalWorkoutIdentity).toEqual({
+      title: saturdayWorkout.title,
+      durationMinutes: saturdayWorkout.durationMinutes,
+      sportType: saturdayWorkout.sportType,
+      elevationM: 400
+    });
   });
 
   it('restores the original workout when postponement is cancelled', () => {
@@ -98,7 +106,10 @@ describe('Workout Postpone Service', () => {
       {},
       saturdayWorkout.id,
       '2026-09-05',
-      '2026-09-06'
+      '2026-09-06',
+      undefined,
+      undefined,
+      saturdayWorkout
     );
 
     // Annulation du report
@@ -160,7 +171,10 @@ describe('Workout Postpone Service', () => {
       {},
       saturdayWorkout.id,
       '2026-09-05',
-      '2026-09-06'
+      '2026-09-06',
+      undefined,
+      undefined,
+      saturdayWorkout
     );
     const { allEvents: transformedEvents } = applyPostponements(baseSchedules, baseEvents, overrides);
 
@@ -280,5 +294,93 @@ describe('Workout Postpone Service', () => {
     // 5. Ni la course du dimanche ni la muscu du dimanche ne sont des bonus non planifiés
     const unplannedSun = comparisons.filter(c => c.status === 'UNPLANNED' && c.date === '2026-09-06');
     expect(unplannedSun.length).toBe(0);
+  });
+
+  it('does not apply a postponement to a regenerated workout with the same date-only ID but changed identity', () => {
+    const regeneratedWorkout: CalendarEvent = {
+      ...saturdayWorkout,
+      title: '🏃 Footing facile (40 min)',
+      durationMinutes: 40,
+      sportType: 'RUN_EASY',
+      metadata: { targetElevationM: 50 }
+    };
+    const regeneratedSource: DailySchedule = {
+      ...saturdaySchedule,
+      events: [regeneratedWorkout],
+      sportSession: regeneratedWorkout
+    };
+    const overrides = postponeWorkout(
+      {},
+      saturdayWorkout.id,
+      '2026-09-05',
+      '2026-09-06',
+      undefined,
+      undefined,
+      saturdayWorkout
+    );
+
+    const { schedules, allEvents } = applyPostponements(
+      [regeneratedSource, sundaySchedule],
+      [regeneratedWorkout],
+      overrides
+    );
+
+    expect(schedules[0].events).toEqual([regeneratedWorkout]);
+    expect(schedules[0].sportSession?.title).toBe(regeneratedWorkout.title);
+    expect(schedules[1].events).toHaveLength(0);
+    expect(allEvents).toEqual([regeneratedWorkout]);
+  });
+
+  it('does not fall back to another sport event when the exact original event ID is missing', () => {
+    const otherWorkout: CalendarEvent = {
+      ...saturdayWorkout,
+      id: 'SPORT_WORKOUT_2026-09-05_OTHER',
+      title: '🤸 Renforcement'
+    };
+    const sourceWithDifferentWorkout: DailySchedule = {
+      ...saturdaySchedule,
+      events: [otherWorkout],
+      sportSession: otherWorkout
+    };
+    const overrides = postponeWorkout(
+      {},
+      saturdayWorkout.id,
+      '2026-09-05',
+      '2026-09-06',
+      undefined,
+      undefined,
+      saturdayWorkout
+    );
+
+    const { schedules, allEvents } = applyPostponements(
+      [sourceWithDifferentWorkout, sundaySchedule],
+      [otherWorkout],
+      overrides
+    );
+
+    expect(schedules[0].events).toEqual([otherWorkout]);
+    expect(schedules[1].events).toHaveLength(0);
+    expect(allEvents).toEqual([otherWorkout]);
+  });
+
+  it('keeps legacy date-only postponements unapplied when no saved workout identity exists', () => {
+    const legacyOverrides = {
+      [saturdayWorkout.id]: {
+        originalEventId: saturdayWorkout.id,
+        originalDate: '2026-09-05',
+        targetDate: '2026-09-06',
+        createdAt: '2026-09-04T12:00:00.000Z'
+      }
+    };
+
+    const { schedules, allEvents } = applyPostponements(
+      [saturdaySchedule, sundaySchedule],
+      [saturdayWorkout],
+      legacyOverrides
+    );
+
+    expect(schedules[0].events).toEqual([saturdayWorkout]);
+    expect(schedules[1].events).toHaveLength(0);
+    expect(allEvents).toEqual([saturdayWorkout]);
   });
 });

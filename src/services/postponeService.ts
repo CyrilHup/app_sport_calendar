@@ -1,4 +1,4 @@
-import { CalendarEvent, DailySchedule, WorkoutPostponeOverride } from '../types/calendar';
+import { CalendarEvent, DailySchedule, WorkoutPostponeIdentity, WorkoutPostponeOverride } from '../types/calendar';
 import { COLOR_MAP } from './periodizationEngine';
 import { storageGet, storageSet } from './storageService';
 import { formatFriendlyDay } from './dateUtils';
@@ -20,6 +20,36 @@ export function savePostponeOverrides(overrides: Record<string, WorkoutPostponeO
 }
 
 const formatFriendlyDate = formatFriendlyDay;
+
+function getWorkoutIdentity(event: CalendarEvent): WorkoutPostponeIdentity {
+  return {
+    title: event.title,
+    durationMinutes: event.durationMinutes,
+    sportType: event.sportType ?? null,
+    elevationM: event.metadata?.targetElevationM ?? null
+  };
+}
+
+function matchesWorkoutIdentity(identity: WorkoutPostponeIdentity, event: CalendarEvent): boolean {
+  if (
+    typeof identity.title !== 'string' ||
+    !Number.isFinite(identity.durationMinutes) ||
+    !(identity.sportType === null || typeof identity.sportType === 'string') ||
+    !(identity.elevationM === null || (typeof identity.elevationM === 'number' && Number.isFinite(identity.elevationM)))
+  ) {
+    return false;
+  }
+
+  const currentIdentity = getWorkoutIdentity(event);
+  return identity.title === currentIdentity.title &&
+    identity.durationMinutes === currentIdentity.durationMinutes &&
+    identity.sportType === currentIdentity.sportType &&
+    identity.elevationM === currentIdentity.elevationM;
+}
+
+function isDateOnlyGeneratedWorkoutId(eventId: string): boolean {
+  return /^SPORT_WORKOUT_\d{4}-\d{2}-\d{2}$/.test(eventId);
+}
 
 /**
  * Construit un nouvel objet Date en appliquant les heures et minutes d'origine (ou spécifiées)
@@ -86,9 +116,10 @@ export function applyPostponements(
       continue;
     }
 
-    // Trouver la séance de sport d'origine
+    // Les identifiants des séances générées ne contiennent que la date. Exiger l'ID
+    // exact et, lorsqu'il est disponible, l'identité capturée au moment du report.
     const originalSportIndex = sourceDay.events.findIndex(
-      e => e.id === override.originalEventId || (e.category === 'sport' && !e.metadata?.isPostponedPlaceholder)
+      e => e.id === override.originalEventId && e.category === 'sport' && !e.metadata?.isPostponedPlaceholder
     );
 
     if (originalSportIndex === -1) {
@@ -96,6 +127,17 @@ export function applyPostponements(
     }
 
     const originalSportEvent = sourceDay.events[originalSportIndex];
+    const storedIdentity = override.originalWorkoutIdentity as WorkoutPostponeIdentity | undefined;
+    if (storedIdentity) {
+      if (!matchesWorkoutIdentity(storedIdentity, originalSportEvent)) {
+        continue;
+      }
+    } else if (isDateOnlyGeneratedWorkoutId(override.originalEventId)) {
+      // Les anciennes overrides n'ont pas de snapshot : une ID basée uniquement
+      // sur la date ne permet pas de distinguer l'ancienne séance d'une séance régénérée.
+      continue;
+    }
+
     const originalStartDate = new Date(originalSportEvent.startDate);
     const durationMinutes = originalSportEvent.durationMinutes;
 
@@ -252,13 +294,21 @@ export function postponeWorkout(
   originalDate: string,
   targetDate: string,
   reason?: string,
-  targetStartTime?: string
+  targetStartTime?: string,
+  originalWorkout?: CalendarEvent
 ): Record<string, WorkoutPostponeOverride> {
   const updated: Record<string, WorkoutPostponeOverride> = { ...currentOverrides };
+  const originalWorkoutIdentity = originalWorkout?.id === originalEventId &&
+    originalWorkout.category === 'sport' &&
+    !originalWorkout.metadata?.isPostponedPlaceholder
+    ? getWorkoutIdentity(originalWorkout)
+    : undefined;
+
   updated[originalEventId] = {
     originalEventId,
     originalDate,
     targetDate,
+    originalWorkoutIdentity,
     targetStartTime,
     reason: reason || 'Déplacée / Reportée par l\'athlète',
     createdAt: new Date().toISOString()

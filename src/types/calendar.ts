@@ -69,10 +69,19 @@ export interface WorkoutPostponeOverride {
   originalEventId: string;
   originalDate: string;      // YYYY-MM-DD
   targetDate: string;        // YYYY-MM-DD
+  originalWorkoutIdentity?: WorkoutPostponeIdentity;
   targetStartTime?: string;  // HH:mm or ISO string
   targetEndTime?: string;
   reason?: string;
   createdAt: string;
+}
+
+/** Stable workout fields used to ensure a stored postponement still targets its original session. */
+export interface WorkoutPostponeIdentity {
+  title: string;
+  durationMinutes: number;
+  sportType: SportType | null;
+  elevationM: number | null;
 }
 
 export interface AdaptiveWorkoutOverride {
@@ -152,4 +161,3 @@ export interface DailySchedule {
   hasCourse: boolean;
   hasIntensiveCourse: boolean;
 }
-
