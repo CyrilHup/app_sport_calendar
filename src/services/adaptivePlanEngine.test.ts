@@ -391,6 +391,24 @@ describe('Adaptive Plan Engine', () => {
       completedSet
     );
     expect(statusWithCompleted.recommendedActions.length).toBe(0);
+
+    const startedToday = evaluateAdaptivePlanStatus(
+      dangerTrainingLoad,
+      mockBaseReadiness,
+      [mockWeeklySportEvents[2]],
+      {},
+      new Date('2026-09-12T10:00:00.000Z')
+    );
+    expect(startedToday.recommendedActions).toEqual([]);
+
+    const stillFutureToday = evaluateAdaptivePlanStatus(
+      dangerTrainingLoad,
+      mockBaseReadiness,
+      [mockWeeklySportEvents[2]],
+      {},
+      new Date('2026-09-12T07:00:00.000Z')
+    );
+    expect(stillFutureToday.recommendedActions.some(action => action.eventId === 'SPORT_SAT')).toBe(true);
   });
 
   it('preserves past overrides intact when generating overrides with todayKey', () => {
@@ -617,4 +635,3 @@ describe('Adaptive Plan Engine', () => {
     }
   });
 });
-

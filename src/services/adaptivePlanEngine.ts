@@ -82,15 +82,15 @@ export function evaluateAdaptivePlanStatus(
   asOfDate?: Date,
   completedEventIds: Set<string> = new Set()
 ): AdaptivePlanStatus {
-  const asOfKey = asOfDate ? toLocalDateKey(asOfDate instanceof Date ? asOfDate.toISOString() : String(asOfDate)) : null;
+  const asOfInstant = asOfDate?.getTime();
 
   const isEligibleForAdaptation = (ev: CalendarEvent) => {
     if (ev.metadata?.isPostponedPlaceholder) return false;
     if (ev.metadata?.isCompleted) return false;
     if (completedEventIds.has(ev.id)) return false;
-    const dateStr = toLocalDateKey(ev.startDate);
-    // Les séances passées sont STRICTEMENT GELÉES
-    if (asOfKey && dateStr < asOfKey) return false;
+    // A session started earlier today is already fixed, even if its date key
+    // still equals today's date and Garmin completion has not arrived yet.
+    if (asOfInstant !== undefined && new Date(ev.startDate).getTime() <= asOfInstant) return false;
     return true;
   };
 
