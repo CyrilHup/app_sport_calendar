@@ -182,6 +182,7 @@ export default async function handler(req: any, res: any) {
     if (!isAuthenticated) {
       if (!username || !password) {
         res.status(400).json({
+          code: 'GARMIN_AUTH_REQUIRED',
           error: 'Veuillez renseigner votre email et mot de passe Garmin Connect.'
         });
         return;

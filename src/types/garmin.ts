@@ -135,4 +135,5 @@ export interface WorkoutPushResult {
   sportType?: string;
   message?: string;
   error?: string;
+  errorCode?: 'GARMIN_AUTH_REQUIRED';
 }

@@ -582,7 +582,14 @@ export const App: React.FC = () => {
         fcMax: refreshedConfig.ATHLETE_FC_MAX,
         fcRest: refreshedConfig.ATHLETE_FC_REST
       });
-      if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
+      if (!workoutSyncResult.success && workoutSyncResult.reason === 'NO_CREDENTIALS') {
+        setSyncError({
+          title: 'Garmin à reconnecter',
+          message: 'Les nouvelles séances ne peuvent pas être envoyées à Garmin Connect.',
+          details: 'La session Garmin du serveur a expiré. Ouvrez les réglages Garmin et reconnectez-vous pour reprendre la synchronisation automatique.',
+          isMissingCreds: true
+        });
+      } else if (!workoutSyncResult.success && workoutSyncResult.reason === 'ERROR') {
         console.warn('[Garmin Workout Sync Error]', workoutSyncResult.error);
         if (isManualTrigger) {
           setSyncError({

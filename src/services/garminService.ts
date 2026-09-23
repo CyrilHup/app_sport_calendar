@@ -1164,7 +1164,8 @@ export async function pushWorkoutToGarmin(
     if (!response.ok || !data?.success) {
       return {
         success: false,
-        error: data?.error || 'Erreur lors de l\'envoi de la séance vers Garmin Connect.'
+        error: data?.error || 'Erreur lors de l\'envoi de la séance vers Garmin Connect.',
+        errorCode: data?.code === 'GARMIN_AUTH_REQUIRED' ? 'GARMIN_AUTH_REQUIRED' : undefined
       };
     }
 

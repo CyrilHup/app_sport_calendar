@@ -291,7 +291,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {isLoggedIn ? (userDisplayName || 'Athlète QMT') : 'Compte Athlète'}
             </span>
             <span className="sidebar-user-status">
-              {garminState.connected ? 'Garmin lié • Actif' : 'Non connecté'}
+              {garminState.connected ? 'Historique Garmin disponible' : 'Non connecté'}
             </span>
           </div>
           <Settings size={14} className="sidebar-settings-icon" />

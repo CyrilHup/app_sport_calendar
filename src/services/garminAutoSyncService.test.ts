@@ -270,6 +270,24 @@ describe('Garmin Auto-Sync Service', () => {
     expect(pushSpy).toHaveBeenCalledOnce();
   });
 
+  it('stops the batch after the first structured Garmin reauthentication error', async () => {
+    const events = [
+      createMockEvent({ id: 'wednesday' }),
+      createMockEvent({ id: 'thursday', startDate: '2026-09-10T08:00:00Z' })
+    ];
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: false,
+      error: 'Veuillez renseigner votre email et mot de passe Garmin Connect.',
+      errorCode: 'GARMIN_AUTH_REQUIRED'
+    });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin(events, new Date('2026-09-09T12:00:00Z'));
+
+    expect(result.reason).toBe('NO_CREDENTIALS');
+    expect(pushSpy).toHaveBeenCalledOnce();
+    expect(result.totalWeekWorkouts).toBe(2);
+  });
+
   it('syncs only changed workouts and skips already synced ones', async () => {
     // Mock credentials
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({

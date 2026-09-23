@@ -24,7 +24,7 @@ export interface AutoSyncResult {
   alreadyUpToDate: boolean;
   results: WorkoutPushResult[];
   error?: string;
-  reason?: 'DISABLED' | 'NO_WORKOUTS' | 'ERROR' | 'SUCCESS';
+  reason?: 'NO_CREDENTIALS' | 'DISABLED' | 'NO_WORKOUTS' | 'ERROR' | 'SUCCESS';
   lastSyncTimestamp?: string;
 }
 
@@ -305,6 +305,7 @@ async function runCurrentWeekWorkoutSync(
 
     const results: WorkoutPushResult[] = [];
     let pushedCount = 0;
+    let authRequired = false;
 
     for (const workout of toPush) {
       if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
@@ -313,6 +314,7 @@ async function runCurrentWeekWorkoutSync(
         workout, dateStr, 'FORERUNNER_55', options?.athleteProfile, updatedWorkoutIds[workout.id]
       );
       results.push(pushRes);
+      if (pushRes.errorCode === 'GARMIN_AUTH_REQUIRED') authRequired = true;
 
       if (!sameLocalOwner()) {
         if (pushRes.success && pushRes.workoutId && options?.userId &&
@@ -358,6 +360,7 @@ async function runCurrentWeekWorkoutSync(
         // Both IDs may still exist. Never retry automatically in this state.
         updatedSignatures[workout.id] = `replacement-review::${pushRes.error}`;
       }
+      if (authRequired) break;
     }
 
     storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
@@ -370,7 +373,8 @@ async function runCurrentWeekWorkoutSync(
       totalWeekWorkouts: weekWorkouts.length,
       alreadyUpToDate: false,
       results,
-      reason: failedResults.length === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0 ? 'SUCCESS' : 'ERROR',
+      reason: authRequired ? 'NO_CREDENTIALS' :
+        failedResults.length === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0 ? 'SUCCESS' : 'ERROR',
       error: [legacyWarning, ...cloudWarnings, ...failedResults.map(result => result.error || 'Échec Garmin inconnu')]
         .filter(Boolean).join(' | ') || undefined,
       lastSyncTimestamp: new Date().toISOString()
