@@ -273,7 +273,7 @@ export const App: React.FC = () => {
       fcMax: vitalsOverride?.fcMax ?? appConfig.ATHLETE_FC_MAX,
       fcRest: vitalsOverride?.fcRest ?? appConfig.ATHLETE_FC_REST
     });
-    return syncCurrentWeekWorkoutsToGarmin(events, syncDate, { athleteProfile });
+    return syncCurrentWeekWorkoutsToGarmin(events, syncDate, { athleteProfile, userId: accountId });
   }, [appConfig]);
 
   // Check for spectator share mode in URL (?share=slug)

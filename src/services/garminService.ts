@@ -1166,35 +1166,6 @@ export async function pushWorkoutToGarmin(
 }
 
 /**
- * Pushes an entire week of workouts to Garmin Connect in one click.
- */
-export async function pushWeekWorkoutsToGarmin(
-  events: CalendarEvent[],
-  targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55'
-): Promise<{ success: boolean; pushedCount: number; results: WorkoutPushResult[]; error?: string }> {
-  const sportEvents = events.filter(e => e.category === 'sport' && !e.metadata?.isPostponedPlaceholder);
-  if (sportEvents.length === 0) {
-    return { success: false, pushedCount: 0, results: [], error: 'Aucune séance sportive trouvée pour cette semaine.' };
-  }
-
-  const results: WorkoutPushResult[] = [];
-  let pushedCount = 0;
-
-  for (const ev of sportEvents) {
-    const dateStr = toLocalDateKey(ev.startDate);
-    const res = await pushWorkoutToGarmin(ev, dateStr, targetWatch);
-    results.push(res);
-    if (res.success) pushedCount++;
-  }
-
-  return {
-    success: pushedCount > 0,
-    pushedCount,
-    results
-  };
-}
-
-/**
  * Fetches the latest wellness data (sleep, HRV, RHR, readiness) from Garmin Connect.
  */
 export async function fetchGarminWellness(): Promise<{ success: boolean; wellness?: GarminWellnessData; error?: string }> {

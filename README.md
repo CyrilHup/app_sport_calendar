@@ -113,7 +113,7 @@ Open **[http://localhost:5173/](http://localhost:5173/)** in your browser.
 
 The academic feed URL must be configured as a server-only `ICAL_FEED_URL`, not as a `VITE_` variable: the feed URL may contain a private token. Keep `.env` out of version control. Garmin passwords are kept only for the current browser/app session; users must re-enter them after a full restart. The server caches Garmin OAuth tokens in per-user files for up to 24 hours with owner-only file permissions. Calendar export is an explicit snapshot of the events currently displayed; there is no public endpoint exposing the private academic feed. The application still contains QMT-specific training prescriptions and is not a general coaching product.
 
-Run `npm run typecheck`, `npm test`, and `npm run build` before deployment. The `user_settings` columns in `supabase_schema.sql` must be applied to an existing Supabase database before relying on cross-device override conflict resolution.
+Run `npm run typecheck`, `npm test`, and `npm run build` before deployment. For an existing Supabase project, apply the SQL migrations in `supabase/migrations/` in order; `supabase_schema.sql` is the initial bootstrap, not a substitute for later migrations. Garmin run replacement requires the `garmin_run_registry` and `garmin_run_sync_leases` migration. The app only replaces a previously recorded exact Garmin workout ID. Older duplicate workouts without a recorded ID are never deleted automatically and require manual review in Garmin Connect.
 
 ---
 

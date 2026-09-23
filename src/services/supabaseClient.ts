@@ -290,6 +290,56 @@ function isTableMissingError(error: any): boolean {
   );
 }
 
+export interface GarminRunRegistryEntry {
+  eventId: string;
+  workoutDate: string;
+  workoutId: string;
+  signature: string;
+}
+
+/** Exact app-created Garmin IDs survive browser storage resets and device changes. */
+export async function fetchGarminRunRegistry(userId: string): Promise<GarminRunRegistryEntry[] | null> {
+  if (!isSupabaseConfigured() || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('garmin_run_registry')
+      .select('event_id, workout_date, workout_id, signature')
+      .eq('user_id', userId);
+    if (error) {
+      console.warn('Could not fetch Garmin workout IDs from cloud:', error);
+      return null;
+    }
+    return (data || []).map(row => ({
+      eventId: row.event_id,
+      workoutDate: row.workout_date,
+      workoutId: row.workout_id,
+      signature: row.signature
+    }));
+  } catch (error) {
+    console.warn('Could not fetch Garmin workout IDs from cloud:', error);
+    return null;
+  }
+}
+
+export async function saveGarminRunRegistryEntry(userId: string, entry: GarminRunRegistryEntry): Promise<boolean> {
+  if (!isSupabaseConfigured() || !userId) return false;
+  try {
+    const { error } = await supabase.from('garmin_run_registry').upsert({
+      user_id: userId,
+      event_id: entry.eventId,
+      workout_date: entry.workoutDate,
+      workout_id: entry.workoutId,
+      signature: entry.signature,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'user_id,workout_date' });
+    if (error) console.warn('Could not save exact Garmin workout ID to cloud:', error);
+    return !error;
+  } catch (error) {
+    console.warn('Could not save exact Garmin workout ID to cloud:', error);
+    return false;
+  }
+}
+
 export function resetWellnessTableAvailability(): void {
   isWellnessTableAvailable = null;
 }

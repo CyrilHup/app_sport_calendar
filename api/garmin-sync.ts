@@ -10,7 +10,12 @@ import { GARMIN_TRAINING_POLICY, isValidGarminMaxHeartRate, isValidRecordedHeart
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
 import { validateGarminRequest } from '../src/server/garminRequest.js';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
-import { finishWorkoutReplacement, verifyReplaceableWorkout } from '../src/server/garminWorkoutReplacement.js';
+import { claimGarminRunLease } from '../src/server/garminRunLease.js';
+import {
+  assertNoConflictingScheduledQmtRun,
+  finishWorkoutReplacement,
+  verifyReplaceableWorkout
+} from '../src/server/garminWorkoutReplacement.js';
 
 // Resolve from the project root so the handler works in both Vercel's ESM
 // build and local/CommonJS middleware without relying on import.meta.url.
@@ -203,6 +208,12 @@ export default async function handler(req: any, res: any) {
         return;
       }
 
+      const runLease = workout.sportType === 'RUNNING'
+        ? await claimGarminRunLease(req, workout.scheduledDate, workout.replaceWorkoutId)
+        : null;
+      let pushResponse: Record<string, unknown>;
+      try {
+
       const isFR55 = workout.targetWatch === 'FORERUNNER_55';
       let wt = WorkoutType.Running;
 
@@ -222,6 +233,9 @@ export default async function handler(req: any, res: any) {
       // creating anything; never fall back to a title-based search.
       if (workout.replaceWorkoutId) {
         await verifyReplaceableWorkout(gc, workout.replaceWorkoutId);
+      }
+      if (workout.sportType === 'RUNNING') {
+        await assertNoConflictingScheduledQmtRun(gc, workout.scheduledDate, workout.replaceWorkoutId);
       }
 
       const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
@@ -292,6 +306,7 @@ export default async function handler(req: any, res: any) {
         throw new Error('La date de programmation Garmin est manquante.');
       }
 
+      runLease?.markScheduled();
       try {
         await gc.scheduleWorkout({ workoutId: createdWorkoutId }, workout.scheduledDate);
       } catch (schedErr: any) {
@@ -311,15 +326,23 @@ export default async function handler(req: any, res: any) {
       if (workout.replaceWorkoutId) {
         await finishWorkoutReplacement(gc, workout.replaceWorkoutId, createdWorkoutId);
       }
+      await runLease?.confirm(createdWorkoutId);
 
-      res.status(200).json({
+      pushResponse = {
         success: true,
         workoutId: createdWorkoutId,
         workoutName: workout.title,
         scheduledDate: workout.scheduledDate,
         sportType: workout.sportType,
         message: `Séance "${workout.title}" créée et programmée avec succès sur votre Garmin !`
-      });
+      };
+      } finally {
+        if (runLease) {
+          try { await runLease.release(); }
+          catch (releaseError) { console.warn('Garmin run lease release failed; it will expire:', releaseError); }
+        }
+      }
+      res.status(200).json(pushResponse);
       return;
     }
 
