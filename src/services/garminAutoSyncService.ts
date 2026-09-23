@@ -257,15 +257,19 @@ async function runCurrentWeekWorkoutSync(
       }
       const sig = computeWorkoutSyncSignature(workout, options?.athleteProfile);
       const storedSig = updatedSignatures[workout.id];
+      const recoverableLegacyConflict = storedSig?.startsWith(
+        'replacement-review::Une séance de course [QMT]'
+      );
       if (conflictingEventIds.has(workout.id)) continue;
-      if (storedSig?.startsWith('replacement-review::')) {
+      if (storedSig?.startsWith('replacement-review::') && !recoverableLegacyConflict) {
         manualReviewErrors.push(storedSig.slice('replacement-review::'.length));
         continue;
       }
       // Old records prove that a workout was already scheduled but contain no
       // Garmin workout ID. Re-creating it automatically would make a duplicate.
       if (storedSig && (options?.force || storedSig !== sig) &&
-        !/^[1-9]\d{0,19}$/.test(updatedWorkoutIds[workout.id] || '')) {
+        !/^[1-9]\d{0,19}$/.test(updatedWorkoutIds[workout.id] || '') &&
+        !recoverableLegacyConflict) {
         legacyStaleCount++;
         continue;
       }

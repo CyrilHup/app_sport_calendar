@@ -117,6 +117,22 @@ export async function assertNoConflictingScheduledQmtRun(
   scheduledDate: string,
   verifiedReplaceWorkoutId?: string
 ): Promise<void> {
+  const existingIds = await findScheduledQmtRunIds(client, scheduledDate, verifiedReplaceWorkoutId);
+  const conflict = existingIds.find(id => id !== verifiedReplaceWorkoutId);
+  if (conflict) {
+    throw new Error(
+      `Une séance de course [QMT] (ID ${conflict}) est déjà programmée sur Garmin le ${scheduledDate}. ` +
+      'Création refusée; vérifiez manuellement cette séance avant de réessayer.'
+    );
+  }
+}
+
+/** Exact IDs of app-tagged running workouts on one Garmin calendar date. */
+export async function findScheduledQmtRunIds(
+  client: GarminWorkoutCalendarClient,
+  scheduledDate: string,
+  verifiedReplaceWorkoutId?: string
+): Promise<string[]> {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(scheduledDate);
   if (!dateMatch) {
     throw manualReviewError(`La date ${scheduledDate} ne permet pas de vérifier le calendrier Garmin.`);
@@ -135,6 +151,7 @@ export async function assertNoConflictingScheduledQmtRun(
     throw manualReviewError(`Le calendrier Garmin du ${scheduledDate} est incomplet; création refusée.`);
   }
 
+  const foundIds: string[] = [];
   for (const value of monthCalendar.calendarItems) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw manualReviewError(`Une entrée du calendrier Garmin du ${scheduledDate} est illisible; création refusée.`);
@@ -146,8 +163,10 @@ export async function assertNoConflictingScheduledQmtRun(
     if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
       throw manualReviewError(`Un entraînement du ${scheduledDate} a un identifiant illisible; création refusée.`);
     }
-    if (workoutId === verifiedReplaceWorkoutId) continue;
-
+    if (workoutId === verifiedReplaceWorkoutId) {
+      if (!foundIds.includes(workoutId)) foundIds.push(workoutId);
+      continue;
+    }
     let detail: GarminWorkoutDetail;
     try {
       detail = await client.getWorkoutDetail({ workoutId });
@@ -161,12 +180,10 @@ export async function assertNoConflictingScheduledQmtRun(
     }
 
     if (detail.workoutName.startsWith('[QMT] ') && detail.sportType.sportTypeKey.toLowerCase() === 'running') {
-      throw new Error(
-        `Une séance de course [QMT] (ID ${workoutId}) est déjà programmée sur Garmin le ${scheduledDate}. ` +
-        'Création refusée; vérifiez manuellement cette séance avant de réessayer.'
-      );
+      if (!foundIds.includes(workoutId)) foundIds.push(workoutId);
     }
   }
+  return foundIds;
 }
 
 /** Delete only the verified previous ID; roll back the new workout if that fails. */
@@ -203,5 +220,16 @@ export async function finishWorkoutReplacement(
       throw manualReviewError(`Remplacement Garmin incomplet : ancienne séance ${previousWorkoutId} et nouvelle séance ${newWorkoutId}.`);
     }
     throw new Error(`Ancienne séance Garmin ${previousWorkoutId} toujours présente ; la nouvelle ${newWorkoutId} a été annulée : ${replaceErr?.message || 'erreur inconnue'}`);
+  }
+}
+
+/** Retire every verified historical version after the new one is scheduled. */
+export async function finishWorkoutReplacements(
+  client: GarminWorkoutReplacementClient,
+  previousWorkoutIds: readonly string[],
+  newWorkoutId: string
+): Promise<void> {
+  for (const previousId of previousWorkoutIds) {
+    await finishWorkoutReplacement(client, previousId, newWorkoutId);
   }
 }

@@ -12,8 +12,8 @@ import { validateGarminRequest } from '../src/server/garminRequest.js';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
 import { claimGarminRunLease } from '../src/server/garminRunLease.js';
 import {
-  assertNoConflictingScheduledQmtRun,
-  finishWorkoutReplacement,
+  findScheduledQmtRunIds,
+  finishWorkoutReplacements,
   scheduleWorkoutWithReadback,
   verifyReplaceableWorkout
 } from '../src/server/garminWorkoutReplacement.js';
@@ -236,8 +236,14 @@ export default async function handler(req: any, res: any) {
       if (workout.replaceWorkoutId) {
         await verifyReplaceableWorkout(gc, workout.replaceWorkoutId);
       }
-      if (workout.sportType === 'RUNNING') {
-        await assertNoConflictingScheduledQmtRun(gc, workout.scheduledDate, workout.replaceWorkoutId);
+      const previousRunIds = workout.sportType === 'RUNNING'
+        ? await findScheduledQmtRunIds(gc, workout.scheduledDate, workout.replaceWorkoutId)
+        : [];
+      if (workout.replaceWorkoutId && !previousRunIds.includes(workout.replaceWorkoutId)) {
+        throw new Error(
+          `Remplacement Garmin à vérifier : la séance exacte ${workout.replaceWorkoutId} ` +
+          `n'est plus programmée le ${workout.scheduledDate}.`
+        );
       }
 
       const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
@@ -311,9 +317,10 @@ export default async function handler(req: any, res: any) {
       runLease?.markScheduled();
       await scheduleWorkoutWithReadback(gc, createdWorkoutId, workout.scheduledDate);
 
-      if (workout.replaceWorkoutId) {
-        await finishWorkoutReplacement(gc, workout.replaceWorkoutId, createdWorkoutId);
-      }
+      // Every prior ID was read from the exact Garmin calendar date and its
+      // [QMT] running details were verified. Retire all historical versions,
+      // not just the one ID last seen by this browser.
+      await finishWorkoutReplacements(gc, previousRunIds, createdWorkoutId);
       await runLease?.confirm(createdWorkoutId);
 
       pushResponse = {

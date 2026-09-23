@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertNoConflictingScheduledQmtRun,
+  findScheduledQmtRunIds,
   finishWorkoutReplacement,
+  finishWorkoutReplacements,
   isExactWorkoutScheduledOnDate,
   scheduleWorkoutWithReadback,
   verifyReplaceableWorkout
@@ -132,6 +134,29 @@ describe('exact Garmin workout replacement', () => {
 
 describe('same-date Garmin running workout guard', () => {
   const scheduledDate = '2026-09-22';
+
+  it('collects every exact old app-created running ID, excluding unrelated workouts', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: scheduledDate, workoutId: 123 },
+        { date: scheduledDate, workoutId: 456 },
+        { date: scheduledDate, workoutId: 789 },
+        { date: '2026-09-23', workoutId: 999 }
+      ] }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId,
+        workoutName: workoutId === '789' ? 'Personal run' : '[QMT] Running workout',
+        sportType: { sportTypeKey: 'running' }
+      })),
+      deleteWorkout: vi.fn().mockResolvedValue(undefined)
+    };
+    const oldIds = await findScheduledQmtRunIds(client, scheduledDate);
+    expect(oldIds).toEqual(['123', '456']);
+    await finishWorkoutReplacements(client, oldIds, '999');
+    expect(client.deleteWorkout).toHaveBeenCalledTimes(2);
+    expect(client.deleteWorkout).toHaveBeenNthCalledWith(1, { workoutId: '123' });
+    expect(client.deleteWorkout).toHaveBeenNthCalledWith(2, { workoutId: '456' });
+  });
 
   it('refuses creation when another app-created running workout is already scheduled that date', async () => {
     const client = {

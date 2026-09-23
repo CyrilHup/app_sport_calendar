@@ -439,6 +439,22 @@ describe('Garmin Auto-Sync Service', () => {
     expect(pushSpy).toHaveBeenCalledTimes(2);
   });
 
+  it('retries a legacy same-day QMT conflict after exact-ID reconciliation is available', async () => {
+    const workout = createMockEvent({ id: 'legacy-conflict' });
+    saveSyncedWeekWorkoutSignatures({
+      [workout.id]: 'replacement-review::Une séance de course [QMT] (ID 123) est déjà programmée sur Garmin.'
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: true, workoutId: '456'
+    });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([workout], new Date('2026-09-09T12:00:00Z'));
+
+    expect(result.success).toBe(true);
+    expect(pushSpy).toHaveBeenCalledOnce();
+    expect(isWorkoutSyncedToGarmin(workout)).toBe(true);
+  });
+
   it('shares one in-flight Garmin operation between concurrent callers', async () => {
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
       email: 'test@example.com',
