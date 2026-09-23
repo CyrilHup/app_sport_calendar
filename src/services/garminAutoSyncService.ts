@@ -68,6 +68,13 @@ export function computeWorkoutSyncSignature(event: CalendarEvent, athleteProfile
   })}`;
 }
 
+interface AutoSyncOptions {
+  force?: boolean;
+  athleteProfile?: AthletePhysiologicalProfile;
+  userId?: string;
+  completedEventIds?: readonly string[];
+}
+
 /**
  * Retrieves the stored map of synced workout signatures.
  */
@@ -138,20 +145,21 @@ let activeRequestKey: string | null = null;
 let queuedRequest: {
   events: CalendarEvent[];
   referenceDate: Date;
-  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile; userId?: string };
+  options?: AutoSyncOptions;
   key: string;
 } | null = null;
 
 function workoutSyncRequestKey(
   events: CalendarEvent[],
   referenceDate: Date,
-  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile; userId?: string }
+  options?: AutoSyncOptions
 ): string {
   return JSON.stringify({
     week: getCurrentWeekDateBounds(referenceDate).weekStartStr,
     force: Boolean(options?.force),
     userId: options?.userId,
     athlete: options?.athleteProfile,
+    completedEventIds: [...(options?.completedEventIds || [])].sort(),
     signatures: filterCurrentWeekSportWorkouts(events, referenceDate)
       .map(event => computeWorkoutSyncSignature(event, options?.athleteProfile))
       .sort()
@@ -165,7 +173,7 @@ function workoutSyncRequestKey(
 async function runCurrentWeekWorkoutSync(
   events: CalendarEvent[],
   referenceDate: Date = new Date(),
-  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile; userId?: string }
+  options?: AutoSyncOptions
 ): Promise<AutoSyncResult> {
   const startingOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
   const sameLocalOwner = () => storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) === startingOwner;
@@ -208,6 +216,7 @@ async function runCurrentWeekWorkoutSync(
     const manualReviewErrors: string[] = [];
     const cloudWarnings: string[] = [];
     const conflictingEventIds = new Set<string>();
+    const completedEventIds = new Set(options?.completedEventIds);
 
     for (const entry of cloudRegistry || []) {
       if (!/^[1-9]\d{0,19}$/.test(entry.workoutId)) continue;
@@ -242,7 +251,8 @@ async function runCurrentWeekWorkoutSync(
       }
       // A session already started (or completed early) must not be rewritten
       // on Garmin after an algorithm/configuration change.
-      if (workout.metadata?.isCompleted || new Date(workout.startDate).getTime() <= referenceDate.getTime()) {
+      if (completedEventIds.has(workout.id) || workout.metadata?.isCompleted ||
+        new Date(workout.startDate).getTime() <= referenceDate.getTime()) {
         continue;
       }
       const sig = computeWorkoutSyncSignature(workout, options?.athleteProfile);
@@ -410,7 +420,7 @@ async function runCurrentWeekWorkoutSync(
 export function syncCurrentWeekWorkoutsToGarmin(
   events: CalendarEvent[],
   referenceDate: Date = new Date(),
-  options?: { force?: boolean; athleteProfile?: AthletePhysiologicalProfile; userId?: string }
+  options?: AutoSyncOptions
 ): Promise<AutoSyncResult> {
   const key = workoutSyncRequestKey(events, referenceDate, options);
   if (autoSyncInFlight) {

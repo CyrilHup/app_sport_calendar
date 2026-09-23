@@ -260,7 +260,25 @@ export const App: React.FC = () => {
       fcMax: vitalsOverride?.fcMax ?? appConfig.ATHLETE_FC_MAX,
       fcRest: vitalsOverride?.fcRest ?? appConfig.ATHLETE_FC_REST
     });
-    return syncCurrentWeekWorkoutsToGarmin(events, syncDate, { athleteProfile, userId: accountId });
+    const completedEventIds = new Set(compareWorkoutsWithGarmin(
+      events,
+      appStateRef.current.garminActivities,
+      appStateRef.current.manualPairs,
+      syncDate
+    ).flatMap(comparison => comparison.actualActivity && comparison.plannedEvent
+      ? [comparison.plannedEvent.id]
+      : []));
+    // An explicit user pairing can refer to a workout on a later date, which
+    // the day-scoped comparison intentionally does not evaluate yet.
+    const activityIds = new Set(appStateRef.current.garminActivities.map(activity => activity.activityId));
+    for (const [eventId, activityId] of Object.entries(appStateRef.current.manualPairs)) {
+      if (activityIds.has(activityId)) completedEventIds.add(eventId);
+    }
+    return syncCurrentWeekWorkoutsToGarmin(events, syncDate, {
+      athleteProfile,
+      userId: accountId,
+      completedEventIds: [...completedEventIds]
+    });
   }, [appConfig]);
 
   // Check for spectator share mode in URL (?share=slug)

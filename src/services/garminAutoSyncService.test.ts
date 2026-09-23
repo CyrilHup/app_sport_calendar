@@ -310,6 +310,26 @@ describe('Garmin Auto-Sync Service', () => {
     expect(pushSpy).not.toHaveBeenCalled();
   });
 
+  it('does not recreate a workout completed before its scheduled start', async () => {
+    const completed = createMockEvent({ id: 'completed-before-start' });
+    const upcoming = createMockEvent({ id: 'still-upcoming', startDate: '2026-09-10T16:00:00Z' });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: true,
+      workoutId: '123',
+      workoutName: '[QMT] Workout',
+      scheduledDate: '2026-09-10'
+    });
+
+    await syncCurrentWeekWorkoutsToGarmin(
+      [completed, upcoming],
+      new Date('2026-09-09T12:00:00Z'),
+      { completedEventIds: [completed.id] }
+    );
+
+    expect(pushSpy).toHaveBeenCalledOnce();
+    expect(pushSpy).toHaveBeenCalledWith(upcoming, '2026-09-10', 'FORERUNNER_55', undefined, undefined);
+  });
+
   it('syncs only changed workouts and skips already synced ones', async () => {
     // Mock credentials
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
