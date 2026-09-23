@@ -884,8 +884,6 @@ export const App: React.FC = () => {
           weeklyDecisions={weeklyDecisions}
           adaptivePlanReady={baseCalendar.schedules.length > 0 && !isRecharging && (!user?.id || hydratedAdaptiveUserId === user.id)}
           onApplyAdaptivePlan={handleApplyAdaptivePlan}
-          onOpenGarminSync={() => handleOpenAccountModal('garmin')}
-          onSyncGarminWorkouts={syncPlannedWorkouts}
         />
       )}
 

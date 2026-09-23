@@ -20,8 +20,6 @@ import {
   Sparkles,
   ShieldCheck,
   ShieldAlert,
-  Watch,
-  RefreshCw,
   Activity,
   Layers,
   Zap
@@ -29,17 +27,14 @@ import {
 import { WorkoutDetailModal } from './WorkoutDetailModal';
 import { WeatherWidget } from './WeatherWidget';
 import { getWellnessForDate, calculateReadinessScore, getProactivePlanRecommendation, getBaselineRestingHeartRate } from '../services/readinessEngine';
-import { triggerHapticFeedback } from '../services/hapticsService';
 import { formatDateKey, formatTime, formatFriendlyDay, toLocalDateKey, parseLocalDate, addDays, getMondayOfWeek } from '../services/dateUtils';
 import { computeTrainingLoadStats, calculateSessionTrimp } from '../services/statsEngine';
 import { evaluateAdaptivePlanStatus, isAutoAdaptEnabled, setAutoAdaptEnabled } from '../services/adaptivePlanEngine';
 import { AdaptiveWorkoutAction, AdaptiveWorkoutOverride } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
 import { formatGarminActivityName, getGarminExecutionBadge, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
-import { isGarminAutoSyncEnabled, type AutoSyncResult } from '../services/garminAutoSyncService';
 import { selectDayActivityContext } from '../services/daySelectors';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
-import { useManagedTimeout } from '../hooks/useManagedTimeout';
 import { getDynamicAthleteProfile } from '../services/garminService';
 import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
 import { MobilityEventChip } from './MobilityEventChip';
@@ -49,7 +44,6 @@ import { projectWeeklyAdaptivePlan } from '../services/weeklyAdaptivePlan';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
-  onSyncGarminWorkouts: (referenceDate: Date) => Promise<AutoSyncResult>;
   referenceDateStr?: string;
   referenceDate?: Date;
   onPostponeWorkout?: (
@@ -67,7 +61,6 @@ interface CalendarViewProps {
   weeklyDecisions?: Record<string, WeeklyDecision>;
   adaptivePlanReady?: boolean;
   onApplyAdaptivePlan?: (actions: AdaptiveWorkoutAction[]) => void;
-  onOpenGarminSync?: () => void;
 }
 
 type ViewMode = 'day' | 'grid' | 'list';
@@ -553,7 +546,6 @@ const UnplannedGarminCard: React.FC<UnplannedGarminCardProps> = ({
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
   schedules,
-  onSyncGarminWorkouts,
   referenceDateStr,
   referenceDate,
   onPostponeWorkout,
@@ -564,10 +556,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   adaptiveOverrides = {},
   weeklyDecisions = {},
   adaptivePlanReady = true,
-  onApplyAdaptivePlan,
-  onOpenGarminSync
+  onApplyAdaptivePlan
 }) => {
-  const scheduleTimeout = useManagedTimeout();
   const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
   const [filter, setFilter] = useState<CalendarFilterCategory>('all');
   const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
@@ -599,40 +589,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
     return currentTodayIndex >= 0 ? currentTodayIndex % 7 : 0;
   });
-
-  const [isSyncingWeekGarmin, setIsSyncingWeekGarmin] = useState<boolean>(false);
-  const [garminSyncFeedback, setGarminSyncFeedback] = useState<string | null>(null);
-
-  const handleManualSyncCurrentWeek = async () => {
-    setIsSyncingWeekGarmin(true);
-    setGarminSyncFeedback(null);
-    triggerHapticFeedback('light');
-
-    try {
-      const res = await onSyncGarminWorkouts(effectiveRefDate);
-      if (res.success) {
-        triggerHapticFeedback('success');
-        if (res.pushedCount > 0) {
-          setGarminSyncFeedback(`${res.pushedCount} séance${res.pushedCount > 1 ? 's' : ''} envoyée${res.pushedCount > 1 ? 's' : ''} sur Garmin !`);
-        } else {
-          setGarminSyncFeedback('Séances de la semaine déjà synchronisées !');
-        }
-      } else if (res.reason === 'NO_CREDENTIALS') {
-        triggerHapticFeedback('warning');
-        setGarminSyncFeedback('Identifiants Garmin non configurés');
-        if (onOpenGarminSync) onOpenGarminSync();
-      } else {
-        triggerHapticFeedback('warning');
-        setGarminSyncFeedback(res.error || 'Erreur lors de la synchronisation Garmin');
-      }
-    } catch {
-      triggerHapticFeedback('warning');
-      setGarminSyncFeedback('Erreur réseau ou proxy');
-    } finally {
-      setIsSyncingWeekGarmin(false);
-      scheduleTimeout(() => setGarminSyncFeedback(null), 4500);
-    }
-  };
 
   useEffect(() => {
     if (!hasInitializedOffset && schedules.length > 0) {
@@ -905,39 +861,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             🧘 Mobilité ({countMobility})
           </button>
 
-          {/* Bouton Synchro Semaine Garmin */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-            {garminSyncFeedback && (
-              <span style={{ fontSize: '0.72rem', color: '#34d399', fontWeight: 600 }}>
-                {garminSyncFeedback}
-              </span>
-            )}
-            <button
-              type="button"
-              className="chip-btn"
-              onClick={handleManualSyncCurrentWeek}
-              disabled={isSyncingWeekGarmin}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                background: 'rgba(37, 99, 235, 0.12)',
-                borderColor: 'rgba(56, 189, 248, 0.4)',
-                color: '#38bdf8',
-                fontWeight: 600,
-                padding: '4px 10px',
-                fontSize: '0.74rem'
-              }}
-              title="Synchroniser ou actualiser toutes les séances de la semaine courante sur votre montre Garmin Forerunner 55"
-            >
-              {isSyncingWeekGarmin ? (
-                <RefreshCw size={12} className="spin-animation" />
-              ) : (
-                <Watch size={13} />
-              )}
-              <span>{isSyncingWeekGarmin ? 'Envoi Garmin...' : 'Sync Semaine Garmin'}</span>
-            </button>
-          </div>
         </div>
       </div>
 
