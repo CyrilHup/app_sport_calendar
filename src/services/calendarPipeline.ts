@@ -16,17 +16,3 @@ export function buildEffectiveCalendar(
   const postponed = applyPostponements(baseCalendar.schedules, baseCalendar.allEvents, postpones);
   return applyAdaptiveModifications(postponed.schedules, postponed.allEvents, adaptations);
 }
-
-export function selectCalendarEventsById(
-  events: CalendarEvent[],
-  eventIds?: string[]
-): { events: CalendarEvent[]; missingIds: string[] } {
-  if (!eventIds) return { events, missingIds: [] };
-  const requested = new Set(eventIds);
-  const selected = events.filter(event => requested.has(event.id));
-  const found = new Set(selected.map(event => event.id));
-  return {
-    events: selected,
-    missingIds: [...requested].filter(id => !found.has(id))
-  };
-}

@@ -15,7 +15,7 @@ import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/co
 import { cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
 import { buildOverridesFromActions, isAutoAdaptEnabled, loadAdaptivePlanState, saveAdaptivePlanState } from './services/adaptivePlanEngine';
 import { parseAdaptivePlanState, serializeAdaptivePlanState, WeeklyDecision } from './services/adaptivePlanStore';
-import { buildEffectiveCalendar, selectCalendarEventsById } from './services/calendarPipeline';
+import { buildEffectiveCalendar } from './services/calendarPipeline';
 import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
 import { isTrailOrRunning } from './services/activityClassifier';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
@@ -235,7 +235,6 @@ export const App: React.FC = () => {
 
   const syncPlannedWorkouts = useCallback((
     syncDate: Date,
-    eventIds?: string[],
     vitalsOverride?: { fcMax: number; fcRest: number }
   ) => {
     const accountId = appStateRef.current.user?.id;
@@ -252,23 +251,11 @@ export const App: React.FC = () => {
         error: 'Le plan hebdomadaire est en cours de préparation. Réessayez une fois le plan figé.'
       });
     }
-    const { allEvents: currentEvents } = buildEffectiveCalendar(
+    const { allEvents: events } = buildEffectiveCalendar(
       baseCalendarRef.current,
       appStateRef.current.postponeOverrides,
       appStateRef.current.adaptiveOverrides
     );
-    const { events, missingIds } = selectCalendarEventsById(currentEvents, eventIds);
-    if (missingIds.length > 0) {
-      return Promise.resolve({
-        success: false,
-        pushedCount: 0,
-        totalWeekWorkouts: 0,
-        alreadyUpToDate: false,
-        results: [],
-        reason: 'ERROR' as const,
-        error: 'La séance sélectionnée ne figure plus dans le calendrier actuel. Actualisez puis réessayez.'
-      });
-    }
     const athleteProfile = getDynamicAthleteProfile(appStateRef.current.garminActivities, {
       fcMax: vitalsOverride?.fcMax ?? appConfig.ATHLETE_FC_MAX,
       fcRest: vitalsOverride?.fcRest ?? appConfig.ATHLETE_FC_REST
@@ -591,7 +578,7 @@ export const App: React.FC = () => {
     const weekPlanReady = !isAutoAdaptEnabled() || Boolean(appStateRef.current.weeklyDecisions[currentWeekStart]);
     if (!shareSlug && adaptiveDataReady && weekPlanReady) {
       // Ensure current week workouts are really created AND scheduled before marking them synced.
-      const workoutSyncResult = await syncPlannedWorkouts(referenceDate, undefined, {
+      const workoutSyncResult = await syncPlannedWorkouts(referenceDate, {
         fcMax: refreshedConfig.ATHLETE_FC_MAX,
         fcRest: refreshedConfig.ATHLETE_FC_REST
       });

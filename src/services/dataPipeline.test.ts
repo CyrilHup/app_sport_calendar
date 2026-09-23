@@ -8,7 +8,6 @@ import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, GarminActivity } from '../types/garmin';
 import { createAppConfig, getPeriodizationContext, GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { buildCompleteCalendar } from './icsParser';
-import { buildEffectiveCalendar, selectCalendarEventsById } from './calendarPipeline';
 
 const store: Record<string, string> = {};
 (globalThis as any).localStorage = {
@@ -119,15 +118,6 @@ describe('canonical data pipeline helpers', () => {
     expect(result.activities).toEqual([actual]);
     expect(result.comparisons).toEqual([comparison]);
     expect(result.isPlannedSessionCompleted).toBe(true);
-  });
-
-  it('uses the same effective calendar for display and exact-ID sync requests', () => {
-    const planned = event({ id: 'planned-1' });
-    const base = { schedules: [], allEvents: [planned] };
-    const effective = buildEffectiveCalendar(base, {}, {});
-
-    expect(selectCalendarEventsById(effective.allEvents, ['planned-1']).events).toEqual([planned]);
-    expect(selectCalendarEventsById(effective.allEvents, ['removed-id']).missingIds).toEqual(['removed-id']);
   });
 
   it('uses the earliest Monday between today and the configured sport start', () => {

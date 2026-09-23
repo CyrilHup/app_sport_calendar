@@ -49,7 +49,7 @@ import { projectWeeklyAdaptivePlan } from '../services/weeklyAdaptivePlan';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
-  onSyncGarminWorkouts: (referenceDate: Date, eventIds?: string[]) => Promise<AutoSyncResult>;
+  onSyncGarminWorkouts: (referenceDate: Date) => Promise<AutoSyncResult>;
   referenceDateStr?: string;
   referenceDate?: Date;
   onPostponeWorkout?: (
@@ -1795,7 +1795,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         unifiedGroup={selectedUnifiedGroup}
         athlete={athlete}
         athleteProfile={athleteProfile}
-        onSyncGarminWorkouts={onSyncGarminWorkouts}
         onClose={() => {
           setSelectedEvent(null);
           setSelectedComparison(null);
@@ -1803,7 +1802,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         }}
         onPostpone={onPostponeWorkout}
         onCancelPostpone={onCancelPostponeWorkout}
-        onOpenGarminSync={onOpenGarminSync}
       />
     </div>
   );
