@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured, UserProfile, fetchUserProfile, upsertUserProfile, clearPermanentAuthBackup } from '../services/supabaseClient';
 import { App as CapacitorApp } from '@capacitor/app';
@@ -27,11 +27,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const authGenerationRef = useRef(0);
+  const activeUserIdRef = useRef<string | null>(null);
 
   const isConfigured = isSupabaseConfigured();
 
-  const loadProfileForUser = async (u: User) => {
-    if (u.user_metadata?.garmin_password) {
+  const loadProfileForUser = async (u: User, generation = authGenerationRef.current) => {
+    if (u.user_metadata?.garmin_password && activeUserIdRef.current === u.id) {
       // Migration from older releases that persisted the Garmin password in user metadata.
       void supabase.auth.updateUser({ data: { garmin_password: null } });
     }
@@ -45,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!p.icalUrl && u.user_metadata?.ical_url) {
         p.icalUrl = u.user_metadata.ical_url;
       }
-      setProfile(p);
+      if (authGenerationRef.current === generation && activeUserIdRef.current === u.id) setProfile(p);
     } else {
       // Create initial profile if missing
       const newP: UserProfile = {
@@ -57,7 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isPublic: false
       };
       await upsertUserProfile(newP);
-      setProfile(newP);
+      if (authGenerationRef.current === generation && activeUserIdRef.current === u.id) setProfile(newP);
     }
   };
 
@@ -67,27 +69,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    // 1. Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        loadProfileForUser(session.user).finally(() => setLoading(false));
-      } else {
+    let cancelled = false;
+    let authEventSeen = false;
+    const applySession = (nextSession: Session | null) => {
+      if (cancelled) return;
+      const nextUser = nextSession?.user ?? null;
+      const nextUserId = nextUser?.id ?? null;
+      setSession(nextSession);
+      setUser(nextUser);
+      if (activeUserIdRef.current === nextUserId) {
+        if (!nextUser) setLoading(false);
+        return;
+      }
+
+      activeUserIdRef.current = nextUserId;
+      const generation = ++authGenerationRef.current;
+      setProfile(null);
+      if (!nextUser) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      // Supabase calls inside onAuthStateChange can deadlock its auth client.
+      // Schedule profile I/O after the callback returns.
+      setTimeout(() => {
+        if (cancelled || authGenerationRef.current !== generation) return;
+        void loadProfileForUser(nextUser, generation)
+          .catch(error => console.warn('Could not load account profile:', error))
+          .finally(() => {
+            if (!cancelled && authGenerationRef.current === generation) setLoading(false);
+          });
+      }, 0);
+    };
+
+    // Initial session check can race with INITIAL_SESSION from the subscription.
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!authEventSeen) applySession(session);
+    }).catch(error => {
+      if (!cancelled && !authEventSeen) {
+        console.warn('Could not restore auth session:', error);
         setLoading(false);
       }
     });
 
-    // 2. Auth state subscription
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await loadProfileForUser(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        setProfile(null);
-      }
-      setLoading(false);
+    // Keep the callback synchronous; profile fetching happens in applySession's timer.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      authEventSeen = true;
+      applySession(nextSession);
     });
 
     // 3. Capacitor Native Deep Link Handler for OAuth return
@@ -110,6 +138,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {}
 
     return () => {
+      cancelled = true;
+      authGenerationRef.current += 1;
+      activeUserIdRef.current = null;
       subscription.unsubscribe();
       if (urlListener && typeof urlListener.remove === 'function') {
         urlListener.remove();
@@ -165,6 +196,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await supabase.auth.signOut();
       await clearPermanentAuthBackup();
     }
+    authGenerationRef.current += 1;
+    activeUserIdRef.current = null;
     setUser(null);
     setSession(null);
     setProfile(null);
@@ -172,8 +205,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateProfile = async (data: Partial<UserProfile>): Promise<boolean> => {
     if (!user) return false;
+    const userId = user.id;
     const ok = await upsertUserProfile({ id: user.id, ...data });
-    if (ok) {
+    if (ok && activeUserIdRef.current === userId) {
       setProfile(prev => prev ? { ...prev, ...data } : null);
       if (data.icalUrl) {
         supabase.auth.updateUser({ data: { ical_url: data.icalUrl } }).catch(() => {});
@@ -194,7 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         data: updateData
       });
       if (!error && data.user) {
-        setUser(data.user);
+        if (activeUserIdRef.current === data.user.id) setUser(data.user);
         return true;
       }
     } catch (e) {
@@ -213,7 +247,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       });
       if (!error && data.user) {
-        setUser(data.user);
+        if (activeUserIdRef.current === data.user.id) setUser(data.user);
         return true;
       }
     } catch (e) {
