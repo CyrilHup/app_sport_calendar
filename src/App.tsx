@@ -686,7 +686,7 @@ export const App: React.FC = () => {
 
   const syncTransformedCalendar = () => {
     if (baseCalendarRef.current.schedules.length === 0) return;
-    void syncPlannedWorkouts(referenceDate);
+    void syncPlannedWorkouts(new Date());
   };
 
   const handlePostponeWorkout = (
