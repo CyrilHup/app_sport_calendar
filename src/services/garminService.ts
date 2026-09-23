@@ -515,7 +515,7 @@ export function saveGarminSyncState(state: GarminSyncState): void {
  * Calls the backend /api/garmin-sync endpoint to authenticate with Garmin Connect
  * and retrieve actual logged activities via the Garmin API.
  */
-export async function syncWithGarminAPI(
+async function performGarminActivitySync(
   credentials?: {
     email?: string;
     password?: string;
@@ -671,6 +671,25 @@ export async function syncWithGarminAPI(
       error: err.message || 'Network error while connecting to Garmin API proxy.'
     };
   }
+}
+
+let garminActivitySyncTail: Promise<void> = Promise.resolve();
+
+/** All callers share one activity-cache writer, including manual full history. */
+export function syncWithGarminAPI(
+  credentials?: { email?: string; password?: string },
+  options?: { mode?: 'full' | 'incremental' }
+): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string; syncMode?: string }> {
+  const requestedOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
+  const result = garminActivitySyncTail.then(() => {
+    if (storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) !== requestedOwner) {
+      return { success: false, activities: [], count: 0,
+        error: 'Le compte a changé avant la synchronisation Garmin.' };
+    }
+    return performGarminActivitySync(credentials, options);
+  });
+  garminActivitySyncTail = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 
