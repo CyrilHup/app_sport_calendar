@@ -137,12 +137,38 @@ describe('Garmin Auto-Sync Service', () => {
         durationMinutes: 60,
         location: 'Mont-Royal',
         metadata: { isPostponedPlaceholder: true }
+      }),
+      createMockEvent({
+        id: 'adaptive_rest',
+        title: 'Repos complet',
+        sportType: 'MOBILITY',
+        startDate: '2026-09-11T08:00:00Z',
+        durationMinutes: 0,
+        metadata: { isAdapted: true }
       })
     ];
 
     const filtered = filterCurrentWeekSportWorkouts(sampleEvents, refDate);
     expect(filtered.length).toBe(1);
     expect(filtered[0].id).toBe('sport_current_week');
+  });
+
+  it('never sends a zero-minute adaptive rest to Garmin', async () => {
+    const rest = createMockEvent({
+      id: 'rest-day',
+      title: 'Repos complet',
+      sportType: 'MOBILITY',
+      durationMinutes: 0,
+      metadata: { isAdapted: true }
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin(
+      [rest], new Date('2026-09-09T12:00:00Z'), { force: true }
+    );
+
+    expect(result.reason).toBe('NO_WORKOUTS');
+    expect(pushSpy).not.toHaveBeenCalled();
   });
 
   it('computes distinct signatures when workout date or parameters change', () => {

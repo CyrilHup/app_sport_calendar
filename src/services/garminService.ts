@@ -703,8 +703,11 @@ export function buildWorkoutPayloadFromEvent(
   targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55',
   athleteProfile?: AthletePhysiologicalProfile
 ): WorkoutPushPayload {
+  if (!Number.isFinite(event.durationMinutes) || event.durationMinutes <= 0) {
+    throw new Error('Une séance de repos ou de durée nulle ne peut pas être programmée sur Garmin.');
+  }
   const dateKey = targetDateStr || toLocalDateKey(event.startDate);
-  const durMin = event.durationMinutes || 45;
+  const durMin = event.durationMinutes;
   const isFR55 = targetWatch === 'FORERUNNER_55';
   const targetMode = getGarminWorkoutTargetMode();
   const profile = athleteProfile || getDynamicAthleteProfile();

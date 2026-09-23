@@ -48,6 +48,15 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
     localStorage.clear();
   });
 
+  it('rejects a rest day instead of silently turning zero minutes into 45 minutes', () => {
+    const rest = createMockEvent({
+      title: 'Repos complet',
+      sportType: 'MOBILITY',
+      durationMinutes: 0
+    });
+    expect(() => buildWorkoutPayloadFromEvent(rest)).toThrow('durée nulle');
+  });
+
   it('converts pace strings to seconds and back accurately', () => {
     expect(parsePaceToSeconds('6:05')).toBe(365);
     expect(parsePaceToSeconds('5:50')).toBe(350);

@@ -133,6 +133,8 @@ export function filterCurrentWeekSportWorkouts(
   return events.filter(ev => {
     if (ev.category !== 'sport') return false;
     if (ev.metadata?.isPostponedPlaceholder) return false;
+    // A zero-minute adaptive REST is a calendar instruction, not a watch workout.
+    if (!Number.isFinite(ev.durationMinutes) || ev.durationMinutes <= 0) return false;
     const evDate = toLocalDateKey(ev.startDate);
     return evDate >= weekStartStr && evDate <= weekEndStr;
   });
