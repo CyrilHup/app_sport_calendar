@@ -193,6 +193,16 @@ describe('Adaptive Plan Engine', () => {
     // 3. Calisthenics MUST NOT be touched (it has zero running impact)
     const calisAction = status.recommendedActions.find(a => a.eventId === 'SPORT_MON');
     expect(calisAction).toBeUndefined();
+
+    const fatigueOnly = evaluateAdaptivePlanStatus({
+      ...dangerTrainingLoad,
+      trailAcwrRatio: 1.1,
+      trailAcwrStatus: 'OPTIMAL'
+    }, mockBaseReadiness, mockWeeklySportEvents);
+    expect(fatigueOnly.injuryRiskLevel).toBe('HIGH');
+    expect(fatigueOnly.explanation).toContain('TSB -35');
+    expect(fatigueOnly.explanation).not.toContain('ACWR 1.1 >');
+    expect(fatigueOnly.recommendedActions[0].adaptedDescription).toContain('TSB -35');
   });
 
   it('applies and reverts adaptive modifications to schedules and events accurately', () => {

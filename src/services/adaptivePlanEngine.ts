@@ -109,11 +109,14 @@ export function evaluateAdaptivePlanStatus(
   let headline = `Progression Optimale (Sweet Spot ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove})`;
   let explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (zone saine ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}). La charge d'impacts au sol (${trailAcute} Km-Effort) est parfaitement assimilée par vos tendons et genoux. La calisthénie (${calisSessions} séance(s), ${calisAcute} TRIMP) est isolée et ne génère aucun choc articulaire.`;
 
-  // 1. DANGER ZONE : ACWR Trail > 1.5 ou surmenage sévère (TSB < -25)
-  if (trailAcwrRatio > ACWR_POLICY.highAbove || tsb < -25) {
+  // 1. DANGER ZONE : ACWR Trail élevé ou surmenage sévère
+  if (trailAcwrRatio > ACWR_POLICY.highAbove || tsb < ACWR_POLICY.severeFatigueTsbBelow) {
     injuryRiskLevel = 'HIGH';
-    headline = '⚠️ Alerte Surcharge Mécanique (Risque Blessure Articulaire Élevé)';
-    explanation = `Pic de charge aiguë mécanique détecté (ACWR ${trailAcwrRatio} > 1.5 en Km-Effort${tsb < -25 ? `, TSB ${tsb}` : ''}). Vos structures tendineuses et articulaires (Achille, rotule, périoste) sont sous haute tension. Le coach adaptatif allège drastiquement les Km-Effort et le D+ de la semaine pour désamorcer le risque sans perdre le socle aérobie pour le QMT-80.`;
+    const dangerContext = trailAcwrRatio > ACWR_POLICY.highAbove
+      ? `ACWR ${trailAcwrRatio} > ${ACWR_POLICY.highAbove}`
+      : `TSB ${tsb} < ${ACWR_POLICY.severeFatigueTsbBelow}`;
+    headline = '⚠️ Alerte Charge ou Fatigue : Plan Allégé';
+    explanation = `Alerte de charge ou de fatigue (${dangerContext}). Le plan limite les Km-Effort et le D+ futurs pour réduire les impacts prévus, sans modifier rétroactivement la charge déjà mesurée.`;
 
     // Générer les actions ciblées sur les séances de la semaine
     for (const ev of upcomingSportEvents) {
@@ -150,9 +153,9 @@ export function evaluateAdaptivePlanStatus(
           originalTargetHeartRate: ev.metadata?.targetHeartRate,
           originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
           actionType: 'REST',
-          reason: `Séance de fatigue cumulée annulée (repos complet) pour stopper les chocs et ramener rapidement l'ACWR mécanique (${trailAcwrRatio} > 1.5) sous 1.3.`,
+          reason: `Séance de fatigue cumulée annulée (repos complet) pour éviter des impacts supplémentaires dans le contexte ${dangerContext}.`,
           coachingCue: 'Repos passif complet, hydratation et étirements doux. Donnez à vos tendons le temps de surcompenser.',
-          adaptedDescription: `• Adaptation Anti-blessure (ACWR Mécanique > 1.5) :\n• Séance supprimée au profit d'un repos complet pour faire chuter immédiatement la charge aiguë.\n• Zéro impact au sol pour protéger les tendons d'Achille et les genoux.`,
+          adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• Séance remplacée par un repos complet pour éviter une charge supplémentaire.\n• Zéro impact au sol prévu.`,
           targetHeartRate: 'Repos',
           adaptedLocation: 'Domicile / Repos',
           adaptedElevationM: 0,
@@ -183,7 +186,7 @@ export function evaluateAdaptivePlanStatus(
           actionType: 'LIGHTEN',
           reason,
           coachingCue: `${adaptedDurationMinutes} min de trot très souple en Zone 1/2 (aisance respiratoire totale), 100% sur terrain plat. Zéro répétition de côte.`,
-          adaptedDescription: `• Adaptation Anti-blessure (ACWR Mécanique > 1.5) :\n• ${adaptedDurationMinutes} min de footing régénérant sur terrain plat (zéro dénivelé).\n• Pulsations strictement contrôlées : FC en Zone 1/2 légère (aisance respiratoire).\n• Zéro intensité en côte, zéro impact de descente rapide pour reposer les quadriceps et le tendon d'Achille.`,
+          adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• ${adaptedDurationMinutes} min de footing régénérant sur terrain plat (zéro dénivelé).\n• Pulsations strictement contrôlées : FC en Zone 1/2 légère (aisance respiratoire).\n• Zéro intensité en côte, zéro impact de descente rapide pour reposer les quadriceps et le tendon d'Achille.`,
           targetHeartRate: 'Zone 1/2 Récupération',
           targetHeartRateRange: [130, 150],
           adaptedLocation: 'Terrain plat / Parc (évite le D+)',
@@ -199,8 +202,8 @@ export function evaluateAdaptivePlanStatus(
         const adaptedElevationM = Math.min(origElevation, Math.max(0, Math.round(origElevation * 0.55)));
         const diffMin = origDuration - adaptedMins;
         const reason = diffMin > 0
-          ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ allégé à +${adaptedElevationM}m (au lieu de +${origElevation}m) pour ramener la charge mécanique aiguë (Km-Effort) sous le seuil critique (ACWR < 1.3).`
-          : `D+ allégé à +${adaptedElevationM}m (au lieu de +${origElevation}m) pour ramener la charge mécanique aiguë (Km-Effort) sous le seuil critique (ACWR < 1.3).`;
+          ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ allégé à +${adaptedElevationM}m (au lieu de +${origElevation}m) pour limiter la charge mécanique future.`
+          : `D+ allégé à +${adaptedElevationM}m (au lieu de +${origElevation}m) pour limiter la charge mécanique future.`;
 
         recommendedActions.push({
           eventId: ev.id,
@@ -216,7 +219,7 @@ export function evaluateAdaptivePlanStatus(
           actionType: 'LIGHTEN',
           reason,
           coachingCue: `Volume plafonné à ${adaptedMins} min et +${adaptedElevationM}m D+. Marche active (power hike) obligatoire dès 8% de pente pour protéger les tendons d'Achille.`,
-          adaptedDescription: `• Adaptation Anti-blessure (ACWR Mécanique > 1.5) :\n• Durée ramenée à ${adaptedMins} min et D+ modulé à +${adaptedElevationM} m (au lieu de +${origElevation} m) pour protéger les tendons d'Achille.\n• Cardio : Zone 2 stricte.\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse 8%.\n• Éviter les descentes trop raides et techniques.`,
+          adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• Durée ramenée à ${adaptedMins} min et D+ modulé à +${adaptedElevationM} m (au lieu de +${origElevation} m) pour limiter les impacts prévus.\n• Cardio : Zone 2 stricte.\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse 8%.\n• Éviter les descentes trop raides et techniques.`,
           targetHeartRate: 'Zone 2 Endurance douce',
           targetHeartRateRange: [135, 158],
           adaptedLocation: 'Mont-Royal (boucles douces / D+ allégé)',
@@ -254,11 +257,11 @@ export function evaluateAdaptivePlanStatus(
       }
     }
   }
-  // 2. MODERATE RISK : ACWR Trail 1.3 - 1.5 ou Récupération Garmin dégradée
-  else if (trailAcwrRatio > ACWR_POLICY.moderateAbove || readiness.status === 'LOW' || readiness.score < 50) {
+  // 2. MODERATE RISK : ACWR Trail au-dessus du seuil modéré ou récupération dégradée
+  else if (trailAcwrRatio > ACWR_POLICY.moderateAbove || readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow) {
     injuryRiskLevel = 'MODERATE';
     headline = '⚡ Charge Mécanique Soutenue : Vigilance Recommandée';
-    explanation = `Votre ratio ACWR mécanique (${trailAcwrRatio}) est dans la zone d'attention (1.3 – 1.5)${readiness.status === 'LOW' || readiness.score < 50 ? ' et votre score de récupération Garmin est bas' : ''}. Vos articulations absorbent une hausse rapide de Km-Effort. Vous pouvez maintenir l'entraînement en modérant le dénivelé en côte pour éviter d'entrer en zone rouge.`;
+    explanation = `Le plan signale une vigilance liée à l'ACWR (${trailAcwrRatio}; seuil ${ACWR_POLICY.moderateAbove} – ${ACWR_POLICY.highAbove})${readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow ? ' ou à un score de récupération bas' : ''}. Les séances futures peuvent être modérées sans changer rétroactivement la charge mesurée.`;
 
     for (const ev of upcomingSportEvents) {
       if (!isEligibleForAdaptation(ev)) continue;
@@ -303,14 +306,14 @@ export function evaluateAdaptivePlanStatus(
       }
     }
   }
-  // 3. UNDERLOAD : ACWR Trail < 0.8 (Sous-charge relative)
+  // 3. UNDERLOAD : ACWR Trail sous le seuil de sous-charge
   else if (trailAcwrRatio < ACWR_POLICY.underloadBelow) {
     injuryRiskLevel = 'SAFE';
-    headline = '🔵 Sous-charge Mécanique (< 0.8) : Consolidation Progressive';
-    explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (< 0.8, zone de sous-charge). Vos tendons et articulations sont reposés mais sous-stimulés par rapport au volume cible. Selon le modèle de Tim Gabbett, consolidez progressivement vos Km-Effort en endurance fondamentale (Zone 2) sans hausses brutales de volume.`;
+    headline = `🔵 Sous-charge Mécanique (< ${ACWR_POLICY.underloadBelow}) : Consolidation Progressive`;
+    explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (< ${ACWR_POLICY.underloadBelow}, zone de sous-charge). Vos tendons et articulations sont reposés mais sous-stimulés par rapport au volume cible. Selon le modèle de Tim Gabbett, consolidez progressivement vos Km-Effort en endurance fondamentale (Zone 2) sans hausses brutales de volume.`;
 
-    // Si sous-charge marquée (< 0.6) et côtes intenses au programme, modérer les côtes pour éviter un saut brutal
-    if (trailAcwrRatio < 0.6) {
+    // Si sous-charge marquée et côtes intenses au programme, modérer les côtes pour éviter un saut brutal
+    if (trailAcwrRatio < ACWR_POLICY.severeUnderloadBelow) {
       for (const ev of upcomingSportEvents) {
         if (!isEligibleForAdaptation(ev)) continue;
         if (ev.sportType === 'TRAIL_INTENSE') {

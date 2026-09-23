@@ -10,6 +10,9 @@ export const TRAINING_LOAD_WINDOWS = Object.freeze({
 /** One policy for ACWR classification, adaptive decisions and the displayed scale. */
 export const ACWR_POLICY = Object.freeze({
   underloadBelow: 0.8,
+  severeUnderloadBelow: 0.6,
+  severeFatigueTsbBelow: -25,
+  lowReadinessBelow: 50,
   moderateAbove: 1.3,
   highAbove: 1.5,
   calibratingAbove: 1.4,
