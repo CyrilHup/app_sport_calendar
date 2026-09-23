@@ -257,6 +257,19 @@ describe('Garmin Auto-Sync Service', () => {
     expect(isWorkoutSyncedToGarmin(event, athleteProfile)).toBe(true);
   });
 
+  it('lets the server reuse its Garmin session when no password is stored locally', async () => {
+    const event = createMockEvent({ id: 'server-session-workout' });
+    vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue(null);
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: true, workoutId: '321'
+    });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([event], new Date('2026-09-09T12:00:00Z'));
+
+    expect(result.success).toBe(true);
+    expect(pushSpy).toHaveBeenCalledOnce();
+  });
+
   it('syncs only changed workouts and skips already synced ones', async () => {
     // Mock credentials
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({

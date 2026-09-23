@@ -613,6 +613,12 @@ export const GarminTab: React.FC<GarminTabProps> = ({
             <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
               Met à jour automatiquement les séances sur votre montre (Forerunner 55)
             </div>
+            {autoSyncEnabled && !storedGarminCreds?.password && (
+              <div style={{ fontSize: '0.72rem', color: '#fbbf24', marginTop: 6 }}>
+                Les activités déjà importées restent visibles. Si la session Garmin du serveur a expiré,
+                renseignez vos identifiants ci-dessus pour reprendre l’envoi des séances.
+              </div>
+            )}
           </div>
         </div>
 

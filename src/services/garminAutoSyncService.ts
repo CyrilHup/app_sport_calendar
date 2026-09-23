@@ -5,8 +5,6 @@ import {
   AthletePhysiologicalProfile,
   getGarminWorkoutTargetMode,
   getStoredAthleteProfile,
-  loadGarminCredentials,
-  loadGarminCredentialsAsync,
   pushWorkoutToGarmin
 } from './garminService';
 import { STORAGE_KEYS, storageGet, storageGetRaw, storageSet } from './storageService';
@@ -26,7 +24,7 @@ export interface AutoSyncResult {
   alreadyUpToDate: boolean;
   results: WorkoutPushResult[];
   error?: string;
-  reason?: 'NO_CREDENTIALS' | 'DISABLED' | 'NO_WORKOUTS' | 'ERROR' | 'SUCCESS';
+  reason?: 'DISABLED' | 'NO_WORKOUTS' | 'ERROR' | 'SUCCESS';
   lastSyncTimestamp?: string;
 }
 
@@ -180,23 +178,6 @@ async function runCurrentWeekWorkoutSync(
       alreadyUpToDate: false,
       results: [],
       reason: 'DISABLED'
-    };
-  }
-
-  const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
-  if (!sameLocalOwner()) {
-    return { success: false, pushedCount: 0, totalWeekWorkouts: 0, alreadyUpToDate: false,
-      results: [], reason: 'ERROR', error: 'Le compte a changé pendant la synchronisation Garmin.' };
-  }
-  if (!creds?.email || !creds?.password) {
-    return {
-      success: false,
-      pushedCount: 0,
-      totalWeekWorkouts: 0,
-      alreadyUpToDate: false,
-      results: [],
-      reason: 'NO_CREDENTIALS',
-      error: 'Identifiants Garmin Connect non configurés.'
     };
   }
 
