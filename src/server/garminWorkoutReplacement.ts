@@ -15,6 +15,67 @@ interface GarminWorkoutCalendarClient extends GarminWorkoutReplacementClient {
   }>;
 }
 
+interface GarminWorkoutSchedulingClient extends GarminWorkoutCalendarClient {
+  scheduleWorkout(input: { workoutId: string }, scheduledDate: string): Promise<unknown>;
+}
+
+/** Read back an exact workout ID after Garmin's scheduling response is lost. */
+export async function isExactWorkoutScheduledOnDate(
+  client: GarminWorkoutCalendarClient,
+  scheduledDate: string,
+  workoutId: string
+): Promise<boolean> {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(scheduledDate);
+  if (!dateMatch || !/^[1-9]\d{0,19}$/.test(workoutId)) {
+    throw manualReviewError('La séance Garmin créée ne peut pas être vérifiée après programmation.');
+  }
+  const calendar = await client.getMonthCalendarEvents(Number(dateMatch[1]), Number(dateMatch[2]) - 1);
+  if (!Array.isArray(calendar?.calendarItems)) {
+    throw manualReviewError(`Le calendrier Garmin du ${scheduledDate} est incomplet.`);
+  }
+  for (const value of calendar.calendarItems) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw manualReviewError(`Une entrée du calendrier Garmin du ${scheduledDate} est illisible.`);
+    }
+    const item = value as { date?: unknown; workoutId?: unknown };
+    if (item.date === scheduledDate && String(item.workoutId) === workoutId) return true;
+  }
+  return false;
+}
+
+/** Never treat a lost scheduling response as proof that Garmin rejected it. */
+export async function scheduleWorkoutWithReadback(
+  client: GarminWorkoutSchedulingClient,
+  workoutId: string,
+  scheduledDate: string
+): Promise<void> {
+  try {
+    await client.scheduleWorkout({ workoutId }, scheduledDate);
+    return;
+  } catch (scheduleError) {
+    let confirmedScheduled = false;
+    try {
+      confirmedScheduled = await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId);
+    } catch (lookupError) {
+      console.warn('Could not verify Garmin scheduling after error:', lookupError);
+    }
+    if (confirmedScheduled) return;
+
+    try {
+      await client.deleteWorkout({ workoutId });
+    } catch (cleanupError) {
+      console.warn('Could not clean up uncertain Garmin workout:', cleanupError);
+      throw manualReviewError(
+        `Programmation Garmin à vérifier : nouvelle séance ${workoutId} le ${scheduledDate}.`
+      );
+    }
+    throw new Error(
+      `Séance créée mais non programmée dans le calendrier Garmin pour le ${scheduledDate}: ` +
+      `${scheduleError instanceof Error ? scheduleError.message : 'erreur Garmin inconnue'}`
+    );
+  }
+}
+
 function errorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') return undefined;
   const candidate = error as {

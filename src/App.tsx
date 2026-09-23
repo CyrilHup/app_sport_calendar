@@ -686,7 +686,10 @@ export const App: React.FC = () => {
 
   const syncTransformedCalendar = () => {
     if (baseCalendarRef.current.schedules.length === 0) return;
-    void syncPlannedWorkouts(new Date());
+    // Rebuild the canonical calendar after a transform before publishing it to
+    // Garmin. A direct push can race a refresh and replace the new plan with
+    // an older base-calendar snapshot.
+    void autoRechargeAll({ refreshGarmin: false });
   };
 
   const handlePostponeWorkout = (

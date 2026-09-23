@@ -369,6 +369,7 @@ async function runCurrentWeekWorkoutSync(
         updatedSignatures[workout.id] = `replacement-review::${pushRes.error}`;
       } else if (pushRes.error?.startsWith('Remplacement Garmin incomplet') ||
         pushRes.error?.startsWith('Remplacement Garmin à vérifier') ||
+        pushRes.error?.startsWith('Programmation Garmin à vérifier') ||
         pushRes.error?.startsWith('Une séance de course [QMT]') ||
         pushRes.error?.includes('Vérification manuelle nécessaire') ||
         pushRes.error?.includes('Manual review required')) {

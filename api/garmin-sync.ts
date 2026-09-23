@@ -14,6 +14,7 @@ import { claimGarminRunLease } from '../src/server/garminRunLease.js';
 import {
   assertNoConflictingScheduledQmtRun,
   finishWorkoutReplacement,
+  scheduleWorkoutWithReadback,
   verifyReplaceableWorkout
 } from '../src/server/garminWorkoutReplacement.js';
 
@@ -308,21 +309,7 @@ export default async function handler(req: any, res: any) {
       }
 
       runLease?.markScheduled();
-      try {
-        await gc.scheduleWorkout({ workoutId: createdWorkoutId }, workout.scheduledDate);
-      } catch (schedErr: any) {
-        console.error('Could not schedule workout to calendar:', schedErr);
-        // Only remove the workout created by this request. Never delete older
-        // workouts based on a fuzzy title match during automatic sync.
-        try {
-          await gc.deleteWorkout({ workoutId: createdWorkoutId });
-        } catch (cleanupErr) {
-          console.warn('Could not clean up unscheduled Garmin workout:', cleanupErr);
-        }
-        throw new Error(
-          `Séance créée mais non programmée dans le calendrier Garmin pour le ${workout.scheduledDate}: ${schedErr?.message || 'erreur Garmin inconnue'}`
-        );
-      }
+      await scheduleWorkoutWithReadback(gc, createdWorkoutId, workout.scheduledDate);
 
       if (workout.replaceWorkoutId) {
         await finishWorkoutReplacement(gc, workout.replaceWorkoutId, createdWorkoutId);
