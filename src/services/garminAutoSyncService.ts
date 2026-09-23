@@ -240,6 +240,11 @@ async function runCurrentWeekWorkoutSync(
         manualReviewErrors.push(`Plusieurs séances de course prévues le ${date} : synchronisation Garmin suspendue pour ce jour.`);
         continue;
       }
+      // A session already started (or completed early) must not be rewritten
+      // on Garmin after an algorithm/configuration change.
+      if (workout.metadata?.isCompleted || new Date(workout.startDate).getTime() <= referenceDate.getTime()) {
+        continue;
+      }
       const sig = computeWorkoutSyncSignature(workout, options?.athleteProfile);
       const storedSig = updatedSignatures[workout.id];
       if (conflictingEventIds.has(workout.id)) continue;

@@ -31,8 +31,8 @@ function createMockEvent(partial: Partial<CalendarEvent>): CalendarEvent {
   return {
     id: 'mock_' + Math.random(),
     title: 'Workout',
-    startDate: '2026-09-09T08:00:00Z',
-    endDate: '2026-09-09T09:00:00Z',
+    startDate: '2026-09-09T16:00:00Z',
+    endDate: '2026-09-09T17:00:00Z',
     category: 'sport',
     durationMinutes: 60,
     location: 'Montreal',
@@ -201,7 +201,7 @@ describe('Garmin Auto-Sync Service', () => {
 
   it('does not create a duplicate for a legacy workout without a known Garmin ID', async () => {
     const event = createMockEvent({
-      id: 'legacy-workout', startDate: '2026-09-09T08:00:00Z'
+      id: 'legacy-workout', startDate: '2026-09-09T16:00:00Z'
     });
     saveSyncedWeekWorkoutSignatures({
       [event.id]: 'recovery-2min-v1::legacy-workout::old-definition'
@@ -288,6 +288,28 @@ describe('Garmin Auto-Sync Service', () => {
     expect(result.totalWeekWorkouts).toBe(2);
   });
 
+  it('never creates or replaces a workout after it has started', async () => {
+    const started = createMockEvent({
+      id: 'already-started',
+      startDate: '2026-09-09T08:00:00Z',
+      endDate: '2026-09-09T09:00:00Z'
+    });
+    saveSyncedWeekWorkoutSignatures({ [started.id]: computeWorkoutSyncSignature(started) });
+    localStorage.setItem(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [started.id]: '123' }));
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const changed = { ...started, durationMinutes: 45 };
+    const result = await syncCurrentWeekWorkoutsToGarmin([changed], new Date('2026-09-09T12:00:00Z'));
+
+    expect(result.success).toBe(true);
+    expect(pushSpy).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[started.id]).toBe('123');
+
+    const completedEarly = createMockEvent({ id: 'completed-early', metadata: { isCompleted: true } });
+    await syncCurrentWeekWorkoutsToGarmin([completedEarly], new Date('2026-09-09T12:00:00Z'));
+    expect(pushSpy).not.toHaveBeenCalled();
+  });
+
   it('syncs only changed workouts and skips already synced ones', async () => {
     // Mock credentials
     vi.spyOn(garminService, 'loadGarminCredentials').mockReturnValue({
@@ -307,8 +329,8 @@ describe('Garmin Auto-Sync Service', () => {
       createMockEvent({
         id: 'sport_1',
         title: 'Footing',
-        startDate: '2026-09-09T08:00:00Z',
-        endDate: '2026-09-09T09:00:00Z',
+        startDate: '2026-09-09T16:00:00Z',
+        endDate: '2026-09-09T17:00:00Z',
         category: 'sport',
         durationMinutes: 60,
         location: 'Parc'
@@ -351,8 +373,8 @@ describe('Garmin Auto-Sync Service', () => {
 
     const workout = createMockEvent({
       id: 'garmin_confirmation_test',
-      startDate: '2026-09-09T08:00:00Z',
-      endDate: '2026-09-09T09:00:00Z'
+      startDate: '2026-09-09T16:00:00Z',
+      endDate: '2026-09-09T17:00:00Z'
     });
     const refDate = new Date('2026-09-09T12:00:00Z');
 
