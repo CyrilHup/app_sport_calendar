@@ -703,7 +703,7 @@ export function buildWorkoutPayloadFromEvent(
   targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55',
   athleteProfile?: AthletePhysiologicalProfile
 ): WorkoutPushPayload {
-  if (!Number.isFinite(event.durationMinutes) || event.durationMinutes <= 0) {
+  if (!isValidGarminWorkoutDuration(event.durationMinutes)) {
     throw new Error('Une séance de repos ou de durée nulle ne peut pas être programmée sur Garmin.');
   }
   const dateKey = targetDateStr || toLocalDateKey(event.startDate);
@@ -1126,6 +1126,11 @@ export function buildWorkoutPayloadFromEvent(
     steps: cleanedSteps,
     targetWatch
   };
+}
+
+/** A Garmin workout must have a finite, strictly positive planned duration. */
+export function isValidGarminWorkoutDuration(durationMinutes: number): boolean {
+  return Number.isFinite(durationMinutes) && durationMinutes > 0;
 }
 
 /**

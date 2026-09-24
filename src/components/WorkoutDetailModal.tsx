@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { RunAlarmModal } from './RunAlarmModal';
 import { triggerHapticFeedback } from '../services/hapticsService';
-import { AthletePhysiologicalProfile, buildWorkoutPayloadFromEvent } from '../services/garminService';
+import { AthletePhysiologicalProfile, buildWorkoutPayloadFromEvent, isValidGarminWorkoutDuration } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
 import { ActivityComparison } from '../types/garmin';
 import { formatTime, formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
@@ -138,7 +138,13 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       || (comparison?.actualActivity ? [comparison.actualActivity] : []),
     { fcMax: athleteFcMax, fcRest: athlete?.fcRest || getBaselineRestingHeartRate() }
   );
-  const workoutPreview = effectiveEvent.category === 'sport'
+  const titleLower = effectiveEvent.title.toLowerCase();
+  const isRestSession = effectiveEvent.durationMinutes === 0 || titleLower.includes('repos');
+  const canPreviewGarminWorkout = hasContent &&
+    effectiveEvent.category === 'sport' &&
+    !isRestSession &&
+    isValidGarminWorkoutDuration(effectiveEvent.durationMinutes);
+  const workoutPreview = canPreviewGarminWorkout
     ? buildWorkoutPayloadFromEvent(effectiveEvent, toLocalDateKey(effectiveEvent.startDate), selectedWatch, dynamicProfile)
     : null;
 
@@ -179,7 +185,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const isSport = effectiveEvent.category === 'sport';
   const isAdapted = Boolean(effectiveEvent.metadata?.isAdapted);
-  const titleLower = effectiveEvent.title.toLowerCase();
 
   // 1. PRIORITÉ ABSOLUE AU TRAIL ET À LA COURSE À PIED
   const isTrailOrRun = isSport && (
@@ -195,7 +200,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const elapsedMinutes = effectiveComparison?.actualActivity?.elapsedDurationMinutes || actualDurationMinutes;
   const actualEndDate = (actualStartDate && elapsedMinutes) ? new Date(actualStartDate.getTime() + elapsedMinutes * 60000) : null;
   const isDifferentDayExecution = Boolean(actualStartDate && formatDateKey(actualStartDate) !== formatDateKey(startDate));
-  const isRestSession = effectiveEvent.durationMinutes === 0 || effectiveEvent.title.toLowerCase().includes('repos');
   const effectiveElevationM = (isCalisthenics || isRestSession) ? 0 : (effectiveEvent.metadata?.targetElevationM ?? 0);
   const isRecoveryFooting = isSport && !isCalisthenics && !isRestSession && effectiveElevationM === 0 && (
     effectiveEvent.sportType === 'RUN_EASY' ||

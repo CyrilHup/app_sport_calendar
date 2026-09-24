@@ -13,6 +13,7 @@ if (typeof globalThis.localStorage === 'undefined') {
 
 import {
   buildWorkoutPayloadFromEvent,
+  isValidGarminWorkoutDuration,
   getGarminWorkoutTargetMode,
   setGarminWorkoutTargetMode,
   getAthleteBasePace,
@@ -55,6 +56,14 @@ describe('Garmin Workout Smart Pace & Trail Free Target Engine', () => {
       durationMinutes: 0
     });
     expect(() => buildWorkoutPayloadFromEvent(rest)).toThrow('durée nulle');
+  });
+
+  it('accepts only finite, positive Garmin workout durations', () => {
+    expect(isValidGarminWorkoutDuration(45)).toBe(true);
+    expect(isValidGarminWorkoutDuration(0)).toBe(false);
+    expect(isValidGarminWorkoutDuration(-1)).toBe(false);
+    expect(isValidGarminWorkoutDuration(Number.NaN)).toBe(false);
+    expect(isValidGarminWorkoutDuration(Number.POSITIVE_INFINITY)).toBe(false);
   });
 
   it('converts pace strings to seconds and back accurately', () => {
