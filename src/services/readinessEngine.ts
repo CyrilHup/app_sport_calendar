@@ -2,6 +2,7 @@ import { CalendarEvent } from '../types/calendar';
 import { GarminWellnessData } from '../types/garmin';
 import { storageGet, storageSet, STORAGE_KEYS } from './storageService';
 import { isTrailOrRunning, isStrengthOrCalisthenics } from './activityClassifier';
+import { ACWR_POLICY, ADAPTIVE_WORKOUT_POLICY } from './trainingModelConfig';
 
 const WELLNESS_STORAGE_KEY = STORAGE_KEYS.WELLNESS_HISTORY;
 
@@ -349,7 +350,7 @@ export function calculateReadinessScore(
   let headline = 'Feu Vert : Entraînement Cible Optimal';
   let summary = `Excellente récupération : Sommeil de ${Math.floor(sleepDurationHours)}h${Math.round((sleepDurationHours % 1) * 60)} et statut VFC équilibré. Vos capacités cardiorespiratoires sont au maximum pour les séances de puissance ou de côte.`;
 
-  if (residualScore < 50) {
+  if (residualScore < ACWR_POLICY.lowReadinessBelow) {
     status = 'LOW';
     statusLabel = 'Alerte Récupération';
     badgeEmoji = '🔴';
@@ -438,14 +439,18 @@ export function getProactivePlanRecommendation(
 
   if (readiness.status === 'LOW') {
     if (isIntenseOrHill) {
+      const recoveryMinutes = Math.min(
+        ADAPTIVE_WORKOUT_POLICY.highRisk.hillRecoveryCapMinutes,
+        todayEvent.durationMinutes
+      );
       return {
         shouldAdapt: true,
         actionType: 'LIGHTEN',
-        actionButtonText: 'Convertir en Footing Récup Z1 (35 min)',
+        actionButtonText: `Convertir en Footing Récup Z1 (${recoveryMinutes} min)`,
         recommendationText: '⚠️ Alerte VFC basse : Vos réserves nerveuses sont entamées. Les répétitions de côtes à FC 180+ bpm risquent d\'engendrer un surentraînement ou une blessure tendineuse.',
         adaptedTitle: '🏃 Footing Aérobie Doux & Récupération Z1',
-        adaptedDescription: '• Séance allégée automatique pour préserver le système nerveux :\n• 35 minutes de trot très souple strictly en Zone 1 (FC < 135 bpm).\n• Respiration 100% nasale, zéro intensité.',
-        adaptedDurationMinutes: 35
+        adaptedDescription: `• Séance allégée automatique pour préserver le système nerveux :\n• ${recoveryMinutes} minutes de trot très souple strictement en Zone 1 (FC < 135 bpm).\n• Respiration 100% nasale, zéro intensité.`,
+        adaptedDurationMinutes: recoveryMinutes
       };
     }
 

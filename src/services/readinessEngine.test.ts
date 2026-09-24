@@ -50,6 +50,14 @@ describe('readinessEngine', () => {
     expect(rec.shouldAdapt).toBe(true);
     expect(rec.actionType).toBe('LIGHTEN');
     expect(rec.adaptedDurationMinutes).toBe(35);
+
+    const shortSessionRec = getProactivePlanRecommendation(res, {
+      ...intenseEvent,
+      durationMinutes: 24
+    });
+    expect(shortSessionRec.adaptedDurationMinutes).toBe(24);
+    expect(shortSessionRec.actionButtonText).toContain('24 min');
+    expect(shortSessionRec.adaptedDescription).toContain('24 minutes');
   });
 
   it('should return optimal readiness when sleep is >8h and HRV balanced', () => {
@@ -165,4 +173,3 @@ describe('readinessEngine', () => {
     expect(eveningEval.badgeEmoji).toBe('🏁');
   });
 });
-
