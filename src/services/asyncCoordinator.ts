@@ -6,6 +6,8 @@ import type {
 
 export interface RefreshRequest {
   manual?: boolean;
+  /** Only set by the explicit Garmin workout error-modal retry action. */
+  retryGarminWorkoutSync?: boolean;
   /** False when only the calendar should be rebuilt, without fetching Garmin activities. */
   refreshGarmin?: boolean;
   garminSyncMode?: GarminActivitySyncMode;
@@ -21,6 +23,7 @@ interface GarminSyncCompletion {
 
 export interface EffectiveRefreshRequest {
   manual: boolean;
+  retryGarminWorkoutSync: boolean;
   refreshGarmin: boolean;
   garminSyncMode?: GarminActivitySyncMode;
   garminCredentials?: GarminCredentials;
@@ -61,6 +64,7 @@ export function createLatestRerunCoordinator(
     run(request = {}) {
       const incoming: EffectiveRefreshRequest = {
         manual: request.manual === true,
+        retryGarminWorkoutSync: request.retryGarminWorkoutSync === true,
         refreshGarmin: request.garminSyncMode !== undefined || request.refreshGarmin !== false,
         garminSyncMode: request.garminSyncMode,
         garminCredentials: request.garminCredentials,
@@ -77,6 +81,7 @@ export function createLatestRerunCoordinator(
         const incomingMode = incoming.garminSyncMode;
         queued = {
           manual: queued.manual || incoming.manual,
+          retryGarminWorkoutSync: queued.retryGarminWorkoutSync || incoming.retryGarminWorkoutSync,
           refreshGarmin: queued.refreshGarmin || incoming.refreshGarmin,
           garminSyncMode: queuedMode === 'full' || incomingMode === 'full'
             ? 'full'

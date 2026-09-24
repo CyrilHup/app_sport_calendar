@@ -73,6 +73,8 @@ export function computeWorkoutSyncSignature(event: CalendarEvent, athleteProfile
 
 interface AutoSyncOptions {
   force?: boolean;
+  /** Explicit retry from the error modal; still requires the exact stored Garmin ID. */
+  retryManualReview?: boolean;
   athleteProfile?: AthletePhysiologicalProfile;
   userId?: string;
   completedEventIds?: readonly string[];
@@ -178,6 +180,7 @@ function workoutSyncRequestKey(
   return JSON.stringify({
     week: getCurrentWeekDateBounds(referenceDate).weekStartStr,
     force: Boolean(options?.force),
+    retryManualReview: Boolean(options?.retryManualReview),
     userId: options?.userId,
     athlete: options?.athleteProfile,
     completedEventIds: [...(options?.completedEventIds || [])].sort(),
@@ -345,8 +348,11 @@ async function runCurrentWeekWorkoutSync(
       );
       if (conflictingEventIds.has(workout.id)) continue;
       if (storedSig?.startsWith('replacement-review::') && !recoverableLegacyConflict) {
-        manualReviewErrors.push(storedSig.slice('replacement-review::'.length));
-        continue;
+        const hasExactStoredId = /^[1-9]\d{0,19}$/.test(updatedWorkoutIds[workout.id] || '');
+        if (!options?.retryManualReview || !hasExactStoredId) {
+          manualReviewErrors.push(storedSig.slice('replacement-review::'.length));
+          continue;
+        }
       }
       // Old records prove that a workout was already scheduled but contain no
       // Garmin workout ID. Re-creating it automatically would make a duplicate.

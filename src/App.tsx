@@ -271,7 +271,8 @@ export const App: React.FC = () => {
 
   const syncPlannedWorkouts = useCallback((
     syncDate: Date,
-    vitalsOverride?: { fcMax: number; fcRest: number }
+    vitalsOverride?: { fcMax: number; fcRest: number },
+    retryManualReview = false
   ) => {
     const accountId = appStateRef.current.user?.id;
     const weekStart = formatDateKey(getMondayOfWeek(syncDate));
@@ -313,7 +314,8 @@ export const App: React.FC = () => {
     return syncCurrentWeekWorkoutsToGarmin(events, syncDate, {
       athleteProfile,
       userId: accountId,
-      completedEventIds: [...completedEventIds]
+      completedEventIds: [...completedEventIds],
+      retryManualReview
     });
   }, [appConfig]);
 
@@ -491,6 +493,7 @@ export const App: React.FC = () => {
   // Function to recharge both ÉTS iCal and Garmin Connect (Mobile & Web)
   refreshCoordinatorRef.current.setWorker(async ({
     manual: isManualTrigger,
+    retryGarminWorkoutSync,
     refreshGarmin,
     garminSyncMode,
     garminCredentials,
@@ -675,7 +678,7 @@ export const App: React.FC = () => {
       const workoutSyncResult = await syncPlannedWorkouts(referenceDate, {
         fcMax: refreshedConfig.ATHLETE_FC_MAX,
         fcRest: refreshedConfig.ATHLETE_FC_REST
-      });
+      }, retryGarminWorkoutSync);
       if (!workoutSyncResult.success && workoutSyncResult.reason === 'NO_CREDENTIALS') {
         setSyncError({
           title: 'Garmin à reconnecter',
@@ -1075,7 +1078,7 @@ export const App: React.FC = () => {
         <SyncErrorModal
           error={syncError}
           onClose={() => setSyncError(null)}
-          onRetry={() => autoRechargeAll({ manual: true })}
+          onRetry={() => autoRechargeAll({ manual: true, retryGarminWorkoutSync: true })}
           onOpenGarminSettings={() => {
             setSyncError(null);
             handleOpenAccountModal('garmin');

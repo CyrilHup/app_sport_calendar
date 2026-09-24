@@ -454,7 +454,8 @@ describe('Garmin Auto-Sync Service', () => {
     });
     const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin')
       .mockResolvedValueOnce({ success: true, workoutId: '123' })
-      .mockResolvedValueOnce({ success: false, error: 'Remplacement Garmin incomplet : ancienne séance 123 et nouvelle séance 456 à vérifier manuellement.' });
+      .mockResolvedValueOnce({ success: false, error: 'Remplacement Garmin incomplet : ancienne séance 123 et nouvelle séance 456 à vérifier manuellement.' })
+      .mockResolvedValueOnce({ success: true, workoutId: '789' });
 
     await syncCurrentWeekWorkoutsToGarmin([workout], refDate);
     const changed = { ...workout, durationMinutes: 45 };
@@ -463,6 +464,30 @@ describe('Garmin Auto-Sync Service', () => {
     expect(again.success).toBe(false);
     expect(again.error).toContain('123 et nouvelle séance 456');
     expect(pushSpy).toHaveBeenCalledTimes(2);
+
+    const retried = await syncCurrentWeekWorkoutsToGarmin([changed], refDate, { retryManualReview: true });
+    expect(retried.success).toBe(true);
+    expect(pushSpy).toHaveBeenCalledTimes(3);
+    expect(pushSpy).toHaveBeenLastCalledWith(changed, '2026-09-09', 'FORERUNNER_55', undefined, '123');
+    expect(JSON.parse(localStorage.getItem(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[workout.id]).toBe('789');
+  });
+
+  it('does not retry a manual-review workout without an exact stored Garmin ID', async () => {
+    const workout = createMockEvent({ id: 'review-without-id' });
+    saveSyncedWeekWorkoutSignatures({
+      [workout.id]: 'replacement-review::Remplacement Garmin à vérifier.'
+    });
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: true, workoutId: '789'
+    });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin(
+      [workout], new Date('2026-09-09T12:00:00Z'), { retryManualReview: true }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Remplacement Garmin à vérifier');
+    expect(pushSpy).not.toHaveBeenCalled();
   });
 
   it('retries a legacy same-day QMT conflict after exact-ID reconciliation is available', async () => {

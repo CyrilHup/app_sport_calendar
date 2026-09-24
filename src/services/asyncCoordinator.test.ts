@@ -54,6 +54,24 @@ describe('createLatestRerunCoordinator', () => {
     ]);
   });
 
+  it('preserves an explicit Garmin workout retry queued during a refresh', async () => {
+    const first = deferred();
+    const calls: EffectiveRefreshRequest[] = [];
+    const coordinator = createLatestRerunCoordinator(async request => {
+      calls.push(request);
+      if (calls.length === 1) await first.promise;
+    });
+
+    const active = coordinator.run();
+    coordinator.run({ manual: true, retryGarminWorkoutSync: true });
+    first.resolve();
+    await active;
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1].retryGarminWorkoutSync).toBe(true);
+    expect(calls[1].manual).toBe(true);
+  });
+
   it('keeps a Garmin fetch when any concurrent request requires fresh data', async () => {
     const first = deferred();
     const calls: Array<{ manual: boolean; refreshGarmin: boolean }> = [];
