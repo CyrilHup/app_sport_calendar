@@ -100,6 +100,9 @@ export async function verifyReplaceableWorkout(
   client: GarminWorkoutReplacementClient,
   workoutId: string
 ): Promise<void> {
+  if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
+    throw new Error('La séance Garmin précédente ne peut pas être vérifiée. Aucun remplacement effectué.');
+  }
   const previous = await client.getWorkoutDetail({ workoutId });
   if (String(previous?.workoutId) !== workoutId ||
     typeof previous?.workoutName !== 'string' || !previous.workoutName.startsWith('[QMT] ')) {
@@ -184,6 +187,43 @@ export async function findScheduledQmtRunIds(
     }
   }
   return foundIds;
+}
+
+/**
+ * Resolve only app-owned Garmin IDs that are safe to retire after a replacement.
+ * Runs additionally collect same-day legacy QMT duplicates; other sports only
+ * replace the exact ID already recorded for that app event.
+ */
+export async function findScheduledQmtWorkoutReplacementIds(
+  client: GarminWorkoutCalendarClient,
+  scheduledDate: string,
+  sportType: string,
+  replaceWorkoutId?: string
+): Promise<string[]> {
+  if (!replaceWorkoutId) {
+    return sportType === 'RUNNING'
+      ? findScheduledQmtRunIds(client, scheduledDate)
+      : [];
+  }
+
+  await verifyReplaceableWorkout(client, replaceWorkoutId);
+
+  if (sportType === 'RUNNING') {
+    const runIds = await findScheduledQmtRunIds(client, scheduledDate, replaceWorkoutId);
+    if (!runIds.includes(replaceWorkoutId)) {
+      throw manualReviewError(
+        `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
+      );
+    }
+    return runIds;
+  }
+
+  if (!await isExactWorkoutScheduledOnDate(client, scheduledDate, replaceWorkoutId)) {
+    throw manualReviewError(
+      `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
+    );
+  }
+  return [replaceWorkoutId];
 }
 
 /** Cancel only one exact, verified app-created run; never touch recorded activities. */
@@ -293,4 +333,15 @@ export async function finishWorkoutReplacements(
   for (const previousId of previousWorkoutIds) {
     await finishWorkoutReplacement(client, previousId, newWorkoutId);
   }
+}
+
+/** Schedule and confirm the new version before retiring any previous IDs. */
+export async function scheduleAndReplacePreviousWorkouts(
+  client: GarminWorkoutSchedulingClient,
+  newWorkoutId: string,
+  scheduledDate: string,
+  previousWorkoutIds: readonly string[]
+): Promise<void> {
+  await scheduleWorkoutWithReadback(client, newWorkoutId, scheduledDate);
+  await finishWorkoutReplacements(client, previousWorkoutIds, newWorkoutId);
 }

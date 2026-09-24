@@ -13,10 +13,8 @@ import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
 import { claimGarminRunLease, isRegisteredGarminRun, markRegisteredGarminRunCancelled } from '../src/server/garminRunLease.js';
 import {
   cancelRegisteredGarminRun,
-  findScheduledQmtRunIds,
-  finishWorkoutReplacements,
-  scheduleWorkoutWithReadback,
-  verifyReplaceableWorkout
+  findScheduledQmtWorkoutReplacementIds,
+  scheduleAndReplacePreviousWorkouts
 } from '../src/server/garminWorkoutReplacement.js';
 
 // Resolve from the project root so the handler works in both Vercel's ESM
@@ -248,21 +246,15 @@ export default async function handler(req: any, res: any) {
       const cleanTitle = sanitizeGarminText(workout.title, 36);
       const cleanDesc = sanitizeGarminText(workout.description || 'Seance QMT-80 Performance Hub', 250);
 
-      // A replacement is allowed only for the exact Garmin ID previously stored
-      // by this app. Verify it still resolves to one of our workouts before
-      // creating anything; never fall back to a title-based search.
-      if (workout.replaceWorkoutId) {
-        await verifyReplaceableWorkout(gc, workout.replaceWorkoutId);
-      }
-      const previousRunIds = workout.sportType === 'RUNNING'
-        ? await findScheduledQmtRunIds(gc, workout.scheduledDate, workout.replaceWorkoutId)
-        : [];
-      if (workout.replaceWorkoutId && !previousRunIds.includes(workout.replaceWorkoutId)) {
-        throw new Error(
-          `Remplacement Garmin à vérifier : la séance exacte ${workout.replaceWorkoutId} ` +
-          `n'est plus programmée le ${workout.scheduledDate}.`
-        );
-      }
+      // Replacements use only the exact Garmin ID previously stored by this
+      // app. Verify it is still scheduled on this date before creating; never
+      // guess by title. Runs also retire any verified same-day legacy QMT runs.
+      const previousWorkoutIds = await findScheduledQmtWorkoutReplacementIds(
+        gc,
+        workout.scheduledDate,
+        workout.sportType,
+        workout.replaceWorkoutId
+      );
 
       const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
 
@@ -335,12 +327,14 @@ export default async function handler(req: any, res: any) {
         throw new Error('La date de programmation Garmin est manquante.');
       }
 
-      await scheduleWorkoutWithReadback(gc, createdWorkoutId, workout.scheduledDate);
-
-      // Every prior ID was read from the exact Garmin calendar date and its
-      // [QMT] running details were verified. Retire all historical versions,
-      // not just the one ID last seen by this browser.
-      await finishWorkoutReplacements(gc, previousRunIds, createdWorkoutId);
+      // Retire the verified exact prior ID only after Garmin confirms the new
+      // workout is scheduled; running also includes same-day legacy duplicates.
+      await scheduleAndReplacePreviousWorkouts(
+        gc,
+        createdWorkoutId,
+        workout.scheduledDate,
+        previousWorkoutIds
+      );
       await runLease?.confirm(createdWorkoutId);
 
       pushResponse = {

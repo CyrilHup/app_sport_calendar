@@ -3,10 +3,12 @@ import {
   assertNoConflictingScheduledQmtRun,
   cancelExactScheduledQmtRun,
   cancelRegisteredGarminRun,
+  findScheduledQmtWorkoutReplacementIds,
   findScheduledQmtRunIds,
   finishWorkoutReplacement,
   finishWorkoutReplacements,
   isExactWorkoutScheduledOnDate,
+  scheduleAndReplacePreviousWorkouts,
   scheduleWorkoutWithReadback,
   verifyReplaceableWorkout
 } from './garminWorkoutReplacement';
@@ -376,5 +378,115 @@ describe('same-date Garmin running workout guard', () => {
     };
     await expect(assertNoConflictingScheduledQmtRun(client, scheduledDate))
       .rejects.toThrow("Impossible de vérifier l'entraînement Garmin 123 du 2026-09-22; création refusée");
+  });
+});
+
+describe('exact replacement IDs for every Garmin workout type', () => {
+  const scheduledDate = '2026-09-25';
+
+  it('returns only the exact registered QMT strength ID when it is still scheduled that day', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: scheduledDate, workoutId: 123 },
+        { date: scheduledDate, workoutId: 456 }
+      ] }),
+      getWorkoutDetail: vi.fn().mockResolvedValue({
+        workoutId: '123',
+        workoutName: '[QMT] Entraînement Calisthénie',
+        sportType: { sportTypeKey: 'cardio_training' }
+      }),
+      deleteWorkout: vi.fn()
+    };
+
+    const previousIds = await findScheduledQmtWorkoutReplacementIds(
+      client, scheduledDate, 'STRENGTH', '123'
+    );
+
+    expect(previousIds).toEqual(['123']);
+    expect(client.getWorkoutDetail).toHaveBeenCalledWith({ workoutId: '123' });
+    expect(client.getMonthCalendarEvents).toHaveBeenCalledWith(2026, 8);
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+  });
+
+  it('refuses a stale non-running ID that no longer appears on the scheduled date', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: scheduledDate, workoutId: 456 }
+      ] }),
+      getWorkoutDetail: vi.fn().mockResolvedValue({
+        workoutId: '123',
+        workoutName: '[QMT] Entraînement Calisthénie',
+        sportType: { sportTypeKey: 'cardio_training' }
+      }),
+      deleteWorkout: vi.fn()
+    };
+
+    await expect(findScheduledQmtWorkoutReplacementIds(
+      client, scheduledDate, 'STRENGTH', '123'
+    )).rejects.toThrow('n\'est plus programmée le 2026-09-25');
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+  });
+
+  it('keeps run replacement cleanup broad enough to retire same-day legacy QMT runs', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: scheduledDate, workoutId: 123 },
+        { date: scheduledDate, workoutId: 456 },
+        { date: scheduledDate, workoutId: 789 }
+      ] }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId,
+        workoutName: '[QMT] Easy run',
+        sportType: { sportTypeKey: 'running' }
+      })),
+      deleteWorkout: vi.fn()
+    };
+
+    const previousIds = await findScheduledQmtWorkoutReplacementIds(
+      client, scheduledDate, 'RUNNING', '123'
+    );
+
+    expect(previousIds).toEqual(['123', '456', '789']);
+  });
+
+  it('confirms the new schedule before deleting an exact previous ID', async () => {
+    const operations: string[] = [];
+    const client = {
+      getMonthCalendarEvents: vi.fn(),
+      getWorkoutDetail: vi.fn(),
+      scheduleWorkout: vi.fn().mockImplementation(async ({ workoutId }, date) => {
+        operations.push(`schedule:${workoutId}:${date}`);
+      }),
+      deleteWorkout: vi.fn().mockImplementation(async ({ workoutId }) => {
+        operations.push(`delete:${workoutId}`);
+      })
+    };
+
+    await scheduleAndReplacePreviousWorkouts(client, '999', scheduledDate, ['123']);
+
+    expect(operations).toEqual([
+      `schedule:999:${scheduledDate}`,
+      'delete:123'
+    ]);
+  });
+
+  it('preserves the old scheduled workout when the new schedule cannot be confirmed', async () => {
+    const operations: string[] = [];
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [] }),
+      getWorkoutDetail: vi.fn(),
+      scheduleWorkout: vi.fn().mockImplementation(async ({ workoutId }) => {
+        operations.push(`schedule:${workoutId}`);
+        throw new Error('Garmin unavailable');
+      }),
+      deleteWorkout: vi.fn().mockImplementation(async ({ workoutId }) => {
+        operations.push(`delete:${workoutId}`);
+      })
+    };
+
+    await expect(scheduleAndReplacePreviousWorkouts(client, '999', scheduledDate, ['123']))
+      .rejects.toThrow('Séance créée mais non programmée');
+
+    expect(operations).toEqual(['schedule:999', 'delete:999']);
   });
 });
