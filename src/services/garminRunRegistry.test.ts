@@ -4,6 +4,7 @@ import * as garminService from './garminService';
 import {
   computeWorkoutSyncSignature,
   GARMIN_REST_CANCELLED_SIGNATURE,
+  GARMIN_SYNCED_SIGNATURES_KEY,
   GARMIN_SYNCED_WORKOUT_IDS_KEY,
   syncCurrentWeekWorkoutsToGarmin
 } from './garminAutoSyncService';
@@ -108,6 +109,23 @@ describe('cloud-backed Garmin run IDs', () => {
     expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[rest.id]).toBe('123');
     expect(JSON.parse(values.get(STORAGE_KEYS.GARMIN_SYNCED_SIGNATURES) || '{}')[rest.id])
       .toBe(GARMIN_REST_CANCELLED_SIGNATURE);
+  });
+
+  it('reports manual review when an app-tracked run becomes rest but has no exact Garmin ID', async () => {
+    const rest = restAfterRun('SPORT_WORKOUT_2026-09-23');
+    values.set(GARMIN_SYNCED_SIGNATURES_KEY, JSON.stringify({
+      [rest.id]: computeWorkoutSyncSignature(run(rest.id))
+    }));
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([]);
+    const cancel = vi.spyOn(garminService, 'cancelWorkoutOnGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([rest], new Date('2026-09-23T09:00:00Z'), {
+      userId: 'account-a'
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('sans identifiant exact enregistré');
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it('fails closed when cloud and local IDs disagree for a planned rest', async () => {

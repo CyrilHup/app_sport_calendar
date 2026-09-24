@@ -275,7 +275,14 @@ async function runCurrentWeekWorkoutSync(
       // the server has already removed the cloud row. The server accepts that
       // exact ID only if Garmin also confirms it is no longer scheduled.
       const workoutId = cloudEntry?.workoutId || localId;
-      if (!workoutId) continue;
+      if (!workoutId) {
+        if (existingSignatures[rest.id] && existingSignatures[rest.id] !== GARMIN_REST_CANCELLED_SIGNATURE) {
+          manualReviewErrors.push(
+            `Séance Garmin du ${date} remplacée par un repos sans identifiant exact enregistré : annulation non tentée.`
+          );
+        }
+        continue;
+      }
       if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
         manualReviewErrors.push(`Identifiant Garmin invalide pour le repos du ${date}.`);
         continue;
