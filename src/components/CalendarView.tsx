@@ -37,6 +37,7 @@ import { selectDayActivityContext } from '../services/daySelectors';
 import { UnifiedDayWorkoutGroup, SportActivityItem } from '../services/workoutAggregator';
 import { getDynamicAthleteProfile } from '../services/garminService';
 import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
+import { getCalendarDaySwipeDestination, type SwipePoint } from '../services/calendarDaySwipe';
 import { MobilityEventChip } from './MobilityEventChip';
 import { ACWR_POLICY } from '../services/trainingModelConfig';
 import { WeeklyDecision } from '../services/adaptivePlanStore';
@@ -589,6 +590,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const [activeDayIndex, setActiveDayIndex] = useState<number>(() => {
     return currentTodayIndex >= 0 ? currentTodayIndex % 7 : 0;
   });
+  const daySwipeStartRef = useRef<SwipePoint | null>(null);
+  const suppressSwipeClickUntilRef = useRef(0);
 
   useEffect(() => {
     if (!hasInitializedOffset && schedules.length > 0) {
@@ -728,6 +731,46 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     if (todayIndex >= 0) {
       setActiveDayIndex(todayIndex % 7);
     }
+  };
+
+  const handleDaySwipeStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1) {
+      daySwipeStartRef.current = null;
+      return;
+    }
+    const touch = event.touches[0];
+    daySwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleDaySwipeEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    const start = daySwipeStartRef.current;
+    daySwipeStartRef.current = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch) return;
+
+    const currentDayIndex = weekOffset * 7 + activeDayIndex;
+    const destination = getCalendarDaySwipeDestination(
+      currentDayIndex,
+      schedules.length,
+      start,
+      { x: touch.clientX, y: touch.clientY }
+    );
+    if (destination === null) return;
+
+    suppressSwipeClickUntilRef.current = Date.now() + 300;
+    setWeekOffset(Math.floor(destination / 7));
+    setActiveDayIndex(destination % 7);
+  };
+
+  const handleDaySwipeCancel = () => {
+    daySwipeStartRef.current = null;
+  };
+
+  const suppressClickAfterSwipe = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (Date.now() > suppressSwipeClickUntilRef.current) return;
+    suppressSwipeClickUntilRef.current = 0;
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   // Compteurs pour la semaine affichée
@@ -1412,7 +1455,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                   <div
                     className={`day-column ${isToday ? 'today' : ''}`}
-                    style={{ minHeight: 320, padding: '14px', width: '100%' }}
+                    onTouchStart={handleDaySwipeStart}
+                    onTouchEnd={handleDaySwipeEnd}
+                    onTouchCancel={handleDaySwipeCancel}
+                    onClickCapture={suppressClickAfterSwipe}
+                    style={{ minHeight: 320, padding: '14px', width: '100%', touchAction: 'pan-y' }}
                   >
                     {renderDayEventsContent(currentDay, true)}
                   </div>
