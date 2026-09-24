@@ -216,14 +216,40 @@ describe('exact Garmin workout replacement', () => {
     expect(client.deleteWorkout).toHaveBeenCalledWith({ workoutId: '123' });
   });
 
+  it('retries only the exact old ID when readback is unavailable after a lost delete response', async () => {
+    const client = {
+      getWorkoutDetail: vi.fn().mockRejectedValue({ response: { status: 503 } }),
+      deleteWorkout: vi.fn().mockRejectedValueOnce(new Error('Connection closed')).mockResolvedValueOnce(undefined)
+    };
+
+    await expect(finishWorkoutReplacement(client, '123', '456')).resolves.toBeUndefined();
+
+    expect(client.deleteWorkout).toHaveBeenCalledTimes(2);
+    expect(client.deleteWorkout).toHaveBeenNthCalledWith(1, { workoutId: '123' });
+    expect(client.deleteWorkout).toHaveBeenNthCalledWith(2, { workoutId: '123' });
+  });
+
+  it('treats an exact old-ID 404 on the retry as already removed', async () => {
+    const client = {
+      getWorkoutDetail: vi.fn().mockRejectedValue({ response: { status: 503 } }),
+      deleteWorkout: vi.fn()
+        .mockRejectedValueOnce(new Error('Connection closed'))
+        .mockRejectedValueOnce({ response: { status: 404 } })
+    };
+
+    await expect(finishWorkoutReplacement(client, '123', '456')).resolves.toBeUndefined();
+    expect(client.deleteWorkout).toHaveBeenCalledTimes(2);
+    expect(client.deleteWorkout).toHaveBeenLastCalledWith({ workoutId: '123' });
+  });
+
   it('preserves the new workout and asks for manual review when the old-ID lookup is ambiguous', async () => {
     const client = {
       getWorkoutDetail: vi.fn().mockRejectedValue({ response: { status: 503 } }),
-      deleteWorkout: vi.fn().mockRejectedValueOnce(new Error('Connection closed'))
+      deleteWorkout: vi.fn().mockRejectedValue(new Error('Connection closed'))
     };
     await expect(finishWorkoutReplacement(client, '123', '456'))
-      .rejects.toThrow('ancienne séance 123 et nouvelle séance 456');
-    expect(client.deleteWorkout).toHaveBeenCalledTimes(1);
+      .rejects.toThrow('suppression exacte n’a pas pu être confirmée après une relance');
+    expect(client.deleteWorkout).toHaveBeenCalledTimes(2);
     expect(client.deleteWorkout).toHaveBeenCalledWith({ workoutId: '123' });
   });
 });

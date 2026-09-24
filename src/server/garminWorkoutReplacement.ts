@@ -259,12 +259,19 @@ export async function finishWorkoutReplacement(
 
     // If the lookup itself is ambiguous, preserve the new workout: deleting it
     // could leave the athlete with neither version when Garmin already removed
-    // the old one.
+    // the old one. Retry only the already verified old ID; an exact-ID delete
+    // is idempotent if the first request succeeded but its response was lost.
     if (previousStillPresent === null) {
-      throw manualReviewError(
-        `Remplacement Garmin à vérifier : ancienne séance ${previousWorkoutId} et nouvelle séance ${newWorkoutId}; ` +
-        'impossible de confirmer la suppression de l’ancienne séance.'
-      );
+      try {
+        await client.deleteWorkout({ workoutId: previousWorkoutId });
+        return;
+      } catch (retryErr) {
+        if (isDefinitiveNotFound(retryErr)) return;
+        throw manualReviewError(
+          `Remplacement Garmin à vérifier : ancienne séance ${previousWorkoutId} et nouvelle séance ${newWorkoutId}; ` +
+          'la suppression exacte n’a pas pu être confirmée après une relance.'
+        );
+      }
     }
 
     try {
