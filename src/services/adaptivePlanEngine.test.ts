@@ -17,6 +17,7 @@ import {
   evaluateAdaptivePlanStatus,
   applyAdaptiveModifications,
   buildOverridesFromActions,
+  getPriorWeekPostponedEventIds,
   isAutoAdaptEnabled,
   setAutoAdaptEnabled
 } from './adaptivePlanEngine';
@@ -36,6 +37,68 @@ describe('Adaptive Plan Engine', () => {
     const result = buildOverridesFromActions([], { started, future }, '2026-09-07',
       ['2026-09-07', '2026-09-08'], new Set(['started']));
     expect(result).toEqual({ started });
+  });
+
+  it('drops a prior-week adaptation when a postponed workout enters a new frozen week without a new action', () => {
+    const source = mockWeeklySportEvents[1];
+    const moved = {
+      ...source,
+      startDate: '2026-09-14T17:00:00.000Z',
+      endDate: '2026-09-14T18:05:00.000Z',
+      metadata: { ...source.metadata, isPostponed: true, originalDate: '2026-09-08' }
+    };
+    const previous = {
+      eventId: source.id,
+      date: '2026-09-08',
+      originalTitle: source.title,
+      adaptedTitle: 'Séance réduite semaine précédente',
+      originalDurationMinutes: source.durationMinutes,
+      adaptedDurationMinutes: 30,
+      originalSportType: source.sportType,
+      adaptationReason: 'Charge élevée',
+      coachingCue: 'Rester facile',
+      createdAt: '2026-09-08T10:00:00.000Z'
+    };
+    const activeWeek = Array.from({ length: 7 }, (_, index) => `2026-09-${String(14 + index).padStart(2, '0')}`);
+    const crossWeekPostpones = getPriorWeekPostponedEventIds([moved], activeWeek);
+
+    expect(crossWeekPostpones).toEqual(new Set([source.id]));
+    const overrides = buildOverridesFromActions([], { [source.id]: previous }, '2026-09-14', activeWeek, new Set(), crossWeekPostpones);
+    expect(overrides).toEqual({});
+    expect(applyAdaptiveModifications([], [moved], overrides).allEvents[0].durationMinutes).toBe(source.durationMinutes);
+  });
+
+  it('does not classify same-week moves as cross-week and preserves a protected prior-week override', () => {
+    const source = mockWeeklySportEvents[1];
+    const sourceWeek = Array.from({ length: 7 }, (_, index) => `2026-09-${String(7 + index).padStart(2, '0')}`);
+    const sameWeekMove = {
+      ...source,
+      startDate: '2026-09-09T17:00:00.000Z',
+      metadata: { ...source.metadata, isPostponed: true, originalDate: '2026-09-08' }
+    };
+    const previous = {
+      eventId: source.id,
+      date: '2026-09-08',
+      originalTitle: source.title,
+      adaptedTitle: 'Séance réduite',
+      originalDurationMinutes: source.durationMinutes,
+      adaptedDurationMinutes: 30,
+      originalSportType: source.sportType,
+      adaptationReason: 'Charge élevée',
+      coachingCue: 'Rester facile',
+      createdAt: '2026-09-08T10:00:00.000Z'
+    };
+
+    expect(getPriorWeekPostponedEventIds([sameWeekMove], sourceWeek)).toEqual(new Set());
+
+    const destinationWeek = Array.from({ length: 7 }, (_, index) => `2026-09-${String(14 + index).padStart(2, '0')}`);
+    const crossWeekMove = {
+      ...sameWeekMove,
+      startDate: '2026-09-14T17:00:00.000Z'
+    };
+    const crossWeekIds = getPriorWeekPostponedEventIds([crossWeekMove], destinationWeek);
+    const preservedStarted = buildOverridesFromActions([], { [source.id]: previous }, '2026-09-14', destinationWeek, new Set([source.id]), crossWeekIds);
+    expect(preservedStarted[source.id]).toEqual(previous);
   });
 
   it('does not attach a date-based override to a changed or already completed workout', () => {

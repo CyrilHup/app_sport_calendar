@@ -409,7 +409,8 @@ export function buildOverridesFromActions(
   existingOverrides: Record<string, AdaptiveWorkoutOverride> = {},
   todayKey?: string,
   activeMicrocycleDates?: string[],
-  protectedEventIds: Set<string> = new Set()
+  protectedEventIds: Set<string> = new Set(),
+  crossWeekPostponedEventIds: Set<string> = new Set()
 ): Record<string, AdaptiveWorkoutOverride> {
   const overrides: Record<string, AdaptiveWorkoutOverride> = { ...existingOverrides };
 
@@ -428,6 +429,21 @@ export function buildOverridesFromActions(
       if (ov.date >= todayKey && !protectedEventIds.has(id)) {
         delete overrides[id];
       }
+    }
+  }
+
+  // A weekly decision belongs to its source week. When a future workout is
+  // postponed into a later week, do not carry the source week's adaptation
+  // forward if the destination week's frozen plan recommends no adaptation.
+  for (const eventId of crossWeekPostponedEventIds) {
+    const previousOverride = overrides[eventId];
+    if (
+      previousOverride &&
+      activeMicrocycleDates &&
+      !activeMicrocycleDates.includes(previousOverride.date) &&
+      !protectedEventIds.has(eventId)
+    ) {
+      delete overrides[eventId];
     }
   }
 
@@ -460,6 +476,26 @@ export function buildOverridesFromActions(
   }
 
   return overrides;
+}
+
+/**
+ * Identifies workouts moved from an earlier week into the active week. Their
+ * old weekly adaptation must be replaced by this week's decision, if any.
+ */
+export function getPriorWeekPostponedEventIds(
+  events: CalendarEvent[],
+  activeMicrocycleDates: string[]
+): Set<string> {
+  const activeDates = new Set(activeMicrocycleDates);
+  return new Set(events
+    .filter(event => event.category === 'sport' && event.metadata?.isPostponed && !event.metadata?.isPostponedPlaceholder)
+    .filter(event => {
+      const currentDate = toLocalDateKey(event.startDate);
+      const originalDate = event.metadata?.originalDate;
+      if (!originalDate) return false;
+      return activeDates.has(currentDate) && !activeDates.has(originalDate);
+    })
+    .map(event => event.id));
 }
 
 /** A date-only generated ID is not enough to identify the same workout after a rebuild. */

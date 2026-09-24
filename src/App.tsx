@@ -14,7 +14,7 @@ import type { GarminActivitySyncMode, GarminActivitySyncResult, GarminCredential
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
-import { buildOverridesFromActions, isAutoAdaptEnabled, loadAdaptivePlanState, saveAdaptivePlanState } from './services/adaptivePlanEngine';
+import { buildOverridesFromActions, getPriorWeekPostponedEventIds, isAutoAdaptEnabled, loadAdaptivePlanState, saveAdaptivePlanState } from './services/adaptivePlanEngine';
 import { parseAdaptivePlanState, serializeAdaptivePlanState, WeeklyDecision } from './services/adaptivePlanStore';
 import { buildEffectiveCalendar } from './services/calendarPipeline';
 import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
@@ -839,7 +839,8 @@ export const App: React.FC = () => {
       appStateRef.current.adaptiveOverrides,
       formatDateKey(referenceDate),
       activeWeekDates,
-      protectedIds
+      protectedIds,
+      getPriorWeekPostponedEventIds(allEvents, activeWeekDates)
     );
     const decisions = {
       ...appStateRef.current.weeklyDecisions,
