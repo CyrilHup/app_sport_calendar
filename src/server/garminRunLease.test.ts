@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { claimGarminRunLease } from './garminRunLease';
+import { claimGarminRunLease, isRegisteredGarminRun, markRegisteredGarminRunCancelled } from './garminRunLease';
 
 describe('cross-device Garmin run lease', () => {
   afterEach(() => {
@@ -84,5 +84,34 @@ describe('cross-device Garmin run lease', () => {
     vi.stubEnv('NODE_ENV', 'production');
     await expect(claimGarminRunLease({ headers: {} }, '2026-09-23'))
       .rejects.toThrow('aucune séance créée');
+  });
+
+  it('requires the athlete-owned exact registry ID before cancellation', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'publishable');
+    const request = vi.fn().mockResolvedValue(new Response('[{"workout_id":"123"}]', { status: 200 }));
+    vi.stubGlobal('fetch', request);
+    const req = { headers: { authorization: 'Bearer athlete-token' } };
+
+    await expect(isRegisteredGarminRun(req, '2026-09-24', '123')).resolves.toBe(true);
+    expect(request.mock.calls[0][0]).toContain('workout_date=eq.2026-09-24');
+    expect(request.mock.calls[0][0]).toContain('workout_id=eq.123');
+    expect(request.mock.calls[0][1].headers.Authorization).toBe('Bearer athlete-token');
+  });
+
+  it('marks only the exact ID cancelled and verifies the tombstone', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('SUPABASE_ANON_KEY', 'publishable');
+    const request = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response('[{"workout_id":"123","signature":"cancelled-rest"}]', { status: 200 }));
+    vi.stubGlobal('fetch', request);
+
+    await markRegisteredGarminRunCancelled(
+      { headers: { authorization: 'Bearer athlete-token' } }, '2026-09-24', '123'
+    );
+    expect(request.mock.calls[0][1].method).toBe('PATCH');
+    expect(request.mock.calls[0][0]).toContain('workout_id=eq.123');
+    expect(JSON.parse(request.mock.calls[0][1].body)).toMatchObject({ signature: 'cancelled-rest' });
   });
 });

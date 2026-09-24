@@ -186,6 +186,60 @@ export async function findScheduledQmtRunIds(
   return foundIds;
 }
 
+/** Cancel only one exact, verified app-created run; never touch recorded activities. */
+export async function cancelExactScheduledQmtRun(
+  client: GarminWorkoutCalendarClient,
+  scheduledDate: string,
+  workoutId: string
+): Promise<void> {
+  if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
+    throw manualReviewError('Identifiant Garmin à annuler invalide.');
+  }
+  const verifiedRunIds = await findScheduledQmtRunIds(client, scheduledDate);
+  if (!verifiedRunIds.includes(workoutId)) {
+    if (await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId)) {
+      throw manualReviewError(`La séance ${workoutId} n'est pas une course [QMT] vérifiée le ${scheduledDate}.`);
+    }
+    // A previous request may have succeeded even when its response was lost.
+    return;
+  }
+
+  let deletionError: unknown;
+  try {
+    await client.deleteWorkout({ workoutId });
+  } catch (error) {
+    deletionError = error;
+  }
+  try {
+    if (!await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId)) return;
+  } catch {
+    throw manualReviewError(`Annulation Garmin ${workoutId} à vérifier : lecture du calendrier impossible.`);
+  }
+  throw manualReviewError(
+    `La séance Garmin ${workoutId} reste programmée le ${scheduledDate}` +
+    (deletionError instanceof Error ? ` (${deletionError.message})` : '') + '.'
+  );
+}
+
+/** Registry ownership is checked before Garmin deletion and cleared only after readback. */
+export async function cancelRegisteredGarminRun(
+  client: GarminWorkoutCalendarClient,
+  scheduledDate: string,
+  workoutId: string,
+  registry: { contains: () => Promise<boolean>; markCancelled: () => Promise<void> }
+): Promise<void> {
+  if (!await registry.contains()) {
+    // Safe idempotency after a lost response: an unregistered ID may be
+    // acknowledged only if it is already absent from Garmin's calendar.
+    if (await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId)) {
+      throw new Error('Identifiant Garmin non confirmé dans le registre du compte. Aucune séance annulée.');
+    }
+    return;
+  }
+  await cancelExactScheduledQmtRun(client, scheduledDate, workoutId);
+  await registry.markCancelled();
+}
+
 /** Delete only the verified previous ID; roll back the new workout if that fails. */
 export async function finishWorkoutReplacement(
   client: GarminWorkoutReplacementClient,

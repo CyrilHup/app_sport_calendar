@@ -37,4 +37,13 @@ describe('validateGarminRequest', () => {
   it('rejects the retired fuzzy duplicate-cleanup action', () => {
     expect(() => validateGarminRequest({ action: 'clean-duplicates' })).toThrow('Action Garmin');
   });
+
+  it('requires an exact date and numeric ID for cancelling a planned workout', () => {
+    expect(validateGarminRequest({ action: 'cancel-workout', cancellation: {
+      scheduledDate: '2026-09-24', workoutId: '123'
+    } }).cancellation).toEqual({ scheduledDate: '2026-09-24', workoutId: '123' });
+    expect(() => validateGarminRequest({ action: 'cancel-workout', cancellation: {
+      scheduledDate: '2026-09-24', workoutId: 'unknown'
+    } })).toThrow('identifiant exact');
+  });
 });

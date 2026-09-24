@@ -1,6 +1,6 @@
 import { MAX_FULL_SYNC_ACTIVITIES } from './garminPagination.js';
 
-export type GarminAction = 'sync' | 'push-workout' | 'get-wellness';
+export type GarminAction = 'sync' | 'push-workout' | 'cancel-workout' | 'get-wellness';
 export type GarminSyncMode = 'full' | 'incremental';
 
 export interface ValidatedGarminRequest {
@@ -20,6 +20,7 @@ export interface ValidatedGarminRequest {
     description?: string;
     replaceWorkoutId?: string;
   };
+  cancellation?: { scheduledDate: string; workoutId: string };
 }
 
 export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
@@ -28,7 +29,7 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
   }
   const body = input as Record<string, unknown>;
   const action = body.action ?? 'sync';
-  if (action !== 'sync' && action !== 'push-workout' && action !== 'get-wellness') {
+  if (action !== 'sync' && action !== 'push-workout' && action !== 'cancel-workout' && action !== 'get-wellness') {
     throw new Error('Action Garmin non reconnue.');
   }
   const syncMode = body.syncMode ?? body.mode ?? 'incremental';
@@ -52,6 +53,21 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
   }
   const offset = typeof body.offset === 'number' ? body.offset : 0;
 
+  if (action === 'cancel-workout') {
+    const cancellation = body.cancellation;
+    if (!cancellation || typeof cancellation !== 'object' || Array.isArray(cancellation)) {
+      throw new Error('Annulation Garmin manquante.');
+    }
+    const data = cancellation as Record<string, unknown>;
+    if (typeof data.scheduledDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(data.scheduledDate) ||
+      typeof data.workoutId !== 'string' || !/^[1-9]\d{0,19}$/.test(data.workoutId)) {
+      throw new Error('Date ou identifiant exact de la séance Garmin à annuler invalide.');
+    }
+    return {
+      email, password, action, syncMode, clientDate, limit, offset,
+      cancellation: { scheduledDate: data.scheduledDate, workoutId: data.workoutId }
+    };
+  }
   if (action !== 'push-workout') return { email, password, action, syncMode, clientDate, limit, offset };
   const workout = body.workout;
   if (!workout || typeof workout !== 'object' || Array.isArray(workout)) {

@@ -1235,3 +1235,33 @@ export async function fetchGarminWellness(): Promise<{ success: boolean; wellnes
     };
   }
 }
+
+/** Cancel a future app-created run only by its exact registered Garmin ID. */
+export async function cancelWorkoutOnGarmin(
+  scheduledDate: string,
+  workoutId: string
+): Promise<{ success: boolean; error?: string; errorCode?: 'GARMIN_AUTH_REQUIRED' }> {
+  try {
+    const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
+    const response = await fetch(getApiUrl('/api/garmin-sync'), {
+      method: 'POST',
+      headers: await getGarminApiHeaders(),
+      body: JSON.stringify({
+        email: creds?.email,
+        password: creds?.password,
+        action: 'cancel-workout',
+        cancellation: { scheduledDate, workoutId }
+      })
+    });
+    const data = await response.json();
+    return response.ok && data?.success && data.workoutId === workoutId && data.scheduledDate === scheduledDate
+      ? { success: true }
+      : {
+        success: false,
+        error: data?.error || 'Annulation Garmin non confirmée.',
+        errorCode: data?.code === 'GARMIN_AUTH_REQUIRED' ? 'GARMIN_AUTH_REQUIRED' : undefined
+      };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : 'Annulation Garmin non confirmée.' };
+  }
+}

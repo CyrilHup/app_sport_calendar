@@ -12,6 +12,85 @@ function bearerToken(req: { headers?: Record<string, string | string[] | undefin
   return authorization?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() ?? '';
 }
 
+function registryRequestContext(req: { headers?: Record<string, string | string[] | undefined> }) {
+  const token = bearerToken(req);
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  if (!token || !supabaseUrl || !anonKey) {
+    throw new Error('Registre Garmin indisponible : aucune séance annulée.');
+  }
+  return {
+    url: `${supabaseUrl.replace(/\/$/, '')}/rest/v1/garmin_run_registry`,
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}` }
+  };
+}
+
+/** RLS scopes this exact date-and-ID lookup to the authenticated athlete. */
+export async function isRegisteredGarminRun(
+  req: { headers?: Record<string, string | string[] | undefined> },
+  workoutDate: string,
+  workoutId: string
+): Promise<boolean> {
+  const { url, headers } = registryRequestContext(req);
+  const query = new URLSearchParams({
+    select: 'workout_id',
+    workout_date: `eq.${workoutDate}`,
+    workout_id: `eq.${workoutId}`,
+    limit: '1'
+  });
+  const response = await fetch(`${url}?${query}`, { headers, signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) throw new Error('Registre Garmin illisible : aucune séance annulée.');
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error('Registre Garmin invalide : aucune séance annulée.');
+  return rows.length === 1 && rows[0]?.workout_id === workoutId;
+}
+
+/** Persist a tombstone so a stale client cannot recreate the cancelled plan. */
+export async function markRegisteredGarminRunCancelled(
+  req: { headers?: Record<string, string | string[] | undefined> },
+  workoutDate: string,
+  workoutId: string
+): Promise<void> {
+  const { url, headers } = registryRequestContext(req);
+  const query = new URLSearchParams({
+    workout_date: `eq.${workoutDate}`,
+    workout_id: `eq.${workoutId}`
+  });
+  try {
+    const response = await fetch(`${url}?${query}`, {
+      method: 'PATCH',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signature: 'cancelled-rest', updated_at: new Date().toISOString() }),
+      signal: AbortSignal.timeout(8_000)
+    });
+    if (!response.ok) throw new Error('Mise à jour du registre Garmin refusée.');
+  } catch (error) {
+    if (!await hasCancelledRunTombstone(req, workoutDate, workoutId)) throw error;
+  }
+  if (!await hasCancelledRunTombstone(req, workoutDate, workoutId)) {
+    throw new Error('Annulation Garmin non enregistrée dans le registre.');
+  }
+}
+
+async function hasCancelledRunTombstone(
+  req: { headers?: Record<string, string | string[] | undefined> },
+  workoutDate: string,
+  workoutId: string
+): Promise<boolean> {
+  const { url, headers } = registryRequestContext(req);
+  const query = new URLSearchParams({
+    select: 'workout_id,signature',
+    workout_date: `eq.${workoutDate}`,
+    workout_id: `eq.${workoutId}`,
+    limit: '1'
+  });
+  const response = await fetch(`${url}?${query}`, { headers, signal: AbortSignal.timeout(8_000) });
+  if (!response.ok) throw new Error('Registre Garmin illisible après annulation.');
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error('Registre Garmin invalide après annulation.');
+  return rows.length === 1 && rows[0]?.workout_id === workoutId && rows[0]?.signature === 'cancelled-rest';
+}
+
 /**
  * A Postgres row claim serializes Garmin creation across tabs and devices.
  * Both the target date and the exact prior ID are claimed atomically. A

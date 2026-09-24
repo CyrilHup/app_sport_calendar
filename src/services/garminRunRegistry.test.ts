@@ -3,6 +3,7 @@ import type { CalendarEvent } from '../types/calendar';
 import * as garminService from './garminService';
 import {
   computeWorkoutSyncSignature,
+  GARMIN_REST_CANCELLED_SIGNATURE,
   GARMIN_SYNCED_WORKOUT_IDS_KEY,
   syncCurrentWeekWorkoutsToGarmin
 } from './garminAutoSyncService';
@@ -41,6 +42,15 @@ function run(id: string, durationMinutes = 60): CalendarEvent {
   };
 }
 
+function restAfterRun(id: string): CalendarEvent {
+  return {
+    ...run(id, 0),
+    title: 'Repos complet',
+    sportType: 'MOBILITY',
+    metadata: { isAdapted: true, originalSportType: 'RUN_EASY', originalTitle: 'Footing facile' }
+  };
+}
+
 describe('cloud-backed Garmin run IDs', () => {
   beforeEach(() => {
     values.clear();
@@ -73,6 +83,85 @@ describe('cloud-backed Garmin run IDs', () => {
       signature: computeWorkoutSyncSignature(changedRun)
     });
     expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[oldRun.id]).toBe('456');
+  });
+
+  it('cancels a future run replaced by rest only through its exact cloud ID', async () => {
+    const rest = restAfterRun('SPORT_WORKOUT_2026-09-23');
+    values.set(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [rest.id]: '123' }));
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([{
+      eventId: rest.id,
+      workoutDate: '2026-09-23',
+      workoutId: '123',
+      signature: computeWorkoutSyncSignature(run(rest.id))
+    }]);
+    const cancel = vi.spyOn(garminService, 'cancelWorkoutOnGarmin').mockResolvedValue({ success: true });
+    const push = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([rest], new Date('2026-09-23T09:00:00Z'), {
+      userId: 'account-a'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.alreadyUpToDate).toBe(false);
+    expect(cancel).toHaveBeenCalledWith('2026-09-23', '123');
+    expect(push).not.toHaveBeenCalled();
+    expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[rest.id]).toBe('123');
+    expect(JSON.parse(values.get(STORAGE_KEYS.GARMIN_SYNCED_SIGNATURES) || '{}')[rest.id])
+      .toBe(GARMIN_REST_CANCELLED_SIGNATURE);
+  });
+
+  it('fails closed when cloud and local IDs disagree for a planned rest', async () => {
+    const rest = restAfterRun('SPORT_WORKOUT_2026-09-23');
+    values.set(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [rest.id]: '999' }));
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([{
+      eventId: rest.id, workoutDate: '2026-09-23', workoutId: '123', signature: 'old'
+    }]);
+    const cancel = vi.spyOn(garminService, 'cancelWorkoutOnGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([rest], new Date('2026-09-23T09:00:00Z'), {
+      userId: 'account-a'
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('divergents');
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('retries the exact local ID after a lost cancellation response cleared the cloud row', async () => {
+    const rest = restAfterRun('SPORT_WORKOUT_2026-09-23');
+    values.set(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [rest.id]: '123' }));
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([]);
+    const cancel = vi.spyOn(garminService, 'cancelWorkoutOnGarmin').mockResolvedValue({ success: true });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([rest], new Date('2026-09-23T09:00:00Z'), {
+      userId: 'account-a'
+    });
+
+    expect(result.success).toBe(true);
+    expect(cancel).toHaveBeenCalledWith('2026-09-23', '123');
+    expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[rest.id]).toBe('123');
+  });
+
+  it('does not repeat Garmin cancellation when the cloud tombstone already confirms rest', async () => {
+    const rest = restAfterRun('SPORT_WORKOUT_2026-09-23');
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([{
+      eventId: `garmin-date:2026-09-23`,
+      workoutDate: '2026-09-23',
+      workoutId: '123',
+      signature: GARMIN_REST_CANCELLED_SIGNATURE
+    }]);
+    const cancel = vi.spyOn(garminService, 'cancelWorkoutOnGarmin');
+    const push = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([rest], new Date('2026-09-23T09:00:00Z'), {
+      userId: 'account-a'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.alreadyUpToDate).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[rest.id]).toBe('123');
   });
 
   it('recovers an ID committed by the server before the browser saved its event ID', async () => {

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   assertNoConflictingScheduledQmtRun,
+  cancelExactScheduledQmtRun,
+  cancelRegisteredGarminRun,
   findScheduledQmtRunIds,
   finishWorkoutReplacement,
   finishWorkoutReplacements,
@@ -10,6 +12,100 @@ import {
 } from './garminWorkoutReplacement';
 
 describe('exact Garmin workout replacement', () => {
+  it('cancels only the exact scheduled QMT run, not another workout or activity', async () => {
+    let scheduled = true;
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockImplementation(async () => ({ calendarItems: [
+        ...(scheduled ? [{ date: '2026-09-24', workoutId: 123 }] : []),
+        { date: '2026-09-24', workoutId: 456 }
+      ] })),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId,
+        workoutName: workoutId === '123' ? '[QMT] Easy run' : 'Personal run',
+        sportType: { sportTypeKey: 'running' }
+      })),
+      deleteWorkout: vi.fn().mockImplementation(async () => { scheduled = false; })
+    };
+
+    await cancelExactScheduledQmtRun(client, '2026-09-24', '123');
+    expect(client.deleteWorkout).toHaveBeenCalledOnce();
+    expect(client.deleteWorkout).toHaveBeenCalledWith({ workoutId: '123' });
+  });
+
+  it('accepts a lost delete response only after the exact ID disappears', async () => {
+    let scheduled = true;
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockImplementation(async () => ({ calendarItems:
+        scheduled ? [{ date: '2026-09-24', workoutId: 123 }] : []
+      })),
+      getWorkoutDetail: vi.fn().mockResolvedValue({
+        workoutId: 123, workoutName: '[QMT] Easy run', sportType: { sportTypeKey: 'running' }
+      }),
+      deleteWorkout: vi.fn().mockImplementation(async () => { scheduled = false; throw new Error('timeout'); })
+    };
+
+    await expect(cancelExactScheduledQmtRun(client, '2026-09-24', '123')).resolves.toBeUndefined();
+    await expect(cancelExactScheduledQmtRun(client, '2026-09-24', '123')).resolves.toBeUndefined();
+    expect(client.deleteWorkout).toHaveBeenCalledOnce();
+  });
+
+  it('refuses an exact ID that is not a verified QMT run on that date', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [{ date: '2026-09-24', workoutId: 123 }] }),
+      getWorkoutDetail: vi.fn().mockResolvedValue({
+        workoutId: 123, workoutName: 'Personal run', sportType: { sportTypeKey: 'running' }
+      }),
+      deleteWorkout: vi.fn()
+    };
+
+    await expect(cancelExactScheduledQmtRun(client, '2026-09-24', '123')).rejects.toThrow('pas une course [QMT]');
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+  });
+
+  it('does not claim cancellation when Garmin still schedules the run after a delete error', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [{ date: '2026-09-24', workoutId: 123 }] }),
+      getWorkoutDetail: vi.fn().mockResolvedValue({
+        workoutId: 123, workoutName: '[QMT] Easy run', sportType: { sportTypeKey: 'running' }
+      }),
+      deleteWorkout: vi.fn().mockRejectedValue(new Error('Garmin refused'))
+    };
+
+    await expect(cancelExactScheduledQmtRun(client, '2026-09-24', '123'))
+      .rejects.toThrow('reste programmée');
+  });
+
+  it('never deletes a scheduled workout without an exact account registry row', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [{ date: '2026-09-24', workoutId: 123 }] }),
+      getWorkoutDetail: vi.fn(),
+      deleteWorkout: vi.fn()
+    };
+    const registry = { contains: vi.fn().mockResolvedValue(false), markCancelled: vi.fn() };
+
+    await expect(cancelRegisteredGarminRun(client, '2026-09-24', '123', registry))
+      .rejects.toThrow('non confirmé dans le registre');
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+    expect(registry.markCancelled).not.toHaveBeenCalled();
+  });
+
+  it('clears the registry only after Garmin confirms the exact run is gone', async () => {
+    let scheduled = true;
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockImplementation(async () => ({ calendarItems:
+        scheduled ? [{ date: '2026-09-24', workoutId: 123 }] : []
+      })),
+      getWorkoutDetail: vi.fn().mockResolvedValue({
+        workoutId: 123, workoutName: '[QMT] Easy run', sportType: { sportTypeKey: 'running' }
+      }),
+      deleteWorkout: vi.fn().mockImplementation(async () => { scheduled = false; })
+    };
+    const registry = { contains: vi.fn().mockResolvedValue(true), markCancelled: vi.fn().mockResolvedValue(undefined) };
+
+    await cancelRegisteredGarminRun(client, '2026-09-24', '123', registry);
+    expect(registry.markCancelled).toHaveBeenCalledOnce();
+    expect(client.deleteWorkout).toHaveBeenCalledWith({ workoutId: '123' });
+  });
   it('recognizes a schedule accepted despite Garmin losing its response', async () => {
     const client = {
       getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [

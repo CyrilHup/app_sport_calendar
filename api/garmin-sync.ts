@@ -10,8 +10,9 @@ import { GARMIN_TRAINING_POLICY, isValidGarminMaxHeartRate, isValidRecordedHeart
 import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
 import { validateGarminRequest } from '../src/server/garminRequest.js';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
-import { claimGarminRunLease } from '../src/server/garminRunLease.js';
+import { claimGarminRunLease, isRegisteredGarminRun, markRegisteredGarminRunCancelled } from '../src/server/garminRunLease.js';
 import {
+  cancelRegisteredGarminRun,
   findScheduledQmtRunIds,
   finishWorkoutReplacements,
   scheduleWorkoutWithReadback,
@@ -203,6 +204,23 @@ export default async function handler(req: any, res: any) {
     // ----------------------------------------------------
     // ACTION: PUSH WORKOUT TO GARMIN CONNECT & SCHEDULE
     // ----------------------------------------------------
+    if (action === 'cancel-workout') {
+      const cancellation = body.cancellation!;
+      const { scheduledDate, workoutId } = cancellation;
+      const lease = await claimGarminRunLease(req, scheduledDate, workoutId);
+      try {
+        await cancelRegisteredGarminRun(gc, scheduledDate, workoutId, {
+          contains: () => isRegisteredGarminRun(req, scheduledDate, workoutId),
+          markCancelled: () => markRegisteredGarminRunCancelled(req, scheduledDate, workoutId)
+        });
+        res.status(200).json({ success: true, workoutId, scheduledDate });
+        return;
+      } finally {
+        try { await lease.release(); }
+        catch (releaseError) { console.warn('Garmin cancellation lease release failed:', releaseError); }
+      }
+    }
+
     if (action === 'push-workout') {
       const workout = body.workout;
       if (!workout) {

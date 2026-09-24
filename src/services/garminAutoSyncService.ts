@@ -3,6 +3,7 @@ import { WorkoutPushResult } from '../types/garmin';
 import {
   GARMIN_WORKOUT_DEFINITION_VERSION,
   AthletePhysiologicalProfile,
+  cancelWorkoutOnGarmin,
   getGarminWorkoutTargetMode,
   getStoredAthleteProfile,
   pushWorkoutToGarmin
@@ -16,6 +17,7 @@ export const GARMIN_AUTO_SYNC_ENABLED_KEY = STORAGE_KEYS.GARMIN_AUTO_SYNC_ENABLE
 // the API used to report success even when Garmin rejected calendar scheduling.
 export const GARMIN_SYNCED_SIGNATURES_KEY = STORAGE_KEYS.GARMIN_SYNCED_SIGNATURES;
 export const GARMIN_SYNCED_WORKOUT_IDS_KEY = STORAGE_KEYS.GARMIN_SYNCED_WORKOUT_IDS;
+export const GARMIN_REST_CANCELLED_SIGNATURE = 'cancelled-rest';
 
 export interface AutoSyncResult {
   success: boolean;
@@ -140,6 +142,22 @@ export function filterCurrentWeekSportWorkouts(
   });
 }
 
+/** A zero-minute adapted running session cancels a plan; it is never an upload. */
+export function filterCurrentWeekRestCancellations(
+  events: CalendarEvent[],
+  referenceDate: Date = new Date()
+): CalendarEvent[] {
+  const { weekStartStr, weekEndStr } = getCurrentWeekDateBounds(referenceDate);
+  return events.filter(event => {
+    if (event.category !== 'sport' || event.metadata?.isPostponedPlaceholder ||
+      !event.metadata?.isAdapted || event.durationMinutes !== 0 ||
+      !isTrailOrRunning(event.metadata.originalSportType, event.metadata.originalTitle || event.title) ||
+      new Date(event.startDate).getTime() <= referenceDate.getTime()) return false;
+    const date = toLocalDateKey(event.startDate);
+    return date >= weekStartStr && date <= weekEndStr;
+  });
+}
+
 // All callers share the active operation. Changes arriving during a push are
 // queued as one latest follow-up so a stale calendar is never the final state.
 let autoSyncInFlight: Promise<AutoSyncResult> | null = null;
@@ -162,9 +180,10 @@ function workoutSyncRequestKey(
     userId: options?.userId,
     athlete: options?.athleteProfile,
     completedEventIds: [...(options?.completedEventIds || [])].sort(),
-    signatures: filterCurrentWeekSportWorkouts(events, referenceDate)
-      .map(event => computeWorkoutSyncSignature(event, options?.athleteProfile))
-      .sort()
+    signatures: [
+      ...filterCurrentWeekSportWorkouts(events, referenceDate),
+      ...filterCurrentWeekRestCancellations(events, referenceDate)
+    ].map(event => computeWorkoutSyncSignature(event, options?.athleteProfile)).sort()
   });
 }
 
@@ -192,7 +211,8 @@ async function runCurrentWeekWorkoutSync(
   }
 
   const weekWorkouts = filterCurrentWeekSportWorkouts(events, referenceDate);
-  if (weekWorkouts.length === 0) {
+  const restCancellations = filterCurrentWeekRestCancellations(events, referenceDate);
+  if (weekWorkouts.length === 0 && restCancellations.length === 0) {
     return {
       success: true,
       pushedCount: 0,
@@ -219,6 +239,59 @@ async function runCurrentWeekWorkoutSync(
     const cloudWarnings: string[] = [];
     const conflictingEventIds = new Set<string>();
     const completedEventIds = new Set(options?.completedEventIds);
+    let cancelledCount = 0;
+
+    for (const rest of restCancellations) {
+      if (completedEventIds.has(rest.id) || rest.metadata?.isCompleted) continue;
+      const date = toLocalDateKey(rest.startDate);
+      if (weekWorkouts.some(workout =>
+        isTrailOrRunning(workout.sportType, workout.title) && toLocalDateKey(workout.startDate) === date
+      ) || restCancellations.filter(candidate => toLocalDateKey(candidate.startDate) === date).length > 1) {
+        manualReviewErrors.push(`Repos du ${date} ambigu : annulation Garmin suspendue.`);
+        continue;
+      }
+      if (!options?.userId || !cloudRegistry) {
+        manualReviewErrors.push(`Identifiant Garmin du ${date} invérifiable dans le compte : annulation suspendue.`);
+        continue;
+      }
+      const cloudEntry = cloudRegistry.find(entry => entry.workoutDate === date);
+      const localId = existingWorkoutIds[rest.id];
+      if (cloudEntry && localId && cloudEntry.workoutId !== localId) {
+        manualReviewErrors.push(`Identifiants Garmin divergents pour le repos du ${date} : vérification manuelle nécessaire.`);
+        continue;
+      }
+      if (cloudEntry?.signature === GARMIN_REST_CANCELLED_SIGNATURE) {
+        updatedWorkoutIds[rest.id] = cloudEntry.workoutId;
+        updatedSignatures[rest.id] = GARMIN_REST_CANCELLED_SIGNATURE;
+        storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
+        saveSyncedWeekWorkoutSignatures(updatedSignatures);
+        continue;
+      }
+      if (!cloudEntry && existingSignatures[rest.id] === GARMIN_REST_CANCELLED_SIGNATURE && localId) {
+        continue;
+      }
+      // A lost cancellation response can leave the browser ID behind after
+      // the server has already removed the cloud row. The server accepts that
+      // exact ID only if Garmin also confirms it is no longer scheduled.
+      const workoutId = cloudEntry?.workoutId || localId;
+      if (!workoutId) continue;
+      if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
+        manualReviewErrors.push(`Identifiant Garmin invalide pour le repos du ${date}.`);
+        continue;
+      }
+      if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
+      const cancellation = await cancelWorkoutOnGarmin(date, workoutId);
+      if (!cancellation.success) {
+        manualReviewErrors.push(`Repos du ${date} non répercuté sur Garmin : ${cancellation.error || 'annulation non confirmée'}`);
+        continue;
+      }
+      if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
+      updatedWorkoutIds[rest.id] = workoutId;
+      updatedSignatures[rest.id] = GARMIN_REST_CANCELLED_SIGNATURE;
+      storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
+      saveSyncedWeekWorkoutSignatures(updatedSignatures);
+      cancelledCount++;
+    }
 
     for (const entry of cloudRegistry || []) {
       if (!/^[1-9]\d{0,19}$/.test(entry.workoutId)) continue;
@@ -312,7 +385,7 @@ async function runCurrentWeekWorkoutSync(
         success: legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0,
         pushedCount: 0,
         totalWeekWorkouts: weekWorkouts.length,
-        alreadyUpToDate: legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0,
+        alreadyUpToDate: cancelledCount === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0,
         results: [],
         reason: legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0 ? 'SUCCESS' : 'ERROR',
         error: [legacyWarning, ...cloudWarnings].filter(Boolean).join(' | ') || undefined,
