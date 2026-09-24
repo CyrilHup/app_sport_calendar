@@ -321,6 +321,9 @@ export default async function handler(req: any, res: any) {
       }
 
       const builtWorkout = wb.build();
+      // From this point a lost response could hide a successful Garmin create;
+      // keep the date lease until the exact new ID is confirmed or it expires.
+      runLease?.markCreateStarted();
       const createdWorkout: any = await gc.createWorkout(builtWorkout);
 
       const createdWorkoutId = createdWorkout?.workoutId ? String(createdWorkout.workoutId) : '';
@@ -332,7 +335,6 @@ export default async function handler(req: any, res: any) {
         throw new Error('La date de programmation Garmin est manquante.');
       }
 
-      runLease?.markScheduled();
       await scheduleWorkoutWithReadback(gc, createdWorkoutId, workout.scheduledDate);
 
       // Every prior ID was read from the exact Garmin calendar date and its

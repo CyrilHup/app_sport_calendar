@@ -53,7 +53,7 @@ describe('cross-device Garmin run lease', () => {
       { headers: { authorization: 'Bearer athlete-token' } }, '2026-09-23', '123'
     );
 
-    lease.markScheduled();
+    lease.markCreateStarted();
     await lease.confirm('456');
     await lease.release();
 
@@ -67,7 +67,7 @@ describe('cross-device Garmin run lease', () => {
     expect(request.mock.calls[2][0]).toContain('/rpc/release_garmin_run_sync');
   });
 
-  it('keeps an uncertain scheduled result locked until expiry', async () => {
+  it('keeps an uncertain create result locked until expiry', async () => {
     vi.stubEnv('SUPABASE_URL', 'https://project.supabase.co');
     vi.stubEnv('SUPABASE_ANON_KEY', 'publishable');
     const request = vi.fn().mockResolvedValue(new Response('true', { status: 200 }));
@@ -75,7 +75,7 @@ describe('cross-device Garmin run lease', () => {
     const lease = await claimGarminRunLease(
       { headers: { authorization: 'Bearer athlete-token' } }, '2026-09-23'
     );
-    lease.markScheduled();
+    lease.markCreateStarted();
     await lease.release();
     expect(request).toHaveBeenCalledTimes(1);
   });

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 interface GarminRunLease {
-  markScheduled: () => void;
+  /** Call immediately before sending createWorkout so a lost response keeps the date locked. */
+  markCreateStarted: () => void;
   confirm: (newWorkoutId: string) => Promise<void>;
   release: () => Promise<void>;
 }
@@ -103,7 +104,7 @@ export async function claimGarminRunLease(
 ): Promise<GarminRunLease> {
   const token = bearerToken(req);
   if (!token && !process.env.VERCEL && process.env.NODE_ENV !== 'production') {
-    return { markScheduled: () => {}, confirm: async () => {}, release: async () => {} };
+    return { markCreateStarted: () => {}, confirm: async () => {}, release: async () => {} };
   }
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
@@ -136,10 +137,10 @@ export async function claimGarminRunLease(
     throw new Error('Protection anti-doublon Garmin indisponible. Aucun nouvel entraînement créé.');
   }
 
-  let scheduled = false;
+  let createMayHaveSucceeded = false;
   let confirmed = false;
   return {
-    markScheduled: () => { scheduled = true; },
+    markCreateStarted: () => { createMayHaveSucceeded = true; },
     confirm: async newWorkoutId => {
       const confirmedResponse = await fetch(`${rpcBase}/confirm_garmin_run_sync`, {
         method: 'POST',
@@ -158,9 +159,9 @@ export async function claimGarminRunLease(
       confirmed = true;
     },
     release: async () => {
-      // After scheduling, an uncertain write must keep the other devices out
-      // until the lease expires. Never release into an unrecorded duplicate.
-      if (scheduled && !confirmed) return;
+      // Once creation may have reached Garmin, an uncertain result must keep
+      // other devices out until expiry. Never release into an unrecorded duplicate.
+      if (createMayHaveSucceeded && !confirmed) return;
       const released = await fetch(`${rpcBase}/release_garmin_run_sync`, {
         method: 'POST',
         headers,
