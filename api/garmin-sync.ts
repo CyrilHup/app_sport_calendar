@@ -248,7 +248,7 @@ export default async function handler(req: any, res: any) {
 
       // Replacements use only the exact Garmin ID previously stored by this
       // app. Verify it is still scheduled on this date before creating; never
-      // guess by title. Runs also retire any verified same-day legacy QMT runs.
+      // infer additional IDs from a title or same-day duplicate.
       const previousWorkoutIds = await findScheduledQmtWorkoutReplacementIds(
         gc,
         workout.scheduledDate,
@@ -327,13 +327,14 @@ export default async function handler(req: any, res: any) {
         throw new Error('La date de programmation Garmin est manquante.');
       }
 
-      // Retire the verified exact prior ID only after Garmin confirms the new
-      // workout is scheduled; running also includes same-day legacy duplicates.
+      // Retire the verified exact prior ID only after Garmin independently
+      // confirms that the exact new workout is scheduled.
       await scheduleAndReplacePreviousWorkouts(
         gc,
         createdWorkoutId,
         workout.scheduledDate,
-        previousWorkoutIds
+        previousWorkoutIds,
+        workout.sportType === 'RUNNING' ? 'running' : undefined
       );
       await runLease?.confirm(createdWorkoutId);
 

@@ -43,37 +43,77 @@ export async function isExactWorkoutScheduledOnDate(
   return false;
 }
 
-/** Never treat a lost scheduling response as proof that Garmin rejected it. */
+/** Remove an unconfirmed new workout without touching the previous scheduled version. */
+async function removeUnconfirmedWorkout(
+  client: GarminWorkoutSchedulingClient,
+  scheduledDate: string,
+  workoutId: string
+): Promise<void> {
+  try {
+    await client.deleteWorkout({ workoutId });
+  } catch (cleanupError) {
+    console.warn('Could not clean up unconfirmed Garmin workout:', cleanupError);
+    throw manualReviewError(
+      `Programmation Garmin à vérifier : nouvelle séance ${workoutId} le ${scheduledDate}.`
+    );
+  }
+
+  let remainsScheduled: boolean;
+  try {
+    remainsScheduled = await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId);
+  } catch {
+    throw manualReviewError(
+      `Annulation de la nouvelle séance ${workoutId} à vérifier : lecture du calendrier impossible.`
+    );
+  }
+  if (remainsScheduled) {
+    throw manualReviewError(
+      `La nouvelle séance Garmin ${workoutId} reste programmée le ${scheduledDate} après son annulation.`
+    );
+  }
+}
+
+/** Never treat a scheduling response as proof without an exact calendar readback. */
 export async function scheduleWorkoutWithReadback(
   client: GarminWorkoutSchedulingClient,
   workoutId: string,
   scheduledDate: string
 ): Promise<void> {
+  let scheduleFailed = false;
+  let scheduleError: unknown;
   try {
     await client.scheduleWorkout({ workoutId }, scheduledDate);
-    return;
-  } catch (scheduleError) {
-    let confirmedScheduled = false;
-    try {
-      confirmedScheduled = await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId);
-    } catch (lookupError) {
-      console.warn('Could not verify Garmin scheduling after error:', lookupError);
-    }
-    if (confirmedScheduled) return;
+  } catch (error) {
+    scheduleFailed = true;
+    scheduleError = error;
+  }
 
-    try {
-      await client.deleteWorkout({ workoutId });
-    } catch (cleanupError) {
-      console.warn('Could not clean up uncertain Garmin workout:', cleanupError);
-      throw manualReviewError(
-        `Programmation Garmin à vérifier : nouvelle séance ${workoutId} le ${scheduledDate}.`
-      );
-    }
-    throw new Error(
-      `Séance créée mais non programmée dans le calendrier Garmin pour le ${scheduledDate}: ` +
-      `${scheduleError instanceof Error ? scheduleError.message : 'erreur Garmin inconnue'}`
+  let confirmedScheduled: boolean;
+  try {
+    confirmedScheduled = await isExactWorkoutScheduledOnDate(client, scheduledDate, workoutId);
+  } catch (lookupError) {
+    console.warn('Could not verify Garmin scheduling:', lookupError);
+    await removeUnconfirmedWorkout(client, scheduledDate, workoutId);
+    throw manualReviewError(
+      `La programmation de la nouvelle séance ${workoutId} le ${scheduledDate} n'a pas pu être confirmée; ` +
+      'la séance précédente a été conservée.'
     );
   }
+
+  if (confirmedScheduled) return;
+
+  await removeUnconfirmedWorkout(client, scheduledDate, workoutId);
+  if (!scheduleFailed) {
+    throw manualReviewError(
+      `Garmin a accepté la programmation mais la séance ${workoutId} est absente du calendrier du ${scheduledDate}; ` +
+      'la séance précédente a été conservée.'
+    );
+  }
+
+  throw new Error(
+    `Séance créée mais non programmée dans le calendrier Garmin pour le ${scheduledDate}: ` +
+    `${scheduleError instanceof Error ? scheduleError.message : 'erreur Garmin inconnue'}`
+  );
 }
 
 function errorStatus(error: unknown): number | undefined {
@@ -98,7 +138,8 @@ function manualReviewError(message: string): Error {
 /** Confirm an exact ID belongs to an app-created workout before replacing it. */
 export async function verifyReplaceableWorkout(
   client: GarminWorkoutReplacementClient,
-  workoutId: string
+  workoutId: string,
+  expectedSportTypeKey?: string
 ): Promise<void> {
   if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
     throw new Error('La séance Garmin précédente ne peut pas être vérifiée. Aucun remplacement effectué.');
@@ -107,6 +148,11 @@ export async function verifyReplaceableWorkout(
   if (String(previous?.workoutId) !== workoutId ||
     typeof previous?.workoutName !== 'string' || !previous.workoutName.startsWith('[QMT] ')) {
     throw new Error('La séance Garmin précédente ne peut pas être vérifiée. Aucun remplacement effectué.');
+  }
+  if (expectedSportTypeKey && previous.sportType?.sportTypeKey?.toLowerCase() !== expectedSportTypeKey.toLowerCase()) {
+    throw new Error(
+      `La séance Garmin ${workoutId} n’est pas de type ${expectedSportTypeKey}. Aucun remplacement effectué.`
+    );
   }
 }
 
@@ -190,9 +236,9 @@ export async function findScheduledQmtRunIds(
 }
 
 /**
- * Resolve only app-owned Garmin IDs that are safe to retire after a replacement.
- * Runs additionally collect same-day legacy QMT duplicates; other sports only
- * replace the exact ID already recorded for that app event.
+ * Resolve only the exact app-owned Garmin ID recorded for this event.
+ * Unregistered same-day QMT workouts are conflicts for manual review, never
+ * candidates for inferred cleanup.
  */
 export async function findScheduledQmtWorkoutReplacementIds(
   client: GarminWorkoutCalendarClient,
@@ -201,12 +247,22 @@ export async function findScheduledQmtWorkoutReplacementIds(
   replaceWorkoutId?: string
 ): Promise<string[]> {
   if (!replaceWorkoutId) {
-    return sportType === 'RUNNING'
-      ? findScheduledQmtRunIds(client, scheduledDate)
-      : [];
+    if (sportType.toUpperCase() !== 'RUNNING') return [];
+    const runIds = await findScheduledQmtRunIds(client, scheduledDate);
+    if (runIds.length > 0) {
+      throw manualReviewError(
+        `Une séance de course [QMT] (ID ${runIds[0]}) est déjà programmée sur Garmin le ${scheduledDate}, ` +
+        'mais aucun identifiant exact n’est enregistré pour la remplacer.'
+      );
+    }
+    return [];
   }
 
-  await verifyReplaceableWorkout(client, replaceWorkoutId);
+  await verifyReplaceableWorkout(
+    client,
+    replaceWorkoutId,
+    sportType.toUpperCase() === 'RUNNING' ? 'running' : undefined
+  );
 
   if (sportType === 'RUNNING') {
     const runIds = await findScheduledQmtRunIds(client, scheduledDate, replaceWorkoutId);
@@ -215,7 +271,14 @@ export async function findScheduledQmtWorkoutReplacementIds(
         `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
       );
     }
-    return runIds;
+    const unregisteredIds = runIds.filter(id => id !== replaceWorkoutId);
+    if (unregisteredIds.length > 0) {
+      throw manualReviewError(
+        `D’autres séances [QMT] (${unregisteredIds.join(', ')}) sont programmées le ${scheduledDate}; ` +
+        'seul l’identifiant Garmin exact enregistré peut être remplacé automatiquement.'
+      );
+    }
+    return [replaceWorkoutId];
   }
 
   if (!await isExactWorkoutScheduledOnDate(client, scheduledDate, replaceWorkoutId)) {
@@ -340,8 +403,71 @@ export async function scheduleAndReplacePreviousWorkouts(
   client: GarminWorkoutSchedulingClient,
   newWorkoutId: string,
   scheduledDate: string,
-  previousWorkoutIds: readonly string[]
+  previousWorkoutIds: readonly string[],
+  expectedPriorSportTypeKey?: string
 ): Promise<void> {
   await scheduleWorkoutWithReadback(client, newWorkoutId, scheduledDate);
-  await finishWorkoutReplacements(client, previousWorkoutIds, newWorkoutId);
+  for (const previousWorkoutId of previousWorkoutIds) {
+    let previousIsScheduled: boolean;
+    try {
+      previousIsScheduled = await isExactWorkoutScheduledOnDate(
+        client, scheduledDate, previousWorkoutId
+      );
+      if (previousIsScheduled) {
+        await verifyReplaceableWorkout(client, previousWorkoutId, expectedPriorSportTypeKey);
+      }
+    } catch {
+      await removeUnconfirmedWorkout(client, scheduledDate, newWorkoutId);
+      throw manualReviewError(
+        `L’ancienne séance ${previousWorkoutId} n’a pas pu être revérifiée avant son retrait; ` +
+        'la nouvelle séance a été annulée.'
+      );
+    }
+    if (!previousIsScheduled) continue;
+
+    await finishWorkoutReplacement(client, previousWorkoutId, newWorkoutId);
+
+    let previousRemainsScheduled: boolean;
+    try {
+      previousRemainsScheduled = await isExactWorkoutScheduledOnDate(
+        client, scheduledDate, previousWorkoutId
+      );
+    } catch {
+      await removeUnconfirmedWorkout(client, scheduledDate, newWorkoutId);
+      throw manualReviewError(
+        `Le retrait de l’ancienne séance ${previousWorkoutId} n’a pas pu être vérifié; ` +
+        'la nouvelle séance a été annulée et l’ancienne conservée.'
+      );
+    }
+
+    if (previousRemainsScheduled) {
+      // Garmin can acknowledge a delete without removing the calendar entry.
+      // Retry only this exact, previously verified old ID, then check again.
+      try {
+        await client.deleteWorkout({ workoutId: previousWorkoutId });
+      } catch (deleteError) {
+        console.warn('Garmin did not confirm exact previous-workout removal:', deleteError);
+      }
+
+      try {
+        previousRemainsScheduled = await isExactWorkoutScheduledOnDate(
+          client, scheduledDate, previousWorkoutId
+        );
+      } catch {
+        await removeUnconfirmedWorkout(client, scheduledDate, newWorkoutId);
+        throw manualReviewError(
+          `Le retrait de l’ancienne séance ${previousWorkoutId} reste incertain; ` +
+          'la nouvelle séance a été annulée et l’ancienne conservée.'
+        );
+      }
+
+      if (previousRemainsScheduled) {
+        await removeUnconfirmedWorkout(client, scheduledDate, newWorkoutId);
+        throw manualReviewError(
+          `L’ancienne séance ${previousWorkoutId} est toujours programmée; ` +
+          `la nouvelle séance ${newWorkoutId} a été annulée.`
+        );
+      }
+    }
+  }
 }
