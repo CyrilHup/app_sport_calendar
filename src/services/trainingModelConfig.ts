@@ -21,6 +21,42 @@ export const ACWR_POLICY = Object.freeze({
   gaugeMaximum: 2
 });
 
+/** Recipe values for adaptive workout changes; keeping them together prevents drift between rules and copy. */
+export const ADAPTIVE_WORKOUT_POLICY = Object.freeze({
+  longWorkoutThresholdMinutes: 50,
+  defaultTrailElevationMeters: 380,
+  assumedTrailElevationPerMinuteMeters: 3.5,
+  highRisk: Object.freeze({
+    hillRecoveryCapMinutes: 35,
+    longTrailMinimumMinutes: 45,
+    longTrailDurationFactor: 0.72,
+    longTrailElevationFactor: 0.55,
+    easyRunCapMinutes: 30,
+    walkingInclineThresholdPercent: 8,
+    recoveryHeartRateRangeBpm: Object.freeze([130, 150] as const),
+    longTrailHeartRateRangeBpm: Object.freeze([135, 158] as const)
+  }),
+  moderateRisk: Object.freeze({
+    hillMinimumMinutes: 40,
+    hillDurationFactor: 0.85,
+    hillElevationFactor: 0.6,
+    hillWarmupMinutes: 15,
+    hillSetCount: 1,
+    originalHillSetCount: 2,
+    hillRepetitionCount: 5,
+    hillRepetitionDurationMinutes: 1,
+    hillTargetHeartRateRangeBpm: Object.freeze([160, 175] as const)
+  }),
+  underload: Object.freeze({
+    hillDurationMinutes: 40,
+    hillElevationMeters: 200,
+    hillSetCount: 1,
+    hillRepetitionRange: Object.freeze([4, 5] as const),
+    hillTargetHeartRateRangeBpm: Object.freeze([160, 172] as const),
+    maximumProgressionPercent: 10
+  })
+});
+
 export type AcwrStatus = 'UNDERLOAD' | 'OPTIMAL' | 'MODERATE_RISK' | 'DANGER_HIGH_RISK' | 'CALIBRATING';
 
 export function classifyAcwr(ratio: number, activeDays: number, acuteLoad: number): AcwrStatus {

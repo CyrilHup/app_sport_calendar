@@ -9,10 +9,14 @@ import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
 import { STORAGE_KEYS, storageGet, storageSet } from './storageService';
 import { toLocalDateKey } from './dateUtils';
-import { ACWR_POLICY } from './trainingModelConfig';
+import { ACWR_POLICY, ADAPTIVE_WORKOUT_POLICY } from './trainingModelConfig';
 import { AdaptivePlanState, parseAdaptivePlanState, serializeAdaptivePlanState } from './adaptivePlanStore';
 
 export const ADAPTIVE_PLAN_STORAGE_KEY = STORAGE_KEYS.ADAPTIVE_OVERRIDES;
+
+function formatHeartRateRange(range: readonly [number, number]): string {
+  return `${range[0]} - ${range[1]} bpm`;
+}
 
 /**
  * Charge les adaptations actives du plan depuis le localStorage.
@@ -25,7 +29,7 @@ export function loadAdaptivePlanState(): AdaptivePlanState {
 
   for (const [id, ov] of Object.entries(loaded.overrides)) {
     const titleLower = (ov.originalTitle || ov.adaptedTitle || '').toLowerCase();
-    const isMajorWorkout = (ov.originalDurationMinutes && ov.originalDurationMinutes >= 50) ||
+    const isMajorWorkout = (ov.originalDurationMinutes && ov.originalDurationMinutes >= ADAPTIVE_WORKOUT_POLICY.longWorkoutThresholdMinutes) ||
       titleLower.includes('côte') ||
       titleLower.includes('hill') ||
       titleLower.includes('long') ||
@@ -101,6 +105,7 @@ export function evaluateAdaptivePlanStatus(
   const calisAcute = trainingLoad.calisthenicsAcuteLoad7d;
   const calisSessions = trainingLoad.calisthenicsSessionsCount7d;
   const tsb = trainingLoad.currentTsb;
+  const adaptationPolicy = ADAPTIVE_WORKOUT_POLICY;
   const isAcwrCalibrating = trailAcwrStatus === 'CALIBRATING';
   const acwrHighRisk = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.highAbove;
   const acwrModerateRisk = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.moderateAbove;
@@ -136,18 +141,20 @@ export function evaluateAdaptivePlanStatus(
       const origSportType = ev.metadata?.originalSportType ?? ev.sportType;
       const origTitle = ev.metadata?.originalTitle ?? ev.title;
       const titleLower = origTitle.toLowerCase();
-      const origElevation = ev.metadata?.originalElevationM ?? ev.metadata?.targetElevationM ?? (origSportType === 'RUN_EASY' ? 0 : Math.round(origDuration * 3.5));
+      const origElevation = ev.metadata?.originalElevationM ?? ev.metadata?.targetElevationM ??
+        (origSportType === 'RUN_EASY' ? 0 : Math.round(origDuration * adaptationPolicy.assumedTrailElevationPerMinuteMeters));
 
-      const isSecondaryFatigued = origDuration < 50 && (
+      const isSecondaryFatigued = origDuration < adaptationPolicy.longWorkoutThresholdMinutes && (
         titleLower.includes('fatigued') ||
         titleLower.includes('rolling') ||
         (titleLower.includes('récupération') && !titleLower.includes('côte') && !titleLower.includes('hill'))
       );
 
       const isHillRepeats = origSportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill');
-      const isLongTrail = (origSportType === 'TRAIL_LONG' || titleLower.includes('long') || titleLower.includes('rando-course')) && origDuration >= 50;
+      const isLongTrail = (origSportType === 'TRAIL_LONG' || titleLower.includes('long') || titleLower.includes('rando-course')) &&
+        origDuration >= adaptationPolicy.longWorkoutThresholdMinutes;
 
-      // a. Séances secondaires de fatigue cumulée (< 50 min, ex: dimanche back-to-back) : Repos complet
+      // a. Séances secondaires de fatigue cumulée (sous le seuil de séance majeure) : repos complet
       if (isSecondaryFatigued) {
         recommendedActions.push({
           eventId: ev.id,
@@ -172,9 +179,10 @@ export function evaluateAdaptivePlanStatus(
         continue;
       }
 
-      // b. Traiter les séances dures de côtes (TRAIL_INTENSE) -> Footing doux 35 min, JAMAIS 0m
+      // b. Traiter les séances dures de côtes (TRAIL_INTENSE) -> footing doux, jamais 0 min
       if (isHillRepeats) {
-        const adaptedDurationMinutes = Math.min(35, origDuration);
+        const adaptedDurationMinutes = Math.min(adaptationPolicy.highRisk.hillRecoveryCapMinutes, origDuration);
+        const recoveryHeartRateRange = adaptationPolicy.highRisk.recoveryHeartRateRangeBpm;
         const diffMin = origDuration - adaptedDurationMinutes;
         const reason = diffMin > 0
           ? `Allégement de ${diffMin} min (${origDuration} ➔ ${adaptedDurationMinutes} min) et dénivelé aplati à 0m (terrain plat) pour désamorcer le stress excentrique des côtes et protéger les tendons.`
@@ -196,7 +204,7 @@ export function evaluateAdaptivePlanStatus(
           coachingCue: `${adaptedDurationMinutes} min de trot très souple en Zone 1/2 (aisance respiratoire totale), 100% sur terrain plat. Zéro répétition de côte.`,
           adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• ${adaptedDurationMinutes} min de footing régénérant sur terrain plat (zéro dénivelé).\n• Pulsations strictement contrôlées : FC en Zone 1/2 légère (aisance respiratoire).\n• Zéro intensité en côte, zéro impact de descente rapide pour reposer les quadriceps et le tendon d'Achille.`,
           targetHeartRate: 'Zone 1/2 Récupération',
-          targetHeartRateRange: [130, 150],
+          targetHeartRateRange: [...recoveryHeartRateRange],
           adaptedLocation: 'Terrain plat / Parc (évite le D+)',
           adaptedElevationM: 0,
           adaptedSportType: 'RUN_EASY'
@@ -204,10 +212,17 @@ export function evaluateAdaptivePlanStatus(
         continue;
       }
 
-      // c. Traiter la Sortie Longue (TRAIL_LONG >= 50 min) -> Réduction ~28%, D+ modulé à 55%, JAMAIS 0m
+      // c. Traiter la sortie longue avec les facteurs de réduction centralisés, jamais à 0 min
       if (isLongTrail) {
-        const adaptedMins = Math.min(origDuration, Math.max(45, Math.round(origDuration * 0.72)));
-        const adaptedElevationM = Math.min(origElevation, Math.max(0, Math.round(origElevation * 0.55)));
+        const adaptedMins = Math.min(
+          origDuration,
+          Math.max(adaptationPolicy.highRisk.longTrailMinimumMinutes, Math.round(origDuration * adaptationPolicy.highRisk.longTrailDurationFactor))
+        );
+        const adaptedElevationM = Math.min(
+          origElevation,
+          Math.max(0, Math.round(origElevation * adaptationPolicy.highRisk.longTrailElevationFactor))
+        );
+        const longTrailHeartRateRange = adaptationPolicy.highRisk.longTrailHeartRateRangeBpm;
         const diffMin = origDuration - adaptedMins;
         const reason = diffMin > 0
           ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ allégé à +${adaptedElevationM}m (au lieu de +${origElevation}m) pour limiter la charge mécanique future.`
@@ -226,10 +241,10 @@ export function evaluateAdaptivePlanStatus(
           originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
           actionType: 'LIGHTEN',
           reason,
-          coachingCue: `Volume plafonné à ${adaptedMins} min et +${adaptedElevationM}m D+. Marche active (power hike) obligatoire dès 8% de pente pour protéger les tendons d'Achille.`,
-          adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• Durée ramenée à ${adaptedMins} min et D+ modulé à +${adaptedElevationM} m (au lieu de +${origElevation} m) pour limiter les impacts prévus.\n• Cardio : Zone 2 stricte.\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse 8%.\n• Éviter les descentes trop raides et techniques.`,
+          coachingCue: `Volume plafonné à ${adaptedMins} min et +${adaptedElevationM}m D+. Marche active (power hike) obligatoire dès ${adaptationPolicy.highRisk.walkingInclineThresholdPercent}% de pente pour protéger les tendons d'Achille.`,
+          adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• Durée ramenée à ${adaptedMins} min et D+ modulé à +${adaptedElevationM} m (au lieu de +${origElevation} m) pour limiter les impacts prévus.\n• Cardio : Zone 2 stricte.\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse ${adaptationPolicy.highRisk.walkingInclineThresholdPercent}%.\n• Éviter les descentes trop raides et techniques.`,
           targetHeartRate: 'Zone 2 Endurance douce',
-          targetHeartRateRange: [135, 158],
+          targetHeartRateRange: [...longTrailHeartRateRange],
           adaptedLocation: 'Mont-Royal (boucles douces / D+ allégé)',
           adaptedElevationM,
           adaptedSportType: 'TRAIL_LONG'
@@ -239,7 +254,8 @@ export function evaluateAdaptivePlanStatus(
 
       // d. Autres footings aérobie simples (RUN_EASY, ex: jeudi)
       if (origSportType === 'RUN_EASY') {
-        const adaptedMins = Math.min(origDuration, 30);
+        const adaptedMins = Math.min(origDuration, adaptationPolicy.highRisk.easyRunCapMinutes);
+        const recoveryHeartRateRange = adaptationPolicy.highRisk.recoveryHeartRateRangeBpm;
         const diffMin = origDuration - adaptedMins;
         recommendedActions.push({
           eventId: ev.id,
@@ -257,7 +273,7 @@ export function evaluateAdaptivePlanStatus(
           coachingCue: `${adaptedMins} min de trot très souple en Zone 1/2.`,
           adaptedDescription: `• Footing raccourci à ${adaptedMins} min à plat pour protéger les tendons d'Achille.`,
           targetHeartRate: 'Zone 1/2 Récupération',
-          targetHeartRateRange: [130, 150],
+          targetHeartRateRange: [...recoveryHeartRateRange],
           adaptedLocation: 'Terrain plat / Parc (évite le D+)',
           adaptedElevationM: 0,
           adaptedSportType: 'RUN_EASY'
@@ -286,23 +302,28 @@ export function evaluateAdaptivePlanStatus(
       const origSportType = ev.metadata?.originalSportType ?? ev.sportType;
       const origTitle = ev.metadata?.originalTitle ?? ev.title;
       const titleLower = origTitle.toLowerCase();
-      const origElevation = ev.metadata?.originalElevationM ?? ev.metadata?.targetElevationM ?? (origSportType === 'RUN_EASY' ? 0 : 380);
+      const origElevation = ev.metadata?.originalElevationM ?? ev.metadata?.targetElevationM ??
+        (origSportType === 'RUN_EASY' ? 0 : adaptationPolicy.defaultTrailElevationMeters);
 
       const isHillRepeats = origSportType === 'TRAIL_INTENSE' || titleLower.includes('côte') || titleLower.includes('hill');
 
       if (isHillRepeats) {
-        const adaptedMins = Math.min(origDuration, Math.max(40, Math.round(origDuration * 0.85)));
-        const adaptedElevationM = Math.min(origElevation, Math.round(origElevation * 0.6));
+        const hillPolicy = adaptationPolicy.moderateRisk;
+        const adaptedMins = Math.min(origDuration, Math.max(hillPolicy.hillMinimumMinutes, Math.round(origDuration * hillPolicy.hillDurationFactor)));
+        const adaptedElevationM = Math.min(origElevation, Math.round(origElevation * hillPolicy.hillElevationFactor));
+        const heartRateRange = hillPolicy.hillTargetHeartRateRangeBpm;
+        const hillSetCount = hillPolicy.hillSetCount;
+        const originalHillSetCount = hillPolicy.originalHillSetCount;
         const diffMin = origDuration - adaptedMins;
         const reason = diffMin > 0
-          ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ limité à +${adaptedElevationM}m (1 série au lieu de 2) pour stabiliser l'ACWR mécanique dans le Sweet Spot.`
-          : `D+ limité à +${adaptedElevationM}m (1 série de côtes au lieu de 2) pour stabiliser l'ACWR mécanique dans le Sweet Spot.`;
+          ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ limité à +${adaptedElevationM}m (${hillSetCount} série au lieu de ${originalHillSetCount}) pour stabiliser l'ACWR mécanique dans le Sweet Spot.`
+          : `D+ limité à +${adaptedElevationM}m (${hillSetCount} série de côtes au lieu de ${originalHillSetCount}) pour stabiliser l'ACWR mécanique dans le Sweet Spot.`;
 
         recommendedActions.push({
           eventId: ev.id,
           date: dateStr,
           originalTitle: origTitle,
-          adaptedTitle: `⚡ Côtes Modérées : 1 série au lieu de 2 (${adaptedMins} min)`,
+          adaptedTitle: `⚡ Côtes Modérées : ${hillSetCount} série au lieu de ${originalHillSetCount} (${adaptedMins} min)`,
           originalDurationMinutes: origDuration,
           adaptedDurationMinutes: adaptedMins,
           originalElevationM: origElevation,
@@ -311,9 +332,9 @@ export function evaluateAdaptivePlanStatus(
           originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
           actionType: 'LIGHTEN',
           reason,
-          coachingCue: 'Réaliser 1 seule série de répétitions de côtes au lieu de 2. Descentes marchées très souples.',
-          adaptedDescription: `• Adaptation modérée (ACWR Mécanique ${trailAcwrRatio}) :\n• Échauffement 15 min + 1 série unique de côtes (5x 1 min) + retour au calme.\n• D+ limité à +${adaptedElevationM} m.\n• Allure montée contrôlée : FC max 175 bpm.\n• Descente en marchant pour amortir les chocs excentriques.`,
-          targetHeartRate: '160 - 175 bpm',
+          coachingCue: `Réaliser ${hillSetCount} seule série de répétitions de côtes au lieu de ${originalHillSetCount}. Descentes marchées très souples.`,
+          adaptedDescription: `• Adaptation modérée (ACWR Mécanique ${trailAcwrRatio}) :\n• Échauffement ${hillPolicy.hillWarmupMinutes} min + ${hillSetCount} série unique de côtes (${hillPolicy.hillRepetitionCount}x ${hillPolicy.hillRepetitionDurationMinutes} min) + retour au calme.\n• D+ limité à +${adaptedElevationM} m.\n• Allure montée contrôlée : FC max ${heartRateRange[1]} bpm.\n• Descente en marchant pour amortir les chocs excentriques.`,
+          targetHeartRate: formatHeartRateRange(heartRateRange),
           adaptedLocation: 'Mont-Royal (pentes douces)',
           adaptedElevationM,
           adaptedSportType: 'TRAIL_INTENSE'
@@ -333,26 +354,30 @@ export function evaluateAdaptivePlanStatus(
         if (!isEligibleForAdaptation(ev)) continue;
         if (ev.sportType === 'TRAIL_INTENSE') {
           const dateStr = toLocalDateKey(ev.startDate);
-          const origElevation = ev.metadata?.targetElevationM ?? 380;
+          const origElevation = ev.metadata?.targetElevationM ?? adaptationPolicy.defaultTrailElevationMeters;
           const origSportType = ev.sportType;
+          const hillPolicy = adaptationPolicy.underload;
+          const heartRateRange = hillPolicy.hillTargetHeartRateRangeBpm;
+          const hillSetCount = hillPolicy.hillSetCount;
+          const [minimumRepetitions, maximumRepetitions] = hillPolicy.hillRepetitionRange;
           recommendedActions.push({
             eventId: ev.id,
             date: dateStr,
             originalTitle: ev.title,
-            adaptedTitle: `🔵 Côtes Progressives Anti-pic (1 série douce - 40 min)`,
+            adaptedTitle: `🔵 Côtes Progressives Anti-pic (${hillSetCount} série douce - ${hillPolicy.hillDurationMinutes} min)`,
             originalDurationMinutes: ev.durationMinutes,
-            adaptedDurationMinutes: 40,
+            adaptedDurationMinutes: hillPolicy.hillDurationMinutes,
             originalElevationM: origElevation,
             originalSportType: origSportType,
             originalTargetHeartRate: ev.metadata?.targetHeartRate,
             originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
             actionType: 'LIGHTEN',
-            reason: 'Réintroduction progressive des contraintes de côtes post-sous-charge (Gabbett 10%).',
-            coachingCue: '1 seule série de 4-5 répétitions en aisance avec récupération marchée complète.',
-            adaptedDescription: `• Adaptation Anti-pic post sous-charge (ACWR ${trailAcwrRatio}) :\n• 1 série de côtes contrôlées pour remonter graduellement dans le Sweet Spot sans agresser les tendons.\n• Cardio : FC max 172 bpm.`,
-            targetHeartRate: '160 - 172 bpm',
+            reason: `Réintroduction progressive des contraintes de côtes post-sous-charge (Gabbett ${hillPolicy.maximumProgressionPercent}%).`,
+            coachingCue: `${hillSetCount} seule série de ${minimumRepetitions}-${maximumRepetitions} répétitions en aisance avec récupération marchée complète.`,
+            adaptedDescription: `• Adaptation Anti-pic post sous-charge (ACWR ${trailAcwrRatio}) :\n• ${hillSetCount} série de côtes contrôlées pour remonter graduellement dans le Sweet Spot sans agresser les tendons.\n• Cardio : FC max ${heartRateRange[1]} bpm.`,
+            targetHeartRate: formatHeartRateRange(heartRateRange),
             adaptedLocation: 'Mont-Royal (pente douce)',
-            adaptedElevationM: 200,
+            adaptedElevationM: hillPolicy.hillElevationMeters,
             adaptedSportType: 'TRAIL_INTENSE'
           });
         }
@@ -503,7 +528,9 @@ export function applyAdaptiveModifications(
           originalTargetHeartRate: override.originalTargetHeartRate ?? ev.metadata?.targetHeartRate,
           originalTargetHeartRateRange: override.originalTargetHeartRateRange ?? ev.metadata?.targetHeartRateRange,
           targetHeartRate: override.targetHeartRate || ev.metadata?.targetHeartRate,
-          targetHeartRateRange: override.targetHeartRateRange || (override.adaptedSportType === 'RUN_EASY' ? [130, 150] : ev.metadata?.targetHeartRateRange),
+          targetHeartRateRange: override.targetHeartRateRange || (override.adaptedSportType === 'RUN_EASY'
+            ? [...ADAPTIVE_WORKOUT_POLICY.highRisk.recoveryHeartRateRangeBpm]
+            : ev.metadata?.targetHeartRateRange),
           targetElevationM: override.adaptedElevationM !== undefined ? override.adaptedElevationM : ev.metadata?.targetElevationM
         }
       };
@@ -554,7 +581,9 @@ export function applyAdaptiveModifications(
         originalTargetHeartRate: override.originalTargetHeartRate ?? ev.metadata?.targetHeartRate,
         originalTargetHeartRateRange: override.originalTargetHeartRateRange ?? ev.metadata?.targetHeartRateRange,
         targetHeartRate: override.targetHeartRate || ev.metadata?.targetHeartRate,
-        targetHeartRateRange: override.targetHeartRateRange || (override.adaptedSportType === 'RUN_EASY' ? [130, 150] : ev.metadata?.targetHeartRateRange),
+        targetHeartRateRange: override.targetHeartRateRange || (override.adaptedSportType === 'RUN_EASY'
+          ? [...ADAPTIVE_WORKOUT_POLICY.highRisk.recoveryHeartRateRangeBpm]
+          : ev.metadata?.targetHeartRateRange),
         targetElevationM: override.adaptedElevationM !== undefined ? override.adaptedElevationM : ev.metadata?.targetElevationM
       }
     };
