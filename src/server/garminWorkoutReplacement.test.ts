@@ -7,6 +7,7 @@ import {
   findScheduledQmtRunIds,
   finishWorkoutReplacement,
   finishWorkoutReplacements,
+  getGarminSportTypeKeysForWorkout,
   isExactWorkoutScheduledOnDate,
   scheduleAndReplacePreviousWorkouts,
   scheduleWorkoutWithReadback,
@@ -447,11 +448,13 @@ describe('exact replacement IDs for every Garmin workout type', () => {
         { date: scheduledDate, workoutId: 123 },
         { date: scheduledDate, workoutId: 456 }
       ] }),
-      getWorkoutDetail: vi.fn().mockResolvedValue({
-        workoutId: '123',
-        workoutName: '[QMT] Entraînement Calisthénie',
-        sportType: { sportTypeKey: 'cardio_training' }
-      }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => workoutId === '123'
+        ? {
+          workoutId,
+          workoutName: '[QMT] Entraînement Calisthénie',
+          sportType: { sportTypeKey: 'cardio_training' }
+        }
+        : { workoutId, workoutName: 'Personal cardio', sportType: { sportTypeKey: 'cardio_training' } }),
       deleteWorkout: vi.fn()
     };
 
@@ -465,16 +468,60 @@ describe('exact replacement IDs for every Garmin workout type', () => {
     expect(client.deleteWorkout).not.toHaveBeenCalled();
   });
 
+  it('blocks a new strength workout when an unregistered same-date QMT strength exists', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: scheduledDate, workoutId: 123 }
+      ] }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId,
+        workoutName: '[QMT] Entraînement Calisthénie',
+        sportType: { sportTypeKey: 'cardio_training' }
+      })),
+      deleteWorkout: vi.fn()
+    };
+
+    await expect(findScheduledQmtWorkoutReplacementIds(client, scheduledDate, 'STRENGTH'))
+      .rejects.toThrow('aucun identifiant exact n’est enregistré');
+    expect(client.getWorkoutDetail).toHaveBeenCalledWith({ workoutId: '123' });
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+  });
+
+  it('blocks a registered strength replacement if another same-type QMT workout is scheduled that day', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: scheduledDate, workoutId: 123 },
+        { date: scheduledDate, workoutId: 456 }
+      ] }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId,
+        workoutName: '[QMT] Entraînement Calisthénie',
+        sportType: { sportTypeKey: 'cardio_training' }
+      })),
+      deleteWorkout: vi.fn()
+    };
+
+    await expect(findScheduledQmtWorkoutReplacementIds(client, scheduledDate, 'STRENGTH', '123'))
+      .rejects.toThrow('D’autres séances [QMT] (456)');
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+  });
+
+  it('maps strength workouts to both Garmin strength and FR55 cardio profile keys', () => {
+    expect(getGarminSportTypeKeysForWorkout('STRENGTH')).toEqual(['cardio_training', 'strength_training']);
+  });
+
   it('refuses a stale non-running ID that no longer appears on the scheduled date', async () => {
     const client = {
       getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
         { date: scheduledDate, workoutId: 456 }
       ] }),
-      getWorkoutDetail: vi.fn().mockResolvedValue({
-        workoutId: '123',
-        workoutName: '[QMT] Entraînement Calisthénie',
-        sportType: { sportTypeKey: 'cardio_training' }
-      }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => workoutId === '123'
+        ? {
+          workoutId,
+          workoutName: '[QMT] Entraînement Calisthénie',
+          sportType: { sportTypeKey: 'cardio_training' }
+        }
+        : { workoutId, workoutName: 'Personal workout', sportType: { sportTypeKey: 'cardio_training' } }),
       deleteWorkout: vi.fn()
     };
 

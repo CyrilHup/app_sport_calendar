@@ -139,7 +139,7 @@ function manualReviewError(message: string): Error {
 export async function verifyReplaceableWorkout(
   client: GarminWorkoutReplacementClient,
   workoutId: string,
-  expectedSportTypeKey?: string
+  expectedSportTypeKey?: string | readonly string[]
 ): Promise<void> {
   if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
     throw new Error('La séance Garmin précédente ne peut pas être vérifiée. Aucun remplacement effectué.');
@@ -149,10 +149,25 @@ export async function verifyReplaceableWorkout(
     typeof previous?.workoutName !== 'string' || !previous.workoutName.startsWith('[QMT] ')) {
     throw new Error('La séance Garmin précédente ne peut pas être vérifiée. Aucun remplacement effectué.');
   }
-  if (expectedSportTypeKey && previous.sportType?.sportTypeKey?.toLowerCase() !== expectedSportTypeKey.toLowerCase()) {
+  const expectedKeys = typeof expectedSportTypeKey === 'string'
+    ? [expectedSportTypeKey]
+    : expectedSportTypeKey;
+  const actualKey = previous.sportType?.sportTypeKey?.toLowerCase();
+  if (expectedKeys && !expectedKeys.some(key => key.toLowerCase() === actualKey)) {
     throw new Error(
-      `La séance Garmin ${workoutId} n’est pas de type ${expectedSportTypeKey}. Aucun remplacement effectué.`
+      `La séance Garmin ${workoutId} n’est pas de type ${expectedKeys.join(' ou ')}. Aucun remplacement effectué.`
     );
+  }
+}
+
+/** Garmin represents strength plans as either cardio or native strength workouts. */
+export function getGarminSportTypeKeysForWorkout(sportType: string): readonly string[] {
+  switch (sportType.toUpperCase()) {
+    case 'RUNNING': return ['running'];
+    case 'CARDIO': return ['cardio_training'];
+    case 'STRENGTH': return ['cardio_training', 'strength_training'];
+    default:
+      throw manualReviewError(`Le type de séance ${sportType} ne peut pas être vérifié sur Garmin.`);
   }
 }
 
@@ -180,6 +195,16 @@ export async function assertNoConflictingScheduledQmtRun(
 export async function findScheduledQmtRunIds(
   client: GarminWorkoutCalendarClient,
   scheduledDate: string,
+  verifiedReplaceWorkoutId?: string
+): Promise<string[]> {
+  return findScheduledQmtWorkoutIds(client, scheduledDate, ['running'], verifiedReplaceWorkoutId);
+}
+
+/** Exact IDs of app-tagged workouts matching Garmin sport keys on one date. */
+async function findScheduledQmtWorkoutIds(
+  client: GarminWorkoutCalendarClient,
+  scheduledDate: string,
+  expectedSportTypeKeys: readonly string[],
   verifiedReplaceWorkoutId?: string
 ): Promise<string[]> {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(scheduledDate);
@@ -228,7 +253,8 @@ export async function findScheduledQmtRunIds(
       throw manualReviewError(`Les détails de l'entraînement Garmin ${workoutId} du ${scheduledDate} sont incomplets; création refusée.`);
     }
 
-    if (detail.workoutName.startsWith('[QMT] ') && detail.sportType.sportTypeKey.toLowerCase() === 'running') {
+    if (detail.workoutName.startsWith('[QMT] ') &&
+      expectedSportTypeKeys.some(key => key.toLowerCase() === detail.sportType!.sportTypeKey!.toLowerCase())) {
       if (!foundIds.includes(workoutId)) foundIds.push(workoutId);
     }
   }
@@ -246,12 +272,14 @@ export async function findScheduledQmtWorkoutReplacementIds(
   sportType: string,
   replaceWorkoutId?: string
 ): Promise<string[]> {
+  const normalizedSportType = sportType.toUpperCase();
+  const expectedSportTypeKeys = getGarminSportTypeKeysForWorkout(normalizedSportType);
   if (!replaceWorkoutId) {
-    if (sportType.toUpperCase() !== 'RUNNING') return [];
-    const runIds = await findScheduledQmtRunIds(client, scheduledDate);
-    if (runIds.length > 0) {
+    const existingIds = await findScheduledQmtWorkoutIds(client, scheduledDate, expectedSportTypeKeys);
+    if (existingIds.length > 0) {
+      const workoutLabel = normalizedSportType === 'RUNNING' ? 'course' : 'renforcement/cardio';
       throw manualReviewError(
-        `Une séance de course [QMT] (ID ${runIds[0]}) est déjà programmée sur Garmin le ${scheduledDate}, ` +
+        `Une séance ${workoutLabel} [QMT] (ID ${existingIds[0]}) est déjà programmée sur Garmin le ${scheduledDate}, ` +
         'mais aucun identifiant exact n’est enregistré pour la remplacer.'
       );
     }
@@ -261,29 +289,22 @@ export async function findScheduledQmtWorkoutReplacementIds(
   await verifyReplaceableWorkout(
     client,
     replaceWorkoutId,
-    sportType.toUpperCase() === 'RUNNING' ? 'running' : undefined
+    expectedSportTypeKeys
   );
 
-  if (sportType === 'RUNNING') {
-    const runIds = await findScheduledQmtRunIds(client, scheduledDate, replaceWorkoutId);
-    if (!runIds.includes(replaceWorkoutId)) {
-      throw manualReviewError(
-        `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
-      );
-    }
-    const unregisteredIds = runIds.filter(id => id !== replaceWorkoutId);
-    if (unregisteredIds.length > 0) {
-      throw manualReviewError(
-        `D’autres séances [QMT] (${unregisteredIds.join(', ')}) sont programmées le ${scheduledDate}; ` +
-        'seul l’identifiant Garmin exact enregistré peut être remplacé automatiquement.'
-      );
-    }
-    return [replaceWorkoutId];
-  }
-
-  if (!await isExactWorkoutScheduledOnDate(client, scheduledDate, replaceWorkoutId)) {
+  const existingIds = await findScheduledQmtWorkoutIds(
+    client, scheduledDate, expectedSportTypeKeys, replaceWorkoutId
+  );
+  if (!existingIds.includes(replaceWorkoutId)) {
     throw manualReviewError(
       `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
+    );
+  }
+  const unregisteredIds = existingIds.filter(id => id !== replaceWorkoutId);
+  if (unregisteredIds.length > 0) {
+    throw manualReviewError(
+      `D’autres séances [QMT] (${unregisteredIds.join(', ')}) sont programmées le ${scheduledDate}; ` +
+      'seul l’identifiant Garmin exact enregistré peut être remplacé automatiquement.'
     );
   }
   return [replaceWorkoutId];
@@ -404,7 +425,7 @@ export async function scheduleAndReplacePreviousWorkouts(
   newWorkoutId: string,
   scheduledDate: string,
   previousWorkoutIds: readonly string[],
-  expectedPriorSportTypeKey?: string
+  expectedPriorSportTypeKey?: string | readonly string[]
 ): Promise<void> {
   await scheduleWorkoutWithReadback(client, newWorkoutId, scheduledDate);
   for (const previousWorkoutId of previousWorkoutIds) {

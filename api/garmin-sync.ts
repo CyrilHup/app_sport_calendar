@@ -13,6 +13,7 @@ import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
 import { claimGarminRunLease, isRegisteredGarminRun, markRegisteredGarminRunCancelled } from '../src/server/garminRunLease.js';
 import {
   cancelRegisteredGarminRun,
+  getGarminSportTypeKeysForWorkout,
   findScheduledQmtWorkoutReplacementIds,
   scheduleAndReplacePreviousWorkouts
 } from '../src/server/garminWorkoutReplacement.js';
@@ -334,7 +335,7 @@ export default async function handler(req: any, res: any) {
         createdWorkoutId,
         workout.scheduledDate,
         previousWorkoutIds,
-        workout.sportType === 'RUNNING' ? 'running' : undefined
+        getGarminSportTypeKeysForWorkout(workout.sportType)
       );
       await runLease?.confirm(createdWorkoutId);
 
