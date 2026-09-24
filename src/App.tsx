@@ -35,6 +35,7 @@ import { createCloudMutationQueue, type CloudMutationDomain } from './services/c
 import { isValidGarminMaxHeartRate } from './services/garminTrainingPolicy';
 import { registerAutoRefreshTriggers } from './services/autoRefreshTriggers';
 import { ensureLocalAccountOwner } from './services/localAccountScope';
+import { canRefreshForAccount, canUseHydratedAccountData } from './services/accountHydration';
 
 const CalendarView = React.lazy(() => import('./components/CalendarView').then(module => ({ default: module.CalendarView })));
 const ComparisonDashboard = React.lazy(() => import('./components/ComparisonDashboard').then(module => ({ default: module.ComparisonDashboard })));
@@ -61,6 +62,7 @@ export const App: React.FC = () => {
   const [weeklyDecisions, setWeeklyDecisions] = useState<Record<string, WeeklyDecision>>(initialAdaptiveState.weeklyDecisions);
   const [hydratedAdaptiveUserId, setHydratedAdaptiveUserId] = useState<string | null>(null);
   const adaptiveCloudLoadedUserRef = useRef<string | null>(null);
+  const profileRefreshReadyUserRef = useRef<string | null>(null);
   const [garminActivities, setGarminActivities] = useState<GarminActivity[]>([]);
   const [garminState, setGarminState] = useState<GarminSyncState>(() =>
     storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER)
@@ -84,6 +86,12 @@ export const App: React.FC = () => {
     tab: 'profile'
   });
   const [spectatorData, setSpectatorData] = useState<{ profile: any; activities: GarminActivity[] } | null>(null);
+  const pendingGarminFcMaxRefreshRef = useRef<{
+    fcMax: number;
+    nonFcProfileKey: string;
+    spectatorData: typeof spectatorData;
+  } | null>(null);
+  const hasInitializedProfileRefreshRef = useRef(false);
   const referenceDateKey = formatDateKey(new Date());
   const referenceDate = useMemo(() => parseLocalDate(referenceDateKey), [referenceDateKey]);
   const { schedules, allEvents } = useMemo(
@@ -98,6 +106,7 @@ export const App: React.FC = () => {
 
   const { user, profile, saveCloudGarminCredentials, updateProfile, loading: authLoading } = useAuth();
   const previousSignedInUserRef = useRef<string | null>(storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) || null);
+  const hydrationUserIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (authLoading) return;
     if (user?.id) {
@@ -106,6 +115,11 @@ export const App: React.FC = () => {
     }
     if (!previousSignedInUserRef.current) return;
     previousSignedInUserRef.current = null;
+    hydrationUserIdRef.current = null;
+    adaptiveCloudLoadedUserRef.current = null;
+    profileRefreshReadyUserRef.current = null;
+    pendingGarminFcMaxRefreshRef.current = null;
+    setHydratedAdaptiveUserId(null);
     clearGarminCredentials();
     const emptyGarminState: GarminSyncState = { connected: false, activitiesCount: 0, isSyncing: false };
     appStateRef.current.garminActivities = [];
@@ -160,11 +174,6 @@ export const App: React.FC = () => {
     adaptiveOverrides,
     weeklyDecisions
   };
-  const pendingGarminFcMaxRefreshRef = useRef<{
-    fcMax: number;
-    nonFcProfileKey: string;
-    spectatorData: typeof spectatorData;
-  } | null>(null);
   const nonFcProfileRefreshKey = JSON.stringify([
     profile?.icalUrl,
     profile?.homeAddress,
@@ -266,7 +275,7 @@ export const App: React.FC = () => {
   ) => {
     const accountId = appStateRef.current.user?.id;
     const weekStart = formatDateKey(getMondayOfWeek(syncDate));
-    if ((accountId && adaptiveCloudLoadedUserRef.current !== accountId) ||
+    if (!canUseHydratedAccountData(accountId, adaptiveCloudLoadedUserRef.current) ||
         (isAutoAdaptEnabled() && !appStateRef.current.weeklyDecisions[weekStart])) {
       return Promise.resolve({
         success: false,
@@ -331,7 +340,15 @@ export const App: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     if (user?.id && !shareSlug) {
-      if (ensureLocalAccountOwner(user.id)) {
+      const localAccountChanged = ensureLocalAccountOwner(user.id);
+      if (hydrationUserIdRef.current !== user.id || localAccountChanged) {
+        hydrationUserIdRef.current = user.id;
+        adaptiveCloudLoadedUserRef.current = null;
+        profileRefreshReadyUserRef.current = null;
+        pendingGarminFcMaxRefreshRef.current = null;
+        setHydratedAdaptiveUserId(null);
+      }
+      if (localAccountChanged) {
         // Never merge another account's device-local Garmin data or credentials.
         clearGarminCredentials();
         const emptyGarminState = loadGarminSyncState();
@@ -341,7 +358,6 @@ export const App: React.FC = () => {
         appStateRef.current.postponeOverrides = {};
         appStateRef.current.adaptiveOverrides = {};
         appStateRef.current.weeklyDecisions = {};
-        adaptiveCloudLoadedUserRef.current = null;
         setGarminActivities([]);
         setGarminState(emptyGarminState);
         setManualPairs({});
@@ -456,7 +472,12 @@ export const App: React.FC = () => {
         // Immediate full recharge: ÉTS calendar + Garmin Connect live sync
         if (!cancelled) {
           await autoRechargeAll();
-          if (!cancelled) setHydratedAdaptiveUserId(user.id);
+          if (!cancelled) {
+            // The profile effect must not launch a second refresh during cloud hydration.
+            hasInitializedProfileRefreshRef.current = true;
+            profileRefreshReadyUserRef.current = user.id;
+            setHydratedAdaptiveUserId(user.id);
+          }
         }
       })().catch(error => {
         if (!cancelled) console.warn('Could not hydrate account data:', error);
@@ -647,7 +668,7 @@ export const App: React.FC = () => {
     });
 
     const currentWeekStart = formatDateKey(getMondayOfWeek(referenceDate));
-    const adaptiveDataReady = !user?.id || adaptiveCloudLoadedUserRef.current === user.id;
+    const adaptiveDataReady = canUseHydratedAccountData(user?.id, adaptiveCloudLoadedUserRef.current);
     const weekPlanReady = !isAutoAdaptEnabled() || Boolean(appStateRef.current.weeklyDecisions[currentWeekStart]);
     if (!shareSlug && adaptiveDataReady && weekPlanReady) {
       // Ensure current week workouts are really created AND scheduled before marking them synced.
@@ -677,8 +698,9 @@ export const App: React.FC = () => {
     return syncRequestMatchesAccount ? garminSyncResult : null;
   });
 
-  const hasInitializedProfileRefreshRef = useRef(false);
   useEffect(() => {
+    if (!canRefreshForAccount(authLoading, user?.id, profileRefreshReadyUserRef.current)) return;
+
     const pendingFcMaxRefresh = pendingGarminFcMaxRefreshRef.current;
     if (pendingFcMaxRefresh) {
       const profileKeyMatches = pendingFcMaxRefresh.nonFcProfileKey === nonFcProfileRefreshKey;
@@ -704,7 +726,9 @@ export const App: React.FC = () => {
     profile?.fcMax,
     profile?.raceName,
     profile?.raceDate,
-    spectatorData
+    spectatorData,
+    user?.id,
+    authLoading
   ]);
 
   // Automatic sync on mobile app resume, tab visibility change, focus, and periodic interval
