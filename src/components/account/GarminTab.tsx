@@ -6,10 +6,13 @@ import {
   loadGarminCredentials,
   loadGarminCredentialsAsync,
   parseGPXString,
-  saveGarminCredentials,
-  syncWithGarminAPI,
   getGarminWorkoutTargetMode,
   setGarminWorkoutTargetMode
+} from '../../services/garminService';
+import type {
+  GarminActivitySyncMode,
+  GarminActivitySyncResult,
+  GarminCredentials
 } from '../../services/garminService';
 import {
   isGarminAutoSyncEnabled,
@@ -34,8 +37,10 @@ export interface GarminTabProps {
   activities: GarminActivity[];
   onUpdateGarminState: (state: GarminSyncState) => void;
   onActivitiesSynced: (activities: GarminActivity[]) => void;
-  onRefreshFromSyncedGarmin: () => void;
-  onUpdateFcMax?: (fcMax: number) => void;
+  onRequestGarminSync: (
+    mode: GarminActivitySyncMode,
+    credentials?: GarminCredentials
+  ) => Promise<GarminActivitySyncResult | null>;
 }
 
 export const GarminTab: React.FC<GarminTabProps> = ({
@@ -43,8 +48,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   activities,
   onUpdateGarminState,
   onActivitiesSynced,
-  onRefreshFromSyncedGarmin,
-  onUpdateFcMax
+  onRequestGarminSync
 }) => {
   const scheduleTimeout = useManagedTimeout();
   const {
@@ -55,8 +59,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     signInWithGoogle,
     signOut,
     saveCloudGarminCredentials,
-    clearCloudGarminCredentials,
-    updateProfile
+    clearCloudGarminCredentials
   } = useAuth();
 
   const storedGarminCreds = loadGarminCredentials();
@@ -146,7 +149,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     setIsSupabaseAuthProcessing(false);
   };
 
-  const handleGarminAPISync = async (e?: React.FormEvent, mode: 'incremental' | 'full' = 'incremental') => {
+  const handleGarminAPISync = async (e?: React.FormEvent, mode: GarminActivitySyncMode = 'incremental') => {
     if (e) e.preventDefault();
     setIsGarminProcessing(true);
     setGarminSyncMsg({
@@ -156,50 +159,44 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       isError: false
     });
 
-    const creds = (garminEmail && garminPassword)
-      ? { email: garminEmail, password: garminPassword }
-      : (await loadGarminCredentialsAsync() || undefined);
+    try {
+      const creds = (garminEmail && garminPassword)
+        ? { email: garminEmail, password: garminPassword }
+        : (await loadGarminCredentialsAsync() || undefined);
+      const result = await onRequestGarminSync(mode, creds);
+      if (!result) {
+        setGarminSyncMsg({
+          text: 'Synchronisation annulée : le compte connecté a changé avant la fin.',
+          isError: true
+        });
+        return;
+      }
 
-    const result = await syncWithGarminAPI(creds, { mode });
-
-    if (result.success) {
-      if (garminEmail && garminPassword) {
-        saveGarminCredentials({ email: garminEmail, password: garminPassword });
-        if (user) {
+      if (result.success) {
+        if (garminEmail && garminPassword && user) {
           await saveCloudGarminCredentials(garminEmail);
         }
-      }
-      onActivitiesSynced(result.activities);
-      onUpdateGarminState({
-        connected: true,
-        lastSyncTime: new Date().toISOString(),
-        accountEmail: garminEmail || storedGarminCreds?.email || 'Compte Garmin',
-        activitiesCount: result.count,
-        isSyncing: false
-      });
-      if (result.athleteMaxHr) {
-        if (onUpdateFcMax) onUpdateFcMax(result.athleteMaxHr);
-        await updateProfile({ fcMax: result.athleteMaxHr });
-      }
 
-      setGarminSyncMsg({
-        text: `✅ ${result.count} activité(s) dans votre historique${mode === 'full' ? ' complet' : ''} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
-        isError: false
-      });
-
-      onRefreshFromSyncedGarmin();
-    } else {
-      // Any partial sync can still return valid activities. Expose them without
-      // presenting the overall Garmin sync as complete.
-      if (result.activities.length > 0) {
-        onActivitiesSynced(result.activities);
+        setGarminSyncMsg({
+          text: `✅ ${result.count} activité(s) dans votre historique${mode === 'full' ? ' complet' : ''} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
+          isError: false
+        });
+      } else {
+        // The app pipeline already merges and persists any partial activities.
+        setGarminSyncMsg({
+          text: `❌ ${result.error || 'La synchronisation Garmin a échoué.'}`,
+          isError: true
+        });
       }
+    } catch (error) {
       setGarminSyncMsg({
-        text: `❌ ${result.error}`,
+        text: `❌ ${error instanceof Error ? error.message : 'La synchronisation Garmin a échoué.'}`,
         isError: true
       });
+    } finally {
+      setIsGarminProcessing(false);
     }
-    setIsGarminProcessing(false);
+
   };
 
   const handleGarminDisconnect = () => {

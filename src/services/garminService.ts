@@ -368,6 +368,17 @@ export interface GarminCredentials {
   password?: string;
 }
 
+export type GarminActivitySyncMode = 'incremental' | 'full';
+
+export interface GarminActivitySyncResult {
+  success: boolean;
+  activities: GarminActivity[];
+  count: number;
+  athleteMaxHr?: number;
+  error?: string;
+  syncMode?: GarminActivitySyncMode;
+}
+
 /**
  * Keeps Garmin credentials for the current app session only.
  * Passwords must never be written to localStorage, Capacitor Preferences or cloud metadata.
@@ -516,14 +527,11 @@ export function saveGarminSyncState(state: GarminSyncState): void {
  * and retrieve actual logged activities via the Garmin API.
  */
 async function performGarminActivitySync(
-  credentials?: {
-    email?: string;
-    password?: string;
-  },
+  credentials?: GarminCredentials,
   options?: {
-    mode?: 'full' | 'incremental';
+    mode?: GarminActivitySyncMode;
   }
-): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string; syncMode?: string }> {
+): Promise<GarminActivitySyncResult> {
   const startingLocalOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
   let combinedActivities = loadStoredGarminActivities();
   try {
@@ -677,9 +685,9 @@ let garminActivitySyncTail: Promise<void> = Promise.resolve();
 
 /** All callers share one activity-cache writer, including manual full history. */
 export function syncWithGarminAPI(
-  credentials?: { email?: string; password?: string },
-  options?: { mode?: 'full' | 'incremental' }
-): Promise<{ success: boolean; activities: GarminActivity[]; count: number; athleteMaxHr?: number; error?: string; syncMode?: string }> {
+  credentials?: GarminCredentials,
+  options?: { mode?: GarminActivitySyncMode }
+): Promise<GarminActivitySyncResult> {
   const requestedOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
   const result = garminActivitySyncTail.then(() => {
     if (storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) !== requestedOwner) {

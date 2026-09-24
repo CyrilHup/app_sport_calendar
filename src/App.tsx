@@ -9,7 +9,8 @@ import { buildCompleteCalendar, parseICSString, RawIcsEvent } from './services/i
 import { resolveIcsCourses } from './services/icsCacheService';
 import { formatDateKey, getMondayOfWeek, parseLocalDate } from './services/dateUtils';
 import { createAppConfig, getPeriodizationContext } from './services/periodizationEngine';
-import { clearGarminCredentials, getDynamicAthleteProfile, loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminCredentials, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
+import { clearGarminCredentials, getDynamicAthleteProfile, loadGarminCredentials, loadGarminCredentialsAsync, loadGarminSyncState, loadStoredGarminActivities, saveGarminActivities, saveGarminSyncState, syncWithGarminAPI } from './services/garminService';
+import type { GarminActivitySyncMode, GarminActivitySyncResult, GarminCredentials } from './services/garminService';
 import { App as CapacitorApp } from '@capacitor/app';
 import { compareWorkoutsWithGarmin, computeWeeklyTelemetry } from './services/comparisonEngine';
 import { cancelPostponeWorkout, loadPostponeOverrides, postponeWorkout, savePostponeOverrides } from './services/postponeService';
@@ -95,7 +96,7 @@ export const App: React.FC = () => {
     setAccountModal({ isOpen: true, tab });
   };
 
-  const { user, profile, saveCloudGarminCredentials, loading: authLoading } = useAuth();
+  const { user, profile, saveCloudGarminCredentials, updateProfile, loading: authLoading } = useAuth();
   const previousSignedInUserRef = useRef<string | null>(storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) || null);
   useEffect(() => {
     if (authLoading) return;
@@ -159,6 +160,19 @@ export const App: React.FC = () => {
     adaptiveOverrides,
     weeklyDecisions
   };
+  const pendingGarminFcMaxRefreshRef = useRef<{
+    fcMax: number;
+    nonFcProfileKey: string;
+    spectatorData: typeof spectatorData;
+  } | null>(null);
+  const nonFcProfileRefreshKey = JSON.stringify([
+    profile?.icalUrl,
+    profile?.homeAddress,
+    profile?.campusAddress,
+    profile?.trailAddress,
+    profile?.raceName,
+    profile?.raceDate
+  ]);
 
   const adaptivePlanPayload = (overrides: Record<string, AdaptiveWorkoutOverride>, decisions: Record<string, WeeklyDecision>) =>
     JSON.parse(serializeAdaptivePlanState({ overrides, weeklyDecisions: decisions })) as Record<string, unknown>;
@@ -199,6 +213,19 @@ export const App: React.FC = () => {
   const autoRechargeAll = useCallback((request: RefreshRequest = {}): Promise<void> => {
     return refreshCoordinatorRef.current!.run(request);
   }, []);
+
+  const requestGarminActivitySync = useCallback((
+    mode: GarminActivitySyncMode,
+    credentials?: GarminCredentials
+  ): Promise<GarminActivitySyncResult | null> => new Promise(resolve => {
+    void autoRechargeAll({
+      manual: true,
+      garminSyncMode: mode,
+      garminCredentials: credentials,
+      garminAccountId: appStateRef.current.user?.id ?? null,
+      onGarminSyncComplete: resolve
+    });
+  }), [autoRechargeAll]);
 
   const retryCloudSync = async () => {
     const userId = appStateRef.current.user?.id;
@@ -441,16 +468,25 @@ export const App: React.FC = () => {
   const currentPeriodContext = getPeriodizationContext(referenceDate, appConfig);
 
   // Function to recharge both ÉTS iCal and Garmin Connect (Mobile & Web)
-  refreshCoordinatorRef.current.setWorker(async ({ manual: isManualTrigger, refreshGarmin }) => {
+  refreshCoordinatorRef.current.setWorker(async ({
+    manual: isManualTrigger,
+    refreshGarmin,
+    garminSyncMode,
+    garminCredentials,
+    garminAccountId
+  }) => {
     const snapshot = appStateRef.current;
     const referenceDate = new Date();
     const { user, profile, garminActivities } = snapshot;
+    const syncRequestMatchesAccount = garminAccountId === undefined || garminAccountId === (user?.id ?? null);
+    const requestedSyncMode = syncRequestMatchesAccount ? garminSyncMode : undefined;
+    const requestedCredentials = syncRequestMatchesAccount ? garminCredentials : undefined;
     const refreshOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
     const stillCurrentAccount = () =>
       appStateRef.current.user?.id === user?.id &&
       storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) === refreshOwner;
-    if (!user && storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER)) return;
-    if (user?.id && profile?.id !== user.id) return;
+    if (!user && storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER)) return null;
+    if (user?.id && profile?.id !== user.id) return null;
     let rawCourses: RawIcsEvent[] = [];
 
     // 1. Fetch ÉTS iCal feed via proxy (custom profile URL or default proxy)
@@ -473,20 +509,18 @@ export const App: React.FC = () => {
       }
       rawCourses = resolveIcsCourses(feedSource, fetchedIcs, parseICSString);
     }
-    if (!stillCurrentAccount()) return;
+    if (!stillCurrentAccount()) return null;
 
     // 2. Synchronisation Incrémentielle Garmin Connect
     let loadedActivities = shareSlug ? garminActivities : mergeGarminActivities(garminActivities, loadStoredGarminActivities());
-    const creds = shareSlug ? null : await loadGarminCredentialsAsync();
-    if (!stillCurrentAccount()) return;
+    const creds = shareSlug ? null : (requestedCredentials ?? await loadGarminCredentialsAsync());
+    if (!stillCurrentAccount()) return null;
 
-    if (creds?.email && creds?.password) {
-      saveGarminCredentials(creds);
-    }
-
-    if (refreshGarmin && !shareSlug && (!creds?.email || !creds?.password)) {
+    let garminSyncResult: GarminActivitySyncResult | null = null;
+    const missingGarminCredentials = !creds?.email || !creds?.password;
+    if (refreshGarmin && !shareSlug && missingGarminCredentials && !requestedSyncMode) {
       // Si aucun identifiant n'est renseigné et que l'utilisateur a cliqué sur Synchro
-      if (isManualTrigger) {
+      if (isManualTrigger && (garminSyncMode === undefined || syncRequestMatchesAccount)) {
         setSyncError({
           title: 'Compte Garmin non configuré',
           message: 'Aucun identifiant Garmin Connect n\'a été détecté sur cet appareil.',
@@ -494,18 +528,19 @@ export const App: React.FC = () => {
           isMissingCreds: true
         });
       }
-    } else if (refreshGarmin && !shareSlug) {
+    } else if (refreshGarmin && !shareSlug && (!missingGarminCredentials || requestedSyncMode)) {
       try {
-        // Synchronisation incrémentielle systématique des activités récentes et wellness
-        const result = await syncWithGarminAPI(creds || undefined, { mode: 'incremental' });
-        if (!stillCurrentAccount()) return;
+        // Both manual history retrieval and automatic incrementals use this one refresh pipeline.
+        const result = await syncWithGarminAPI(creds || undefined, { mode: requestedSyncMode ?? 'incremental' });
+        garminSyncResult = result;
+        if (!stillCurrentAccount()) return null;
         if (result.activities.length > 0) {
           loadedActivities = mergeGarminActivities(loadedActivities, result.activities);
         }
         if (result.success) {
           // Succès : effacement d'un éventuel message d'erreur antérieur
           setSyncError(null);
-        } else {
+        } else if (garminSyncMode === undefined) {
           // Échec de la synchronisation retourné par le serveur Garmin Connect
           console.warn('[Garmin Sync Error]', result.error);
           setSyncError({
@@ -516,14 +551,23 @@ export const App: React.FC = () => {
         }
       } catch (syncErr: any) {
         console.error('[Garmin Sync Exception]', syncErr);
-        setSyncError({
-          title: 'Erreur de connexion Garmin',
-          message: 'Impossible de contacter le serveur de synchronisation Garmin Connect.',
-          details: syncErr?.message || 'Vérifiez votre connexion Internet et réessayez.'
-        });
+        garminSyncResult = {
+          success: false,
+          activities: loadedActivities,
+          count: loadedActivities.length,
+          error: syncErr?.message || 'Vérifiez votre connexion Internet et réessayez.',
+          syncMode: requestedSyncMode ?? 'incremental'
+        };
+        if (garminSyncMode === undefined) {
+          setSyncError({
+            title: 'Erreur de connexion Garmin',
+            message: 'Impossible de contacter le serveur de synchronisation Garmin Connect.',
+            details: garminSyncResult.error
+          });
+        }
       }
     }
-    if (!stillCurrentAccount()) return;
+    if (!stillCurrentAccount()) return null;
 
     // Préserver les activités existantes si la synchro échoue pour ne pas vider l'application
     if (loadedActivities.length === 0 && garminActivities.length > 0) {
@@ -536,7 +580,18 @@ export const App: React.FC = () => {
     const cachedFcMax = Number(storageGetRaw(STORAGE_KEYS.ATHLETE_FC_MAX));
     const validCachedFcMax = isValidGarminMaxHeartRate(cachedFcMax) ? cachedFcMax : undefined;
     setDetectedFcMax(validCachedFcMax);
-    const refreshedFcMax = appStateRef.current.profile?.fcMax ?? validCachedFcMax ?? appConfig.ATHLETE_FC_MAX;
+    const detectedSyncFcMax = garminSyncResult?.athleteMaxHr;
+    const refreshedFcMax = detectedSyncFcMax ?? appStateRef.current.profile?.fcMax ?? validCachedFcMax ?? appConfig.ATHLETE_FC_MAX;
+    if (detectedSyncFcMax && detectedSyncFcMax !== profile?.fcMax && user?.id) {
+      pendingGarminFcMaxRefreshRef.current = {
+        fcMax: detectedSyncFcMax,
+        nonFcProfileKey: nonFcProfileRefreshKey,
+        spectatorData
+      };
+      const saved = await updateProfile({ fcMax: detectedSyncFcMax });
+      if (!saved) pendingGarminFcMaxRefreshRef.current = null;
+      if (!stillCurrentAccount()) return null;
+    }
     appStateRef.current.garminActivities = loadedActivities;
     setGarminActivities(loadedActivities);
 
@@ -619,10 +674,25 @@ export const App: React.FC = () => {
       }
     }
 
+    return syncRequestMatchesAccount ? garminSyncResult : null;
   });
 
   const hasInitializedProfileRefreshRef = useRef(false);
   useEffect(() => {
+    const pendingFcMaxRefresh = pendingGarminFcMaxRefreshRef.current;
+    if (pendingFcMaxRefresh) {
+      const profileKeyMatches = pendingFcMaxRefresh.nonFcProfileKey === nonFcProfileRefreshKey;
+      if (
+        profileKeyMatches &&
+        pendingFcMaxRefresh.spectatorData === spectatorData &&
+        pendingFcMaxRefresh.fcMax === profile?.fcMax
+      ) {
+        pendingGarminFcMaxRefreshRef.current = null;
+        hasInitializedProfileRefreshRef.current = true;
+        return;
+      }
+      pendingGarminFcMaxRefreshRef.current = null;
+    }
     const refreshGarmin = !hasInitializedProfileRefreshRef.current;
     hasInitializedProfileRefreshRef.current = true;
     void autoRechargeAll({ refreshGarmin });
@@ -969,9 +1039,9 @@ export const App: React.FC = () => {
           garminActivities={garminActivities}
           onUpdateGarminState={handleUpdateGarminState}
           onActivitiesSynced={handleActivitiesSynced}
+          onRequestGarminSync={requestGarminActivitySync}
           calendarEvents={allEvents}
           onRefreshAll={() => autoRechargeAll({ manual: true })}
-          onRefreshFromSyncedGarmin={() => autoRechargeAll({ manual: true, refreshGarmin: false })}
           isRecharging={isRecharging}
           lastSyncTime={lastSyncTime}
         />

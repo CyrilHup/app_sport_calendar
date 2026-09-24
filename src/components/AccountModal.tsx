@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { GarminActivity, GarminSyncState } from '../types/garmin';
 import { CalendarEvent } from '../types/calendar';
+import type {
+  GarminActivitySyncMode,
+  GarminActivitySyncResult,
+  GarminCredentials
+} from '../services/garminService';
 import {
   Activity,
   Calendar,
@@ -25,9 +30,12 @@ interface AccountModalProps {
   garminActivities: GarminActivity[];
   onUpdateGarminState: (state: GarminSyncState) => void;
   onActivitiesSynced: (activities: GarminActivity[]) => void;
+  onRequestGarminSync: (
+    mode: GarminActivitySyncMode,
+    credentials?: GarminCredentials
+  ) => Promise<GarminActivitySyncResult | null>;
   calendarEvents: CalendarEvent[];
   onRefreshAll: () => void;
-  onRefreshFromSyncedGarmin: () => void;
   isRecharging: boolean;
   lastSyncTime?: string;
 }
@@ -40,9 +48,9 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   garminActivities,
   onUpdateGarminState,
   onActivitiesSynced,
+  onRequestGarminSync,
   calendarEvents,
   onRefreshAll,
-  onRefreshFromSyncedGarmin,
   isRecharging,
   lastSyncTime
 }) => {
@@ -233,7 +241,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
               activities={garminActivities}
               onUpdateGarminState={onUpdateGarminState}
               onActivitiesSynced={onActivitiesSynced}
-              onRefreshFromSyncedGarmin={onRefreshFromSyncedGarmin}
+              onRequestGarminSync={onRequestGarminSync}
             />
           )}
 
