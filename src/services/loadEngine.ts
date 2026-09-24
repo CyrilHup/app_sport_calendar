@@ -417,7 +417,7 @@ export function computeTrainingLoadStats(
   } else if (currentTsb > 5) {
     formStatus = 'TRANSITION_FRESH';
     formLabel = 'Très frais (Période d\'assimilation ou reprise)';
-  } else if (currentTsb < -25) {
+  } else if (currentTsb < ACWR_POLICY.severeFatigueTsbBelow) {
     formStatus = 'HIGH_OVERLOAD';
     formLabel = 'Surmenage / Fatigue sévère (Délestage nécessaire)';
   } else if (currentTsb < -10) {

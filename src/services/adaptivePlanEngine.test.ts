@@ -114,7 +114,7 @@ describe('Adaptive Plan Engine', () => {
     }
   ];
 
-  it('keeps nominal plan when Trail ACWR is within safe sweet spot (0.8 - 1.3)', () => {
+  it('avoids ACWR-only adaptation during calibration while preserving safe and independent fatigue signals', () => {
     const safeTrainingLoad: TrainingLoadStats = {
       currentCtl: 45,
       currentAtl: 48,
@@ -143,6 +143,34 @@ describe('Adaptive Plan Engine', () => {
     expect(status.injuryRiskLevel).toBe('SAFE');
     expect(status.recommendedActions.length).toBe(0);
     expect(status.headline).toContain('Sweet Spot');
+
+    const calibratingLoad = {
+      ...safeTrainingLoad,
+      trailAcwrRatio: 1.55,
+      trailAcwrStatus: 'CALIBRATING' as const
+    };
+    const calibratingStatus = evaluateAdaptivePlanStatus(calibratingLoad, mockBaseReadiness, mockWeeklySportEvents);
+    expect(calibratingStatus.injuryRiskLevel).toBe('SAFE');
+    expect(calibratingStatus.recommendedActions).toHaveLength(0);
+    expect(calibratingStatus.headline).toContain('Calibration');
+    expect(calibratingStatus.explanation).toContain('ne déclenche pas seul d\'adaptation');
+
+    const fatigueDespiteCalibration = evaluateAdaptivePlanStatus({
+      ...calibratingLoad,
+      currentTsb: -30
+    }, mockBaseReadiness, mockWeeklySportEvents);
+    expect(fatigueDespiteCalibration.injuryRiskLevel).toBe('HIGH');
+    expect(fatigueDespiteCalibration.explanation).toContain('TSB -30');
+    expect(fatigueDespiteCalibration.explanation).not.toContain('ACWR 1.55 >');
+
+    const lowReadiness = evaluateAdaptivePlanStatus(calibratingLoad, {
+      ...mockBaseReadiness,
+      score: 40,
+      status: 'LOW'
+    }, mockWeeklySportEvents);
+    expect(lowReadiness.injuryRiskLevel).toBe('MODERATE');
+    expect(lowReadiness.explanation).toContain('score de récupération bas');
+    expect(lowReadiness.explanation).not.toContain("l'ACWR (1.55");
   });
 
   it('proposes smart non-destructive adaptations when Trail ACWR > 1.5 (High Injury Risk)', () => {

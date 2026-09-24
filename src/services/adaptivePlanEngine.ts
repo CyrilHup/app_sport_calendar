@@ -101,18 +101,26 @@ export function evaluateAdaptivePlanStatus(
   const calisAcute = trainingLoad.calisthenicsAcuteLoad7d;
   const calisSessions = trainingLoad.calisthenicsSessionsCount7d;
   const tsb = trainingLoad.currentTsb;
+  const isAcwrCalibrating = trailAcwrStatus === 'CALIBRATING';
+  const acwrHighRisk = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.highAbove;
+  const acwrModerateRisk = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.moderateAbove;
+  const acwrUnderload = !isAcwrCalibrating && trailAcwrRatio < ACWR_POLICY.underloadBelow;
 
   const hasActiveAdaptations = Object.keys(activeOverrides).length > 0;
   const recommendedActions: AdaptiveWorkoutAction[] = [];
 
   let injuryRiskLevel: 'SAFE' | 'MODERATE' | 'HIGH' = 'SAFE';
-  let headline = `Progression Optimale (Sweet Spot ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove})`;
-  let explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (zone saine ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}). La charge d'impacts au sol (${trailAcute} Km-Effort) est parfaitement assimilée par vos tendons et genoux. La calisthénie (${calisSessions} séance(s), ${calisAcute} TRIMP) est isolée et ne génère aucun choc articulaire.`;
+  let headline = isAcwrCalibrating
+    ? 'Calibration mécanique : historique de course insuffisant'
+    : `Progression Optimale (Sweet Spot ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove})`;
+  let explanation = isAcwrCalibrating
+    ? `Le ratio ACWR mécanique (${trailAcwrRatio}) reste indicatif, car l'historique de course est encore en calibration. Il ne déclenche pas seul d'adaptation ; la fatigue systémique (TSB) et la récupération peuvent toujours en déclencher une.`
+    : `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (zone saine ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}). La charge d'impacts au sol (${trailAcute} Km-Effort) est parfaitement assimilée par vos tendons et genoux. La calisthénie (${calisSessions} séance(s), ${calisAcute} TRIMP) est isolée et ne génère aucun choc articulaire.`;
 
   // 1. DANGER ZONE : ACWR Trail élevé ou surmenage sévère
-  if (trailAcwrRatio > ACWR_POLICY.highAbove || tsb < ACWR_POLICY.severeFatigueTsbBelow) {
+  if (acwrHighRisk || tsb < ACWR_POLICY.severeFatigueTsbBelow) {
     injuryRiskLevel = 'HIGH';
-    const dangerContext = trailAcwrRatio > ACWR_POLICY.highAbove
+    const dangerContext = acwrHighRisk
       ? `ACWR ${trailAcwrRatio} > ${ACWR_POLICY.highAbove}`
       : `TSB ${tsb} < ${ACWR_POLICY.severeFatigueTsbBelow}`;
     headline = '⚠️ Alerte Charge ou Fatigue : Plan Allégé';
@@ -258,10 +266,17 @@ export function evaluateAdaptivePlanStatus(
     }
   }
   // 2. MODERATE RISK : ACWR Trail au-dessus du seuil modéré ou récupération dégradée
-  else if (trailAcwrRatio > ACWR_POLICY.moderateAbove || readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow) {
+  else if (acwrModerateRisk || readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow) {
     injuryRiskLevel = 'MODERATE';
-    headline = '⚡ Charge Mécanique Soutenue : Vigilance Recommandée';
-    explanation = `Le plan signale une vigilance liée à l'ACWR (${trailAcwrRatio}; seuil ${ACWR_POLICY.moderateAbove} – ${ACWR_POLICY.highAbove})${readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow ? ' ou à un score de récupération bas' : ''}. Les séances futures peuvent être modérées sans changer rétroactivement la charge mesurée.`;
+    const lowReadiness = readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow;
+    headline = acwrModerateRisk
+      ? '⚡ Charge Mécanique Soutenue : Vigilance Recommandée'
+      : '⚡ Récupération basse : vigilance recommandée';
+    const vigilanceReasons = [
+      acwrModerateRisk ? `l'ACWR (${trailAcwrRatio}; seuil ${ACWR_POLICY.moderateAbove} – ${ACWR_POLICY.highAbove})` : null,
+      lowReadiness ? 'un score de récupération bas' : null
+    ].filter((reason): reason is string => reason !== null);
+    explanation = `Le plan signale une vigilance liée à ${vigilanceReasons.join(' et ')}. Les séances futures peuvent être modérées sans changer rétroactivement la charge mesurée.`;
 
     for (const ev of upcomingSportEvents) {
       if (!isEligibleForAdaptation(ev)) continue;
@@ -307,7 +322,7 @@ export function evaluateAdaptivePlanStatus(
     }
   }
   // 3. UNDERLOAD : ACWR Trail sous le seuil de sous-charge
-  else if (trailAcwrRatio < ACWR_POLICY.underloadBelow) {
+  else if (acwrUnderload) {
     injuryRiskLevel = 'SAFE';
     headline = `🔵 Sous-charge Mécanique (< ${ACWR_POLICY.underloadBelow}) : Consolidation Progressive`;
     explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (< ${ACWR_POLICY.underloadBelow}, zone de sous-charge). Vos tendons et articulations sont reposés mais sous-stimulés par rapport au volume cible. Selon le modèle de Tim Gabbett, consolidez progressivement vos Km-Effort en endurance fondamentale (Zone 2) sans hausses brutales de volume.`;
