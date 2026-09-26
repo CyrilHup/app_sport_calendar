@@ -560,9 +560,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   adaptivePlanReady = true,
   onApplyAdaptivePlan
 }) => {
-  const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 768;
+  const isCompactInitial = typeof window !== 'undefined' && window.innerWidth < 1400;
   const [filter, setFilter] = useState<CalendarFilterCategory>('all');
-  const [viewMode, setViewMode] = useState<ViewMode>(isMobileInitial ? 'day' : 'grid');
+  const [viewMode, setViewMode] = useState<ViewMode>(isCompactInitial ? 'day' : 'grid');
   const effectiveRefDate = referenceDate || (referenceDateStr ? parseLocalDate(referenceDateStr) : new Date());
   const athleteProfile = useMemo(
     () => getDynamicAthleteProfile(garminActivities, athlete),
