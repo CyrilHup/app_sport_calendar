@@ -156,7 +156,8 @@ export function applyPostponements(
 
     // Mettre à jour sportSession du jour source si elle pointait vers cet événement
     if (sourceDay.sportSession?.id === originalSportEvent.id) {
-      const remainingSport = sourceDay.events.find(e => e.category === 'sport' && !e.metadata?.isPostponedPlaceholder);
+      const remainingSport = sourceDay.events.find(e => e.category === 'sport' &&
+        !e.metadata?.isPostponedPlaceholder && e.sportType !== 'CALISTHENICS' && e.sportType !== 'GYM_FORCE');
       sourceDay.sportSession = remainingSport || undefined;
     }
 
@@ -260,7 +261,10 @@ export function applyPostponements(
     // Ajouter la séance et les trajets dans le jour cible
     targetDay.events.push(movedSportEvent, ...newTravelEvents);
     targetDay.events.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-    targetDay.sportSession = movedSportEvent;
+    // Flexible strength is a second session on some days, not the day's primary run.
+    if (movedSportEvent.sportType !== 'CALISTHENICS' && movedSportEvent.sportType !== 'GYM_FORCE') {
+      targetDay.sportSession = movedSportEvent;
+    }
 
     // Mettre à jour allEvents
     currentAllEvents = currentAllEvents.filter(e => {

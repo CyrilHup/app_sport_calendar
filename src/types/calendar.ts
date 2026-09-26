@@ -25,6 +25,7 @@ export interface CalendarEvent {
   durationMinutes: number;
   metadata?: {
     isOptional?: boolean;
+    isRecommendedStrength?: boolean;
     courseCode?: string;
     room?: string;
     targetHeartRate?: string;

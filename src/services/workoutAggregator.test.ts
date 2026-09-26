@@ -216,4 +216,24 @@ describe('workoutAggregator', () => {
     expect(groups[0].items).toHaveLength(1);
     expect(groups[0].totalDurationMinutes).toBe(40);
   });
+
+  it('shows the specific strength prescription beside a run on the same day', () => {
+    const date = '2026-09-24';
+    const strength: CalendarEvent = {
+      id: 'STRENGTH_2026-09-21_lower', category: 'sport', sportType: 'GYM_FORCE',
+      title: 'Renforcement · jambes et mollets', description: 'Squat ou presse',
+      startDate: '2026-09-24T07:30:00', endDate: '2026-09-24T08:05:00',
+      colorId: '4', colorHex: '#a78bfa', durationMinutes: 35, emoji: '💪', location: 'Salle',
+      metadata: { isRecommendedStrength: true }
+    };
+    const easyRun: CalendarEvent = {
+      ...strength, id: 'RUN_2026-09-24', sportType: 'RUN_EASY', title: 'Footing facile',
+      startDate: '2026-09-24T12:00:00', endDate: '2026-09-24T12:45:00', durationMinutes: 45,
+      metadata: undefined
+    };
+    const groups = groupDaySportWorkouts([strength, easyRun], [], date);
+    expect(groups).toHaveLength(2);
+    expect(groups.find(group => group.discipline === 'STRENGTH_TRAINING')?.title).toBe('Renforcement · jambes et mollets');
+    expect(groups.find(group => group.discipline === 'RUNNING')?.title).toBe('Footing facile');
+  });
 });

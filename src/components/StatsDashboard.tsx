@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, ActivityFeedback, GarminActivity } from '../types/garmin';
 import { ActivityFeedbackJournal } from './ActivityFeedbackJournal';
+import { weeklySessionRpeTrend } from '../services/activityFeedback';
 import {
   computeFullStatsReport,
   formatMinutes,
@@ -75,6 +76,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   const restingHrValue = latestWellness?.restingHeartRate || baselineRhr;
   const dynamicBasePace = computeDynamicAthleteBasePace(garminActivities);
   const wellnessHistory = loadWellnessHistory();
+  const subjectiveTrend = weeklySessionRpeTrend(garminActivities, referenceDate);
+  const subjectiveTrendMax = Math.max(1, ...subjectiveTrend.map(week => week.totalLoad));
 
   // Computes report for selected timeline scope.
   // Physiological history is independent from the selected display timeline.
@@ -96,6 +99,24 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   return (
     <div className="stats-dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {onSaveActivityFeedback && <ActivityFeedbackJournal activities={garminActivities} onSave={onSaveActivityFeedback} />}
+      {subjectiveTrend.some(week => week.ratedSessions > 0) && (
+        <section className="subjective-trend-card" aria-label="Évolution du ressenti sur quatre semaines">
+          <div>
+            <h2>Ressenti sur quatre semaines</h2>
+            <p>Charge ressentie = durée × RPE. Compare seulement les semaines suffisamment notées.</p>
+          </div>
+          <div className="subjective-trend-rows">
+            {subjectiveTrend.map((week, index) => (
+              <div className="subjective-trend-row" key={index}>
+                <span>{week.start.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })} – {week.end.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}</span>
+                <div className="subjective-trend-track"><div style={{ width: `${week.totalLoad / subjectiveTrendMax * 100}%` }} /></div>
+                <strong>{week.totalLoad} unités <small>· {week.ratedSessions}/{week.recordedSessions} notées</small></strong>
+              </div>
+            ))}
+          </div>
+          <small>Ce total seul ne mesure ni la forme ni le risque de blessure.</small>
+        </section>
+      )}
       {/* 1. Header Épuré avec Sélecteur de Timeline (Plan QMT / 4 semaines / Tout) */}
       <div
         style={{

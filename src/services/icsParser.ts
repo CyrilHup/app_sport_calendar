@@ -1,4 +1,6 @@
 import { CalendarEvent, DailySchedule } from '../types/calendar';
+import { addRecommendedStrengthSessions } from './recommendedStrengthSessions';
+import { isStrengthOrCalisthenics } from './activityClassifier';
 import { AppConfig, COLOR_MAP, GLOBAL_APP_CONFIG, getDailyWorkoutPlan, getPeriodizationContext } from './periodizationEngine';
 import { formatDateKey, addDays } from './dateUtils';
 import { GarminActivity } from '../types/garmin';
@@ -612,5 +614,10 @@ export function buildCompleteCalendar(
     });
   }
 
-  return { schedules, allEvents };
+  const strengthSessionsLast28d = recentActivities.filter(activity => {
+    const startedAt = new Date(activity.startTimeLocal).getTime();
+    const ageMs = asOfDate.getTime() - startedAt;
+    return isStrengthOrCalisthenics(activity) && ageMs >= 0 && ageMs < 28 * 24 * 60 * 60 * 1000;
+  }).length;
+  return addRecommendedStrengthSessions(schedules, allEvents, strengthSessionsLast28d);
 }

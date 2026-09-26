@@ -323,8 +323,8 @@ export function getDailyWorkoutPlan(
 
   const targetElevationSaturday = Math.round(durationSaturdayLong * elevationFactor);
 
-  // Strength has a weekly target, not an automatically reserved weekday. The
-  // athlete places those sessions around classes, symptoms and key run days.
+  // This template reserves no fixed strength appointment. The calendar adds
+  // separate, movable strength recommendations around classes and key runs.
   const flexibleStrengthDay: WorkoutTemplate = {
     title: "Renforcement flexible (créneau à choisir)",
     duration: 0,

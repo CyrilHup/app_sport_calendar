@@ -169,9 +169,7 @@ export function buildPlannedSportItem(
         athleteFcRest: profile.fcRest
       });
 
-  const cleanTitle = discipline === 'STRENGTH_TRAINING'
-    ? 'Entraînement Calisthénie'
-    : event.title.replace(/^[^a-zA-Z0-9\[]*/, '').trim();
+  const cleanTitle = event.title.replace(/^[^a-zA-Z0-9\[]*/, '').trim();
 
   return {
     id: event.id,
@@ -233,9 +231,7 @@ export function buildCatchupSportItem(
         athleteFcRest: profile.fcRest
       });
 
-  const cleanTitle = discipline === 'STRENGTH_TRAINING'
-    ? 'Entraînement Calisthénie'
-    : ev.title.replace(/^[^a-zA-Z0-9\[]*/, '').trim();
+  const cleanTitle = ev.title.replace(/^[^a-zA-Z0-9\[]*/, '').trim();
 
   return {
     id: `catchup-${comp.id}`,

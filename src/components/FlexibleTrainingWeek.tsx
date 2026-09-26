@@ -41,9 +41,9 @@ export const FlexibleTrainingWeek: React.FC<Props> = ({ context, strengthSession
         </p>
       </div>
       <div className="glass-panel" style={{ padding: 16 }}>
-        <h3 style={{ marginBottom: 8 }}>3 séances de renforcement à placer librement, 4e facultative</h3>
+        <h3 style={{ marginBottom: 8 }}>3 séances de renforcement conseillées dans le calendrier, 4e facultative</h3>
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Aucune journée n’est imposée. Cette semaine, {strengthSessionsThisWeek} séance(s) sont reconnues ; {strengthSessionsLast28d} sur les 28 derniers jours.
+          Le calendrier propose des jours et horaires de départ, déplaçables selon tes cours, ta fatigue et tes douleurs. Cette semaine, {strengthSessionsThisWeek} séance(s) sont reconnues ; {strengthSessionsLast28d} sur les 28 derniers jours.
           Si trois séances dépassent votre habitude récente, commencez par des formats courts et augmentez surtout selon la récupération réelle.
           Place la séance jambes quand tu peux récupérer avant la prochaine séance de côtes ou sortie longue ; évite de cumuler deux grosses sollicitations des jambes si la fatigue persiste.
           {context.isDeload || isTaper ? ' En décharge et à l’affûtage, conserve le rythme si tu le tolères, avec moins de séries et aucune nouvelle charge lourde.' : ''}

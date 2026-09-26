@@ -20,7 +20,6 @@ import {
   Sparkles,
   ShieldCheck,
   ShieldAlert,
-  Activity,
   Layers,
   Zap
 } from 'lucide-react';
@@ -39,10 +38,9 @@ import { getDynamicAthleteProfile } from '../services/garminService';
 import { buildCalendarDayViewModel, CalendarFilterCategory } from '../services/calendarDayViewModel';
 import { getCalendarDaySwipeDestination, type SwipePoint } from '../services/calendarDaySwipe';
 import { MobilityEventChip } from './MobilityEventChip';
-import { ACWR_POLICY } from '../services/trainingModelConfig';
 import { WeeklyDecision } from '../services/adaptivePlanStore';
 import { projectWeeklyAdaptivePlan } from '../services/weeklyAdaptivePlan';
-import { recentSubjectiveSignals, weeklySessionRpeTrend } from '../services/activityFeedback';
+import { recentSubjectiveSignals } from '../services/activityFeedback';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -275,9 +273,9 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
                 padding: '1px 5px',
                 flexShrink: 0
               }}
-              title="Séance de renforcement indicative (non comptabilisée dans le plan de course)"
+              title={mainEv?.metadata?.isOptional ? 'Séance facultative : son absence ne compte pas comme un entraînement manqué' : mainEv?.metadata?.isRecommendedStrength ? 'Jour conseillé : déplaçable selon fatigue, douleurs et séances de course' : 'Séance de renforcement hors plan de course'}
             >
-              💪 Indicatif
+              💪 {mainEv?.metadata?.isOptional ? 'Facultative' : mainEv?.metadata?.isRecommendedStrength ? 'Conseillée' : 'Indicatif'}
             </span>
           )}
         </div>
@@ -680,10 +678,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   },
     [garminActivities, effectiveRefDate]);
 
-  const subjectiveTrend = useMemo(() => weeklySessionRpeTrend(garminActivities, effectiveRefDate),
-    [garminActivities, effectiveRefDate]);
-  const subjectiveTrendMax = Math.max(1, ...subjectiveTrend.map(week => week.totalLoad));
-
   const adaptiveStatus = useMemo(() => {
     return evaluateAdaptivePlanStatus(
       trainingLoad,
@@ -794,6 +788,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   const countCourse = currentWeekEvents.filter(e => e.category === 'course').length;
   const countMobility = currentWeekEvents.filter(e => e.category === 'mobility').length;
   const countAll = countSport + countCourse + countMobility;
+  const recommendedStrength = currentWeekEvents.filter(e => e.metadata?.isRecommendedStrength && !e.metadata?.isPostponedPlaceholder);
+  const coreStrength = recommendedStrength.filter(event => !event.metadata?.isOptional);
+  const completedStrength = coreStrength.filter(event => completedIds.has(event.id)).length;
 
   return (
     <div className="calendar-layout">
@@ -922,21 +919,28 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </div>
 
-      {subjectiveSignals.ratedSessions > 0 && <div style={{ padding: '8px 12px', marginBottom: 10, border: '1px solid var(--border-color)', borderRadius: 6, fontSize: '0.78rem' }}>
-        Ressenti sur 7 jours : {subjectiveSignals.ratedSessions} séance(s) notée(s), charge ressentie totale {subjectiveSignals.totalSessionRpeLoad} unités (durée × RPE). À lire avec le type de séance et votre tendance personnelle.
-      </div>}
-      {subjectiveTrend.some(week => week.ratedSessions > 0) && <div style={{ padding: '10px 12px', marginBottom: 10, border: '1px solid var(--border-color)', borderRadius: 6, fontSize: '0.78rem' }}>
-        <strong>Évolution du ressenti sur quatre semaines</strong>
-        <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
-          {subjectiveTrend.map((week, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 145px', alignItems: 'center', gap: 8 }}>
-            <span>{week.start.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}–{week.end.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}</span>
-            <div style={{ height: 8, background: 'var(--bg-surface-elevated)', borderRadius: 4 }}>
-              <div style={{ height: '100%', width: `${week.totalLoad / subjectiveTrendMax * 100}%`, background: 'var(--primary)', borderRadius: 4 }} />
-            </div>
-            <span>{week.totalLoad} unités · {week.ratedSessions}/{week.recordedSessions} notées</span>
-          </div>)}
-        </div>
-        <small>Comparer seulement les semaines dont les séances sont suffisamment notées ; le total ne mesure pas à lui seul la forme ni le risque de blessure.</small>
+      {recommendedStrength.length > 0 && (
+        <section className="weekly-strength-summary" aria-label="Renforcement de la semaine">
+          <div className="weekly-strength-heading">
+            <strong>Renforcement <span>{completedStrength}/{coreStrength.length} réalisés</span></strong>
+            <small>Jours conseillés, déplaçables depuis chaque séance. La 4e est facultative.</small>
+          </div>
+          <div className="weekly-strength-sessions">
+            {recommendedStrength.map(event => (
+              <button key={event.id} type="button" aria-label={`${event.title}, ${new Date(event.startDate).toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' })}`} onClick={() => { setSelectedEvent(event); setSelectedComparison(comparisons.find(c => c.plannedEvent?.id === event.id) || null); setSelectedUnifiedGroup(null); }}>
+                <span>{event.emoji} {event.id.endsWith('_upper') ? 'Haut du corps' : event.id.endsWith('_control') ? 'Tronc' : event.id.endsWith('_lower') ? 'Jambes' : 'Bonus'}</span>
+                <strong>{new Date(event.startDate).toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric' })}{completedIds.has(event.id) ? ' ✓' : ''}</strong>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {subjectiveSignals.ratedSessions > 0 && <div className="calendar-feedback-summary">
+        <span>Ressenti · 7 jours</span>
+        <strong>{subjectiveSignals.ratedSessions} séance{subjectiveSignals.ratedSessions > 1 ? 's' : ''} notée{subjectiveSignals.ratedSessions > 1 ? 's' : ''}</strong>
+        <span>{subjectiveSignals.totalSessionRpeLoad} unités de charge ressentie</span>
+        <small>Évolution détaillée dans Statistiques</small>
       </div>}
       {subjectiveSignals.repeatedLowFeeling && <div role="status" style={{ padding: '8px 12px', marginBottom: 10, border: '1px solid #f59e0b', borderRadius: 6, fontSize: '0.78rem' }}>
         Deux séances ou plus ont été notées « faible » cette semaine : réévaluez l'intensité prévue et votre récupération, même si le calendrier de la semaine est déjà figé.
@@ -987,58 +991,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <span>La semaine prochaine sera évaluée et figée à son début, avec la charge réellement accumulée d'ici là.</span>
         </div>
       ) : weeklyDecision ? (
-        <div
-          style={{
-            background: adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
-              ? 'rgba(239, 68, 68, 0.08)'
-              : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
-              ? 'rgba(245, 158, 11, 0.08)'
-              : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
-              ? 'rgba(56, 189, 248, 0.08)'
-              : 'rgba(16, 185, 129, 0.08)',
-            border: `1px solid ${
-              adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
-                ? 'rgba(239, 68, 68, 0.35)'
-                : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
-                ? 'rgba(245, 158, 11, 0.35)'
-                : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
-                ? 'rgba(56, 189, 248, 0.35)'
-                : 'rgba(16, 185, 129, 0.35)'
-            }`,
-            borderRadius: 'var(--radius-sm)',
-            padding: '10px 14px',
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '10px'
-          }}
-        >
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.8rem',
-            color: adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove
-              ? '#f87171'
-              : adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove
-              ? '#fbbf24'
-              : adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow
-              ? '#38bdf8'
-              : '#34d399',
-            flex: 1
-          }}>
-            {adaptiveStatus.trailAcwrRatio > ACWR_POLICY.moderateAbove ? (
-              <ShieldAlert size={16} color={adaptiveStatus.trailAcwrRatio > ACWR_POLICY.highAbove ? '#ef4444' : '#f59e0b'} />
-            ) : (
-              <ShieldCheck size={16} color={adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#38bdf8' : '#10b981'} />
-            )}
-            <div>
-              <strong>Plan de la semaine figé.</strong> Le score ACWR actuel est {adaptiveStatus.trailAcwrRatio} ; il peut évoluer avec les activités réalisées, sans modifier rétroactivement les séances décidées cette semaine.
-            </div>
-          </div>
-        </div>
+        <div className="calendar-plan-state"><ShieldCheck size={14} /> Séances de course décidées pour cette semaine · les ajustements manuels restent possibles</div>
       ) : adaptiveStatus.injuryRiskLevel === 'HIGH' && weeklyProjection.actions.length > 0 ? (
         <div
           style={{
@@ -1188,34 +1141,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             </button>
           )}
         </div>
-      ) : (
-        <div
-          style={{
-            background: adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? 'rgba(56, 189, 248, 0.05)' : 'rgba(16, 185, 129, 0.05)',
-            border: `1px solid ${adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? 'rgba(56, 189, 248, 0.22)' : 'rgba(16, 185, 129, 0.22)'}`,
-            borderRadius: 'var(--radius-sm)',
-            padding: '8px 12px',
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 6,
-            fontSize: '0.76rem',
-            color: adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#7dd3fc' : '#6ee7b7'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Activity size={14} color={adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#38bdf8' : '#10b981'} />
-            <span>
-              <strong>Variation de charge de course :</strong> ratio 7/28 jours à <strong>{adaptiveStatus.trailAcwrRatio}</strong>. Ce chiffre décrit la charge récente ; examinez aussi les sorties isolées, la récupération et les douleurs.
-            </span>
-          </div>
-          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-            Suivi descriptif
-          </span>
-        </div>
-      )}
+      ) : null}
 
       {/* Fonction commune de rendu des séances et événements d'un jour */}
 

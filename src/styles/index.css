@@ -1988,6 +1988,68 @@ body {
   }
 }
 
+/* Planning overview: keep the calendar visible before the detailed metrics. */
+.weekly-progress-summary { width: 100%; display: flex; align-items: center; gap: 18px; min-height: 48px; padding: 9px 14px; color: var(--text-primary); text-align: left; background: linear-gradient(90deg, rgba(56, 189, 248, 0.08), var(--bg-surface) 55%); border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; }
+.weekly-progress-summary:hover { border-color: var(--border-hover); }
+.weekly-progress-label { color: var(--text-secondary); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.weekly-progress-value { display: inline-flex; align-items: center; gap: 5px; color: #7dd3fc; font-size: 0.94rem; font-weight: 800; }
+.weekly-progress-value span { color: var(--text-secondary); font-size: 0.76rem; font-weight: 500; }
+.weekly-progress-elevation { color: var(--text-secondary); font-size: 0.76rem; }
+.weekly-progress-toggle { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--primary); font-size: 0.76rem; font-weight: 700; white-space: nowrap; }
+.weekly-strength-summary { display: flex; align-items: center; gap: 18px; padding: 10px 12px; border: 1px solid rgba(167, 139, 250, 0.28); border-radius: var(--radius-sm); background: rgba(167, 139, 250, 0.055); min-width: 0; }
+.weekly-strength-heading { min-width: 155px; display: grid; gap: 3px; }
+.weekly-strength-heading strong { font-size: 0.82rem; color: #e9d5ff; }
+.weekly-strength-heading strong span { color: var(--text-secondary); font-size: 0.74rem; font-weight: 600; }
+.weekly-strength-heading small { color: var(--text-muted); font-size: 0.68rem; line-height: 1.35; }
+.weekly-strength-sessions { display: flex; gap: 7px; min-width: 0; flex: 1; }
+.weekly-strength-sessions button { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 7px; padding: 8px 9px; border: 1px solid rgba(167, 139, 250, 0.2); border-radius: 7px; background: rgba(12, 17, 30, 0.6); color: var(--text-primary); cursor: pointer; text-align: left; font-size: 0.72rem; }
+.weekly-strength-sessions button:hover { border-color: #a78bfa; }
+.weekly-strength-sessions button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.weekly-strength-sessions button strong { color: #d8b4fe; flex-shrink: 0; font-size: 0.7rem; white-space: nowrap; }
+.calendar-feedback-summary, .calendar-plan-state { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 12px; padding: 6px 10px; border-radius: 6px; font-size: 0.72rem; }
+.calendar-feedback-summary { color: var(--text-secondary); border: 1px solid var(--border-color); }
+.calendar-feedback-summary strong { color: var(--text-primary); }
+.calendar-feedback-summary small { margin-left: auto; color: var(--text-muted); font-size: 0.68rem; }
+.calendar-plan-state { color: #a7f3d0; background: rgba(16, 185, 129, 0.055); border: 1px solid rgba(16, 185, 129, 0.22); }
+.subjective-trend-card { display: grid; gap: 12px; padding: 16px 18px; background: var(--bg-surface); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.subjective-trend-card h2 { margin: 0 0 3px; font-size: 0.98rem; }
+.subjective-trend-card p, .subjective-trend-card > small { margin: 0; color: var(--text-muted); font-size: 0.74rem; }
+.subjective-trend-rows { display: grid; gap: 8px; }
+.subjective-trend-row { display: grid; grid-template-columns: 115px minmax(0, 1fr) 165px; align-items: center; gap: 12px; font-size: 0.75rem; }
+.subjective-trend-row strong { font-size: 0.73rem; font-weight: 700; }
+.subjective-trend-row small { color: var(--text-muted); font-size: 0.69rem; font-weight: 500; }
+.subjective-trend-track { height: 8px; background: var(--bg-surface-elevated); border-radius: 99px; overflow: hidden; }
+.subjective-trend-track > div { height: 100%; background: var(--primary); border-radius: inherit; }
+.recommended-strength-detail { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid rgba(167, 139, 250, 0.3); border-radius: var(--radius-sm); background: rgba(167, 139, 250, 0.08); }
+.recommended-strength-detail strong { color: #e9d5ff; font-size: 0.88rem; }
+.recommended-strength-detail p { margin: 0; color: var(--text-secondary); font-size: 0.78rem; line-height: 1.5; white-space: pre-line; }
+.recommended-strength-detail button { justify-self: start; font-size: 0.75rem; }
+@media (max-width: 900px) {
+  .weekly-strength-summary { align-items: stretch; flex-direction: column; gap: 8px; }
+  .weekly-strength-heading { min-width: 0; }
+}
+@media (max-width: 768px) {
+  .weekly-progress-summary { min-height: 48px; gap: 7px; padding: 8px 10px; flex-wrap: wrap; }
+  .weekly-progress-label { display: none; }
+  .weekly-progress-value { font-size: 0.82rem; }
+  .weekly-progress-value span { font-size: 0.7rem; }
+  .weekly-progress-elevation { font-size: 0.7rem; }
+  .weekly-progress-toggle { font-size: 0.7rem; }
+  .fused-command-bar { display: flex; }
+  .calendar-toolbar-row { flex-wrap: wrap !important; }
+  .calendar-nav-group { flex: 1 1 auto; justify-content: space-between; }
+  .calendar-actions-group { margin-left: auto; }
+  .nav-arrow-btn, .view-mode-btn { min-width: 38px; min-height: 38px; }
+  .weekly-strength-sessions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .weekly-strength-sessions button { min-height: 40px; padding: 5px 8px; }
+  .weekly-strength-sessions button span { white-space: nowrap; }
+  .calendar-plan-state { display: none; }
+  .calendar-feedback-summary small { display: none; }
+  .subjective-trend-row { grid-template-columns: minmax(0, 1fr) auto; gap: 5px 10px; }
+  .subjective-trend-track { grid-column: 1 / -1; grid-row: 2; }
+  .subjective-trend-row strong { text-align: right; }
+}
+
 /* Stats Dashboard KPI Cards */
 .stats-kpi-card {
   background: var(--bg-surface);

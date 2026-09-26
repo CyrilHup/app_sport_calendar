@@ -13,7 +13,6 @@ import {
   Zap,
   User,
   Settings,
-  SlidersHorizontal,
   ShieldAlert
 } from 'lucide-react';
 import { PeriodizationContext } from '../types/calendar';
@@ -61,8 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
   const { profile } = useAuth();
   const athleteFcMax = profile?.fcMax || GLOBAL_APP_CONFIG.ATHLETE_FC_MAX || 203;
 
-  const [isHudOpenOnMobile, setIsHudOpenOnMobile] = useState<boolean>(false);
-  const [showWeeklyGauges, setShowWeeklyGauges] = useState<boolean>(true);
+  const [showWeeklyGauges, setShowWeeklyGauges] = useState<boolean>(false);
 
   const formattedSyncTime = lastSyncTime
     ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -154,20 +152,6 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right Side: Quick Actions */}
         <div className="header-actions">
-          {/* Toggle weekly metrics on desktop planning view */}
-          {currentTab === 'calendar' && (
-            <button
-              type="button"
-              className="action-icon-pill desktop-only"
-              onClick={() => setShowWeeklyGauges(!showWeeklyGauges)}
-              title={showWeeklyGauges ? 'Masquer le récapitulatif hebdomadaire' : 'Afficher le récapitulatif hebdomadaire'}
-              style={{ fontSize: '0.74rem' }}
-            >
-              <SlidersHorizontal size={13} />
-              <span>{showWeeklyGauges ? 'Masquer Objectifs' : 'Objectifs Hebdo'}</span>
-            </button>
-          )}
-
           {/* Quick Sync Button (Mobile & Desktop fallback) */}
           <button
             onClick={() => {
@@ -238,36 +222,24 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Mobile Streamlined Telemetry Progress Strip */}
-      <div
-        className="mobile-hud-summary"
-        onClick={() => setIsHudOpenOnMobile(!isHudOpenOnMobile)}
-        role="button"
-        tabIndex={0}
-        aria-label="Afficher la télémétrie"
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.73rem', overflow: 'hidden' }}>
-          <span style={{ color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-            S{periodContext.weekNumber}
-          </span>
-          <span style={{ color: 'var(--text-muted)' }}>•</span>
-          <span style={{ color: 'var(--accent-blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>
-            {formatHoursMin(weeklyStats.actualDurationMin)} / {formatHoursMin(weeklyStats.plannedDurationMin)}
-          </span>
-          <span style={{ color: 'var(--primary)', fontWeight: 700, whiteSpace: 'nowrap' }}>
-            +{weeklyStats.actualElevationM}m D+
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>
-          <span>{isHudOpenOnMobile ? 'Fermer' : 'Détails'}</span>
-          {isHudOpenOnMobile ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-        </div>
-      </div>
+      {currentTab === 'calendar' && (
+        <button
+          type="button"
+          className="weekly-progress-summary"
+          onClick={() => setShowWeeklyGauges(open => !open)}
+          aria-expanded={showWeeklyGauges}
+          aria-controls="weekly-objectives-details"
+        >
+          <span className="weekly-progress-label">Course · cette semaine</span>
+          <span className="weekly-progress-value"><Clock size={14} /> {formatHoursMin(weeklyStats.actualDurationMin)} <span>/ {formatHoursMin(weeklyStats.plannedDurationMin)} de course prévues</span></span>
+          <span className="weekly-progress-elevation">+{weeklyStats.actualElevationM} m D+</span>
+          <span className="weekly-progress-toggle">{showWeeklyGauges ? 'Masquer' : 'Objectifs'} {showWeeklyGauges ? <ChevronUp size={14} /> : <ChevronDown size={14} />}</span>
+        </button>
+      )}
 
       {/* Weekly Targets & Telemetry Panel (Shown on Calendar view or when mobile HUD is opened) */}
       {currentTab === 'calendar' && showWeeklyGauges && (
-        <div className={`fused-command-bar ${isHudOpenOnMobile ? 'mobile-open' : ''}`}>
+        <div id="weekly-objectives-details" className="fused-command-bar">
           {/* Header clearly explaining that these are WEEKLY targets */}
           <div className="command-bar-header">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

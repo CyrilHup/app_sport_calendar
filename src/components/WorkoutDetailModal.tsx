@@ -136,6 +136,15 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(effectiveEvent.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (!hasContent) return;
+    setTargetDateInput(defaultTomorrowStr);
+    setTargetTimeInput(`${defaultHours}:${defaultMins}`);
+    setReasonInput(effectiveEvent.metadata?.postponedReason || 'Déplacée / Reportée');
+    setIsPostponeExpanded(Boolean(effectiveEvent.metadata?.isPostponed));
+    setPostponeSuccessMsg(null);
+  }, [hasContent, effectiveEvent.id, effectiveEvent.startDate, effectiveEvent.metadata?.isPostponed, effectiveEvent.metadata?.postponedReason, defaultTomorrowStr, defaultHours, defaultMins]);
+
   const selectedWatch = 'FORERUNNER_55';
   const dynamicProfile = athleteProfile || getDynamicAthleteProfile(
     unifiedGroup?.items.flatMap(item => item.actualActivity ? [item.actualActivity] : [])
@@ -353,7 +362,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
                 {isMultiMerged && activeItemIndex === 'global'
                   ? unifiedGroup!.title
-                  : (isCalisthenics ? 'Entraînement Renfort (Indicatif)' : effectiveEvent.title)}
+                  : effectiveEvent.title}
               </h2>
               <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '3px 0 0 0' }}>
                 {isMultiMerged && activeItemIndex === 'global' ? (
@@ -665,8 +674,20 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             >
               <span style={{ fontSize: '1.2rem' }}>💪</span>
               <div>
-                <strong>Séance de renforcement indicative :</strong> Maintenue dans votre calendrier pour organiser vos semaines, mais non comptabilisée dans le volume de course ni dans les métriques de charge Banister.
+                <strong>{effectiveEvent.metadata?.isOptional ? 'Séance facultative' : effectiveEvent.metadata?.isRecommendedStrength ? 'Créneau conseillé' : 'Renforcement indicatif'} :</strong> ajuste le jour et le volume à ta récupération. Cette séance ne s’ajoute pas au volume de course.
               </div>
+            </div>
+          )}
+          {isCalisthenics && effectiveEvent.metadata?.isRecommendedStrength && (
+            <div className="recommended-strength-detail">
+              <strong>{effectiveEvent.sportType === 'GYM_FORCE' ? 'Jambes et mollets' : effectiveEvent.title}</strong>
+              <p>{effectiveEvent.description}</p>
+              {onPostpone && !effectiveComparison?.actualActivity && (
+                <button type="button" className="btn-secondary" onClick={() => {
+                  setIsPostponeExpanded(true);
+                  window.setTimeout(() => document.getElementById('postpone-controls')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+                }}>Changer le jour ou l’heure</button>
+              )}
             </div>
           )}
 
@@ -1024,7 +1045,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           )}
 
           {/* SÉANCE CALISTHÉNIE : Entraînement libre au poids du corps sans déroulé rigide */}
-          {isSport && isCalisthenics ? (
+          {isSport && isCalisthenics && !effectiveEvent.metadata?.isRecommendedStrength ? (
             <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff', marginBottom: 4 }}>
                 <Activity size={14} color="var(--primary)" />
@@ -1034,7 +1055,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 Séance libre au poids du corps ({actualDurationMinutes || effectiveEvent.durationMinutes} min) : pratique autonome selon vos sensations (tractions, dips, gainage, pompes), sans programme ni déroulé imposé.
               </div>
             </div>
-          ) : isSport && workoutPreview && workoutPreview.steps && workoutPreview.steps.length > 0 ? (
+          ) : isSport && !isCalisthenics && workoutPreview && workoutPreview.steps && workoutPreview.steps.length > 0 ? (
             <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.82rem', color: '#ffffff' }}>
@@ -1147,7 +1168,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 )}
               </div>
             </div>
-          ) : (
+          ) : effectiveEvent.metadata?.isRecommendedStrength ? null : (
             <div>
               <h4 style={{ fontFamily: 'var(--font-heading)', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '6px', textTransform: 'uppercase' }}>
                 Description & Consignes
@@ -1170,7 +1191,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
           {/* Section Reporter / Déplacer la séance (repliable discrète) */}
           {isSport && !effectiveEvent.metadata?.isPostponedPlaceholder && onPostpone && !effectiveComparison?.actualActivity && (
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '8px 12px' }}>
+            <div id="postpone-controls" style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-xs)', padding: '8px 12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <CalendarClock size={14} color="var(--text-muted)" />
