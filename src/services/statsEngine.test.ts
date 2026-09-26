@@ -542,9 +542,9 @@ describe('statsEngine unit tests', () => {
     expect(reportWithCalis.trainingLoad.calisthenicsAcuteLoad7d).toBe(320); // 110 + 115 + 95
     expect(reportWithCalis.trainingLoad.calisthenicsSessionsCount7d).toBe(3);
 
-    // Training load & CTL/ATL strictly evaluate running/trail; calisthenics is purely indicative and does NOT inflate training load
-    expect(reportWithCalis.trainingLoad.totalSystemicAcuteLoad7d).toBe(reportRunOnly.trainingLoad.totalSystemicAcuteLoad7d);
-    expect(reportWithCalis.trainingLoad.currentAtl).toBe(reportRunOnly.trainingLoad.currentAtl);
+    // Systemic load includes strength, while trail-specific mechanical load stays unchanged.
+    expect(reportWithCalis.trainingLoad.totalSystemicAcuteLoad7d).toBeGreaterThan(reportRunOnly.trainingLoad.totalSystemicAcuteLoad7d);
+    expect(reportWithCalis.trainingLoad.currentAtl).toBeGreaterThan(reportRunOnly.trainingLoad.currentAtl);
 
     // Global volume and session counts strictly center on running workouts
     expect(reportWithCalis.global.totalDurationMinutes).toBe(reportRunOnly.global.totalDurationMinutes);

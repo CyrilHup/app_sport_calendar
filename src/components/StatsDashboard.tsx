@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { CalendarEvent } from '../types/calendar';
-import { ActivityComparison, GarminActivity } from '../types/garmin';
+import { ActivityComparison, ActivityFeedback, GarminActivity } from '../types/garmin';
+import { ActivityFeedbackJournal } from './ActivityFeedbackJournal';
 import {
   computeFullStatsReport,
   formatMinutes,
@@ -45,6 +46,7 @@ interface StatsDashboardProps {
   allEvents: CalendarEvent[];
   referenceDate?: Date;
   config?: Readonly<AppConfig>;
+  onSaveActivityFeedback?: (activityId: string, feedback: ActivityFeedback) => void;
 }
 
 export const StatsDashboard: React.FC<StatsDashboardProps> = ({
@@ -52,7 +54,8 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
   comparisons,
   allEvents,
   referenceDate = new Date(),
-  config = GLOBAL_APP_CONFIG
+  config = GLOBAL_APP_CONFIG,
+  onSaveActivityFeedback
 }) => {
   // Timeline scope selector: 'plan' (default 1er sept.), '4w' (28j glissants), 'all' (historique complet)
   const [scope, setScope] = useState<TimeRangeScope>('plan');
@@ -85,13 +88,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
     { fcMax: athleteFcMax, fcRest: baselineRhr }
   );
 
-  const { global, running, strength, heartRate, heartRateZones, trainingLoad, trailSpecific, qmtPrediction } = report;
+  const { global, running, strength, heartRate, heartRateZones, trainingLoad, trailSpecific } = report;
 
   // Max minutes in a week for relative bar chart heights
   const maxWeeklyMinutes = Math.max(...global.weeklyTrend.map(w => w.totalMinutes), 360);
 
   return (
     <div className="stats-dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {onSaveActivityFeedback && <ActivityFeedbackJournal activities={garminActivities} onSave={onSaveActivityFeedback} />}
       {/* 1. Header Épuré avec Sélecteur de Timeline (Plan QMT / 4 semaines / Tout) */}
       <div
         style={{
@@ -1000,7 +1004,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               </button>
             </div>
             <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Ratio entre la charge aiguë d'impact Trail des 7 derniers jours ({trainingLoad.acuteLoad7d} TRIMP) et la tolérance chronique sur 28 jours ({trainingLoad.chronicLoad28dWeeklyAvg} TRIMP/sem).
+              Ratio entre {trainingLoad.acuteLoad7d} Km-Effort de course sur 7 jours et une moyenne hebdomadaire de {trainingLoad.chronicLoad28dWeeklyAvg} Km-Effort sur 28 jours. Ce ratio ne mesure pas directement votre tolérance ni votre risque de blessure.
             </p>
           </div>
 
@@ -1024,14 +1028,14 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
         {/* Distinction Charge Course vs Calisthénie sans impact */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', background: 'rgba(255,255,255,0.025)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.76rem' }}>
           <span style={{ color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-            <Activity size={14} /> <strong>Charge d'impact Trail (7j) :</strong> {trainingLoad.acuteLoad7d} TRIMP
+            <Activity size={14} /> <strong>Charge de course (7j) :</strong> {trainingLoad.acuteLoad7d} Km-Effort estimés
           </span>
           <span style={{ color: 'var(--border-color)' }}>|</span>
           <span style={{ color: '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-            <Dumbbell size={14} /> <strong>Calisthénie / Renfo (7j) :</strong> {trainingLoad.calisthenicsAcuteLoad7d} TRIMP ({trainingLoad.calisthenicsSessionsCount7d} séance{trainingLoad.calisthenicsSessionsCount7d > 1 ? 's' : ''})
+            <Dumbbell size={14} /> <strong>Calisthénie / Renfo (7j) :</strong> {trainingLoad.calisthenicsAcuteLoad7d} unités de charge estimée ({trainingLoad.calisthenicsSessionsCount7d} séance{trainingLoad.calisthenicsSessionsCount7d > 1 ? 's' : ''})
           </span>
           <span style={{ color: 'var(--accent-green)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <ShieldCheck size={14} /> Zéro onde de choc articulaire, exclue du risque de tendinopathie
+            <ShieldCheck size={14} /> Sollicitation différente de la course ; adapter aussi selon la fatigue et les douleurs.
           </span>
         </div>
 
@@ -1057,7 +1061,7 @@ export const StatsDashboard: React.FC<StatsDashboardProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                 <h4 style={{ fontSize: '0.94rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <TrendingUp size={16} color="var(--accent-blue)" />
-                  Dynamique de Charge Physiologique (Modèle Banister CTL / ATL / TSB)
+                  Tendance de charge estimée (CTL / ATL / TSB)
                 </h4>
                 <button
                   onClick={() => setInfoTopic('banister')}

@@ -21,7 +21,9 @@ import { DEFAULT_WEEKLY_TARGETS } from './services/trainingDefaults';
 import { isTrailOrRunning } from './services/activityClassifier';
 import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
-import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData, syncOverridesToCloud, fetchOverridesFromCloud, getSupabaseAccessToken } from './services/supabaseClient';
+import { syncActivitiesToCloud, fetchActivitiesFromCloud, syncActivityFeedbackToCloud, fetchActivityFeedbackFromCloud, syncWellnessToCloud, fetchWellnessFromCloud, syncPairsToCloud, fetchPairsFromCloud, fetchPublicSharedData, syncOverridesToCloud, fetchOverridesFromCloud, getSupabaseAccessToken } from './services/supabaseClient';
+import { sanitizeManualFeedback } from './services/activityFeedback';
+import { ActivityFeedback } from './types/garmin';
 import { saveWellnessData, loadWellnessHistory, getBaselineRestingHeartRate } from './services/readinessEngine';
 import { getApiUrl } from './services/apiConfig';
 import { getCalendarBuildWindow } from './services/calendarWindow';
@@ -246,6 +248,8 @@ export const App: React.FC = () => {
           if (appStateRef.current.garminActivities.length > 0) {
             await enqueueCloudMutation(domain, () => syncActivitiesToCloud(userId, appStateRef.current.garminActivities));
           }
+        } else if (domain === 'activityFeedback') {
+          await enqueueCloudMutation(domain, () => syncActivityFeedbackToCloud(userId, appStateRef.current.garminActivities));
         } else if (domain === 'manualPairs') {
           await enqueueCloudMutation(domain, () => syncPairsToCloud(
             userId,
@@ -382,11 +386,15 @@ export const App: React.FC = () => {
         }
 
         const localActs = loadStoredGarminActivities();
-        const cloudActs = await fetchActivitiesFromCloud(user.id);
+        const [cloudActs, cloudFeedback] = await Promise.all([
+          fetchActivitiesFromCloud(user.id), fetchActivityFeedbackFromCloud(user.id)
+        ]);
         if (cancelled) return;
         // The cloud snapshot is fetched after local hydration, so its defined
         // fields win while local-only metrics are preserved.
-        const mergedActs = mergeGarminActivities(localActs || [], cloudActs || []);
+        const knownActivityIds = new Set([...localActs, ...cloudActs].map(activity => activity.activityId));
+        const mergedActs = mergeGarminActivities(localActs || [], cloudActs || [],
+          cloudFeedback.filter(feedback => knownActivityIds.has(feedback.activityId)));
 
         if (mergedActs.length > 0) {
           appStateRef.current.garminActivities = mergedActs;
@@ -394,6 +402,7 @@ export const App: React.FC = () => {
           saveGarminActivities(mergedActs);
           // Push any merged activities that weren't yet on cloud
           await enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, mergedActs));
+          await enqueueCloudMutation('activityFeedback', () => syncActivityFeedbackToCloud(user.id, mergedActs));
         }
 
         // Synchronize wellness history (resting HR, HRV, sleep)
@@ -636,7 +645,9 @@ export const App: React.FC = () => {
       rawCourses,
       calendarWindow.startMonday,
       calendarWindow.daysCount,
-      refreshedConfig
+      refreshedConfig,
+      loadedActivities,
+      referenceDate
     );
     const freshBaseCalendar = { schedules: builtSchedules, allEvents: builtEvents };
     baseCalendarRef.current = freshBaseCalendar;
@@ -645,6 +656,7 @@ export const App: React.FC = () => {
     // Automatically persist fresh activities and wellness to Supabase cloud if authenticated
     if (!shareSlug && user?.id && loadedActivities.length > 0) {
       await enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, loadedActivities));
+      await enqueueCloudMutation('activityFeedback', () => syncActivityFeedbackToCloud(user.id, loadedActivities));
       try {
         const localWellness = Object.values(loadWellnessHistory());
         if (localWellness.length > 0) {
@@ -755,6 +767,21 @@ export const App: React.FC = () => {
     saveGarminActivities(mergedActivities);
     if (user?.id) {
       void enqueueCloudMutation('activities', () => syncActivitiesToCloud(user.id, mergedActivities));
+      void enqueueCloudMutation('activityFeedback', () => syncActivityFeedbackToCloud(user.id, mergedActivities));
+    }
+  };
+
+  const handleSaveActivityFeedback = (activityId: string, feedback: ActivityFeedback) => {
+    const updated = appStateRef.current.garminActivities.map(activity =>
+      activity.activityId === activityId
+        ? { ...activity, manualFeedback: sanitizeManualFeedback(feedback) }
+        : activity
+    );
+    appStateRef.current.garminActivities = updated;
+    setGarminActivities(updated);
+    saveGarminActivities(updated);
+    if (user?.id) {
+      void enqueueCloudMutation('activityFeedback', () => syncActivityFeedbackToCloud(user.id, updated));
     }
   };
 
@@ -1006,6 +1033,7 @@ export const App: React.FC = () => {
           comparisons={comparisons}
           garminActivities={garminActivities}
           athlete={athleteVitals}
+          onSaveActivityFeedback={!shareSlug ? handleSaveActivityFeedback : undefined}
           adaptiveOverrides={adaptiveOverrides}
           weeklyDecisions={weeklyDecisions}
           adaptivePlanReady={baseCalendar.schedules.length > 0 && !isRecharging && (!user?.id || hydratedAdaptiveUserId === user.id)}
@@ -1033,6 +1061,7 @@ export const App: React.FC = () => {
       {activeTab === 'stats' && (
         <StatsDashboard
           garminActivities={garminActivities}
+          onSaveActivityFeedback={!shareSlug ? handleSaveActivityFeedback : undefined}
           comparisons={comparisons}
           allEvents={allEvents}
           referenceDate={referenceDate}
@@ -1044,10 +1073,7 @@ export const App: React.FC = () => {
         <PeriodizationTab
           currentContext={currentPeriodContext}
           activities={garminActivities}
-          comparisons={comparisons}
-          events={allEvents}
           referenceDate={referenceDate}
-          fcMax={appConfig.ATHLETE_FC_MAX}
         />
       )}
       </React.Suspense>

@@ -1,5 +1,6 @@
 import { GarminActivity } from '../types/garmin.js';
 import { classifyGarminActivityType } from '../services/activityClassifier.js';
+import { extractGarminFeedback } from '../services/activityFeedback.js';
 
 const GENERIC_CARDIO_NAMES = new Set([
   'cardio', 'cardio training', 'indoor cardio', 'indoor_cardio', 'entraînement cardio'
@@ -66,6 +67,7 @@ export function normalizeGarminActivity(raw: unknown): GarminActivity | null {
       ? parseFloat(a.anaerobicTrainingEffect.toFixed(1)) : undefined,
     trainingLoad: a.activityTrainingLoad ? Math.round(a.activityTrainingLoad) : undefined,
     trainingEffectLabel: a.trainingEffectLabel ? String(a.trainingEffectLabel) : undefined,
+    garminFeedback: extractGarminFeedback(a),
     vo2MaxValue: typeof a.vO2MaxValue === 'number' ? Math.round(a.vO2MaxValue) : undefined,
     source: 'GARMIN_CONNECT'
   };

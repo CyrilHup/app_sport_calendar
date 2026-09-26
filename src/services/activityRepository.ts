@@ -34,9 +34,18 @@ export function normalizeActivityElevation(activity: GarminActivity): GarminActi
 }
 
 function mergeActivity(existing: GarminActivity, incoming: GarminActivity): GarminActivity {
+  const oldManual = existing.manualFeedback;
+  const newManual = incoming.manualFeedback;
+  const manualFeedback = !newManual ? oldManual : !oldManual ? newManual
+    : (Date.parse(newManual.updatedAt || '') || 0) >= (Date.parse(oldManual.updatedAt || '') || 0)
+      ? newManual : oldManual;
   return {
     ...nonEmptyFields(existing),
-    ...nonEmptyFields(incoming)
+    ...nonEmptyFields(incoming),
+    manualFeedback,
+    garminFeedback: existing.garminFeedback || incoming.garminFeedback
+      ? { ...existing.garminFeedback, ...incoming.garminFeedback }
+      : undefined
   } as GarminActivity;
 }
 

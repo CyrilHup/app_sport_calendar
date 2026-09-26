@@ -1,6 +1,8 @@
 import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { AppConfig, COLOR_MAP, GLOBAL_APP_CONFIG, getDailyWorkoutPlan, getPeriodizationContext } from './periodizationEngine';
 import { formatDateKey, addDays } from './dateUtils';
+import { GarminActivity } from '../types/garmin';
+import { recentRunBaseline, capLongRunToRecentHistory } from './trainingBaseline';
 
 export interface RawIcsEvent {
   uid: string;
@@ -172,9 +174,12 @@ export function buildCompleteCalendar(
   rawCourses: RawIcsEvent[],
   startDate: Date,
   daysCount: number = 60,
-  config: Readonly<AppConfig> = GLOBAL_APP_CONFIG
+  config: Readonly<AppConfig> = GLOBAL_APP_CONFIG,
+  recentActivities: GarminActivity[] = [],
+  asOfDate: Date = new Date()
 ): { schedules: DailySchedule[]; allEvents: CalendarEvent[] } {
   const GLOBAL_APP_CONFIG = config;
+  const baseline = recentRunBaseline(recentActivities, asOfDate);
   // Index courses by date key
   const coursesByDate = new Map<string, RawIcsEvent[]>();
   const courseMetadata = new Map<RawIcsEvent, ReturnType<typeof analyzeETSEvent>>();
@@ -253,6 +258,35 @@ export function buildCompleteCalendar(
       },
       config
     );
+
+    const inPrescriptionHorizon = currentDate.getTime() >= asOfDate.getTime() &&
+      currentDate.getTime() - asOfDate.getTime() <= 14 * 86400_000;
+    if (workoutTemplate.sportType === 'TRAIL_INTENSE' && baseline.runCount28d < 4 && inPrescriptionHorizon) {
+      workoutTemplate = {
+        ...workoutTemplate,
+        title: 'Endurance facile provisoire (historique incomplet)',
+        duration: Math.min(workoutTemplate.duration, 35),
+        sportType: 'RUN_EASY',
+        targetElevationM: 0,
+        targetHeartRate: 'Aisance respiratoire',
+        targetHeartRateRange: undefined,
+        description: 'Historique de course récent insuffisant pour prescrire des côtes intenses. Footing ou marche-course en aisance respiratoire, à réévaluer après synchronisation des séances.'
+      };
+    }
+    if (workoutTemplate.sportType === 'TRAIL_LONG' && inPrescriptionHorizon) {
+      const cappedMinutes = capLongRunToRecentHistory(workoutTemplate.duration, baseline);
+      if (cappedMinutes < workoutTemplate.duration) {
+        const originalMinutes = workoutTemplate.duration;
+        workoutTemplate = {
+          ...workoutTemplate,
+          title: `Sortie longue ajustée (${cappedMinutes} min)`,
+          duration: cappedMinutes,
+          targetElevationM: workoutTemplate.targetElevationM === undefined ? undefined
+            : Math.round(workoutTemplate.targetElevationM * cappedMinutes / originalMinutes),
+          description: `${workoutTemplate.description}\n• Durée provisoirement plafonnée à ${cappedMinutes} min ${baseline.longestRunMinutes30d ? `d'après la plus longue sortie enregistrée sur 30 jours (${baseline.longestRunMinutes30d} min)` : 'faute d’historique récent complet'}. Ce repère de progression est à ajuster avec vos sensations, vos douleurs et votre historique complet.`
+        };
+      }
+    }
 
     const dayEvents: CalendarEvent[] = [];
 
@@ -500,6 +534,7 @@ export function buildCompleteCalendar(
         colorHex: workoutTemplate.colorHex,
         durationMinutes: workoutTemplate.duration,
         metadata: {
+          isOptional: workoutTemplate.optional,
           targetHeartRate: workoutTemplate.targetHeartRate,
           targetHeartRateRange: workoutTemplate.targetHeartRateRange,
           targetCadence: workoutTemplate.targetCadence,

@@ -205,7 +205,7 @@ describe('Adaptive Plan Engine', () => {
 
     expect(status.injuryRiskLevel).toBe('SAFE');
     expect(status.recommendedActions.length).toBe(0);
-    expect(status.headline).toContain('Sweet Spot');
+    expect(status.headline).toContain('Charge de course suivie');
 
     const calibratingLoad = {
       ...safeTrainingLoad,
@@ -215,7 +215,7 @@ describe('Adaptive Plan Engine', () => {
     const calibratingStatus = evaluateAdaptivePlanStatus(calibratingLoad, mockBaseReadiness, mockWeeklySportEvents);
     expect(calibratingStatus.injuryRiskLevel).toBe('SAFE');
     expect(calibratingStatus.recommendedActions).toHaveLength(0);
-    expect(calibratingStatus.headline).toContain('Calibration');
+    expect(calibratingStatus.headline).toContain('insuffisant');
     expect(calibratingStatus.explanation).toContain('ne déclenche pas seul d\'adaptation');
 
     const fatigueDespiteCalibration = evaluateAdaptivePlanStatus({
@@ -223,7 +223,7 @@ describe('Adaptive Plan Engine', () => {
       currentTsb: -30
     }, mockBaseReadiness, mockWeeklySportEvents);
     expect(fatigueDespiteCalibration.injuryRiskLevel).toBe('HIGH');
-    expect(fatigueDespiteCalibration.explanation).toContain('TSB -30');
+    expect(fatigueDespiteCalibration.explanation).toContain('TSB estimé -30');
     expect(fatigueDespiteCalibration.explanation).not.toContain('ACWR 1.55 >');
 
     const lowReadiness = evaluateAdaptivePlanStatus(calibratingLoad, {
@@ -232,7 +232,7 @@ describe('Adaptive Plan Engine', () => {
       status: 'LOW'
     }, mockWeeklySportEvents);
     expect(lowReadiness.injuryRiskLevel).toBe('MODERATE');
-    expect(lowReadiness.explanation).toContain('score de récupération bas');
+    expect(lowReadiness.explanation).toContain('score de récupération est bas');
     expect(lowReadiness.explanation).not.toContain("l'ACWR (1.55");
   });
 
@@ -291,9 +291,9 @@ describe('Adaptive Plan Engine', () => {
       trailAcwrStatus: 'OPTIMAL'
     }, mockBaseReadiness, mockWeeklySportEvents);
     expect(fatigueOnly.injuryRiskLevel).toBe('HIGH');
-    expect(fatigueOnly.explanation).toContain('TSB -35');
+    expect(fatigueOnly.explanation).toContain('TSB estimé -35');
     expect(fatigueOnly.explanation).not.toContain('ACWR 1.1 >');
-    expect(fatigueOnly.recommendedActions[0].adaptedDescription).toContain('TSB -35');
+    expect(fatigueOnly.recommendedActions[0].adaptedDescription).toContain('TSB estimé -35');
   });
 
   it('applies and reverts adaptive modifications to schedules and events accurately', () => {
@@ -387,13 +387,16 @@ describe('Adaptive Plan Engine', () => {
 
     const status = evaluateAdaptivePlanStatus(underloadTrainingLoad, mockBaseReadiness, mockWeeklySportEvents);
 
-    expect(status.headline).toContain('Sous-charge');
-    expect(status.explanation).toContain('0.8');
-    // For ACWR < 0.6, heavy hill repeats are proactively smoothed to 1 set to prevent a sudden spike
-    const tueAction = status.recommendedActions.find(a => a.eventId === 'SPORT_TUE');
-    expect(tueAction).toBeDefined();
-    expect(tueAction?.adaptedDurationMinutes).toBe(40);
-    expect(tueAction?.adaptedTitle).toContain('Anti-pic');
+    expect(status.headline).toContain('sous la moyenne');
+    expect(status.recommendedActions).toHaveLength(0);
+
+    // A high ACWR alone is not an individual injury-risk diagnosis.
+    const spikeOnly = evaluateAdaptivePlanStatus({
+      ...underloadTrainingLoad,
+      trailAcwrRatio: 1.68,
+      trailAcwrStatus: 'DANGER_HIGH_RISK'
+    }, mockBaseReadiness, mockWeeklySportEvents);
+    expect(spikeOnly.recommendedActions).toHaveLength(0);
   });
 
   it('manages Auto-Adapt toggle state in storage', () => {

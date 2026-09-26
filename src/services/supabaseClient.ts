@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Capacitor } from '@capacitor/core';
 import { Preferences } from '@capacitor/preferences';
 import { GarminActivity, GarminWellnessData } from '../types/garmin';
+import { publicActivity } from './activityFeedback';
 
 const getEnv = (key: string): string => {
   return (import.meta as any).env?.[key] || (globalThis as any).process?.env?.[key] || '';
@@ -219,7 +220,8 @@ export async function syncActivitiesToCloud(userId: string, activities: GarminAc
       max_hr: act.maxHeartRate,
       avg_pace: act.avgPaceMinKm,
       calories: act.calories,
-      raw_payload: act,
+      // Spectators can SELECT this row when the profile is public.
+      raw_payload: publicActivity(act),
       updated_at: new Date().toISOString()
     }));
 
@@ -241,6 +243,47 @@ export async function syncActivitiesToCloud(userId: string, activities: GarminAc
     console.warn('Error syncing activities to Supabase:', err);
     return false;
   }
+}
+
+/** Subjective notes live in an owner-only RLS table, never in public activity rows. */
+export async function syncActivityFeedbackToCloud(userId: string, activities: GarminActivity[]): Promise<boolean> {
+  if (!isSupabaseConfigured() || !userId) return false;
+  const rows = activities.filter(a => a.garminFeedback || a.manualFeedback).map(a => ({
+    user_id: userId,
+    activity_id: a.activityId,
+    garmin_feedback: a.garminFeedback || null,
+    manual_feedback: a.manualFeedback || null,
+    updated_at: new Date().toISOString()
+  }));
+  if (!rows.length) return true;
+  try {
+    for (let i = 0; i < rows.length; i += 100) {
+      const { error } = await supabase.from('activity_feedback')
+        .upsert(rows.slice(i, i + 100), { onConflict: 'user_id,activity_id' });
+      if (error) { console.warn('Private activity feedback sync failed:', error); return false; }
+    }
+    return true;
+  } catch (error) { console.warn('Private activity feedback sync failed:', error); return false; }
+}
+
+export async function fetchActivityFeedbackFromCloud(userId: string): Promise<GarminActivity[]> {
+  if (!isSupabaseConfigured() || !userId) return [];
+  try {
+    const result: GarminActivity[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase.from('activity_feedback')
+        .select('activity_id,garmin_feedback,manual_feedback')
+        .eq('user_id', userId).order('activity_id').range(offset, offset + 999);
+      if (error) { console.warn('Private activity feedback fetch failed:', error); return result; }
+      result.push(...(data || []).map(row => ({
+        activityId: row.activity_id,
+        garminFeedback: row.garmin_feedback || undefined,
+        manualFeedback: row.manual_feedback || undefined
+      } as GarminActivity)));
+      if (!data || data.length < 1000) break;
+    }
+    return result;
+  } catch (error) { console.warn('Private activity feedback fetch failed:', error); return []; }
 }
 
 /** Fetch the complete activity history with deterministic pagination. */
@@ -601,7 +644,7 @@ export async function fetchPublicSharedData(slugOrUserId: string): Promise<{
         break;
       }
       const page = actData || [];
-      sharedActivities.push(...page.map(row => row.raw_payload as GarminActivity).filter(Boolean));
+      sharedActivities.push(...page.map(row => row.raw_payload as GarminActivity).filter(Boolean).map(publicActivity));
       if (page.length < pageSize) break;
     }
 

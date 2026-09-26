@@ -376,7 +376,7 @@ export const StatsEvolutionModal: React.FC<StatsEvolutionModalProps> = ({
         ic = <Footprints size={20} color="var(--accent-green)" />;
         u = "sec/km";
         invBetter = true;
-        adv = "L'amélioration de l'allure en Zone 2 est le baromètre suprême de votre développement mitochondrial. Courir de plus en plus vite à basse FC vous garantit de boucler 80 km sans épuiser vos réserves de glycogène.";
+        adv = "Une allure plus rapide à fréquence cardiaque comparable peut suggérer une amélioration de l'endurance. Comparez des séances de terrain, durée, météo et fatigue similaires ; cette courbe ne prédit pas à elle seule votre performance sur 80 km.";
 
         const z2Acts = filteredActivities.filter(a => {
           if (a.activityType !== 'RUNNING' && a.activityType !== 'TRAIL_RUNNING') return false;

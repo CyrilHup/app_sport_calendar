@@ -1,6 +1,6 @@
 import { MAX_FULL_SYNC_ACTIVITIES } from './garminPagination.js';
 
-export type GarminAction = 'sync' | 'push-workout' | 'cancel-workout' | 'get-wellness';
+export type GarminAction = 'sync' | 'push-workout' | 'cancel-workout' | 'get-wellness' | 'get-activity-feedback';
 export type GarminSyncMode = 'full' | 'incremental';
 
 export interface ValidatedGarminRequest {
@@ -11,6 +11,7 @@ export interface ValidatedGarminRequest {
   clientDate?: string;
   limit: number;
   offset: number;
+  activityIds?: string[];
   workout?: {
     title: string;
     scheduledDate: string;
@@ -29,7 +30,7 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
   }
   const body = input as Record<string, unknown>;
   const action = body.action ?? 'sync';
-  if (action !== 'sync' && action !== 'push-workout' && action !== 'cancel-workout' && action !== 'get-wellness') {
+  if (action !== 'sync' && action !== 'push-workout' && action !== 'cancel-workout' && action !== 'get-wellness' && action !== 'get-activity-feedback') {
     throw new Error('Action Garmin non reconnue.');
   }
   const syncMode = body.syncMode ?? body.mode ?? 'incremental';
@@ -52,6 +53,14 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
     throw new Error('Position de pagination Garmin invalide.');
   }
   const offset = typeof body.offset === 'number' ? body.offset : 0;
+
+  if (action === 'get-activity-feedback') {
+    if (!Array.isArray(body.activityIds) || body.activityIds.length < 1 || body.activityIds.length > 5 ||
+      body.activityIds.some(id => typeof id !== 'string' || !/^[1-9]\d{0,19}$/.test(id))) {
+      throw new Error('Identifiants d’activités Garmin invalides.');
+    }
+    return { email, password, action, syncMode, clientDate, limit, offset, activityIds: body.activityIds as string[] };
+  }
 
   if (action === 'cancel-workout') {
     const cancellation = body.cancellation;

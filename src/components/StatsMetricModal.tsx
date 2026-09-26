@@ -396,24 +396,24 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(16, 185, 129, 0.1)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #10b981' }}>
                     <strong style={{ color: '#10b981', minWidth: '85px' }}>{ACWR_POLICY.underloadBelow} – {ACWR_POLICY.moderateAbove}</strong>
                     <div>
-                      <strong style={{ color: '#ffffff' }}>Sweet Spot (Zone Optimale) : </strong>
-                      Plage de référence utilisée par les règles de l’application, sans garantie de sécurité individuelle.
+                      <strong style={{ color: '#ffffff' }}>Variation modérée : </strong>
+                      Plage descriptive du ratio par rapport à la moyenne récente ; aucun seuil individuel de sécurité n'est établi.
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(245, 158, 11, 0.1)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #f59e0b' }}>
                     <strong style={{ color: '#f59e0b', minWidth: '85px' }}>{ACWR_POLICY.moderateAbove} – {ACWR_POLICY.highAbove}</strong>
                     <div>
-                      <strong style={{ color: '#ffffff' }}>Surcharge Modérée : </strong>
-                      Progression rapide mais vigilance requise. Veillez au sommeil et à l'hydratation, surveillez les raideurs au réveil.
+                      <strong style={{ color: '#ffffff' }}>Charge récente plus élevée : </strong>
+                      Examiner les séances isolées, le sommeil, les douleurs et la récupération avant d'interpréter cette variation.
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', background: 'rgba(239, 68, 68, 0.1)', padding: '10px 12px', borderRadius: '8px', borderLeft: '3px solid #ef4444' }}>
                     <strong style={{ color: '#ef4444', minWidth: '85px' }}>&gt; {ACWR_POLICY.highAbove}</strong>
                     <div>
-                      <strong style={{ color: '#ffffff' }}>Zone de Danger : </strong>
-                      Hausse de charge récente relativement à la moyenne. Ce seuil déclenche une proposition d’adaptation, pas un diagnostic médical.
+                      <strong style={{ color: '#ffffff' }}>Variation élevée : </strong>
+                      Hausse de charge récente relativement à la moyenne. Ce seuil descriptif ne déclenche pas seul une adaptation et ne prédit pas une blessure.
                     </div>
                   </div>
                 </div>
@@ -436,7 +436,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                   <Info size={16} /> Le Modèle Impulsion-Réponse du Dr Eric Banister
                 </div>
                 <p style={{ margin: 0, color: 'var(--text-primary)' }}>
-                  Chaque entraînement produit simultanément deux effets physiologiques opposés : il <strong>développe votre condition physique</strong> (Fitness) mais <strong>génère de la fatigue</strong> (Fatigue). Votre forme réelle est la différence entre les deux.
+                  Ce modèle représente la charge récente et la charge de fond par deux moyennes pondérées. Leur différence peut aider à suivre les variations d'entraînement ; elle ne mesure pas directement votre forme physiologique.
                 </p>
               </div>
 
@@ -605,17 +605,17 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', borderRadius: '10px', padding: '14px 16px', border: '1px solid var(--border-color)' }}>
                 <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <TrendingDown size={16} color="var(--accent-green)" />
-                  Pourquoi une FC en baisse est une victoire majeure ?
+                  Comment lire une FC moyenne en baisse ?
                 </div>
                 <p style={{ margin: '0 0 8px 0' }}>
-                  Lorsque vous observez que votre FC moyenne diminue sur des allures similaires, cela prouve deux adaptations physiologiques majeures :
+                  À allure et conditions comparables, une FC moyenne plus basse peut accompagner une amélioration de l'endurance. Elle peut aussi varier avec la température, le sommeil, la fatigue, le terrain et la mesure du capteur. Cette seule courbe ne permet pas de conclure à :
                 </p>
                 <ol style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <li>
-                    <strong>Hypertrophie du ventricule gauche :</strong> Votre cœur éjecte plus de sang à chaque battement (volume d'éjection systolique accru).
+                    une modification mesurée du volume d'éjection du cœur ;
                   </li>
                   <li>
-                    <strong>Densité mitochondriale accrue :</strong> Vos fibres musculaires utilisent les lipides avec une économie d'oxygène accrue, économisant vos réserves de glycogène pour les 77 km du QMT.
+                    une modification mesurée des mitochondries ou des réserves de glycogène pour le QMT.
                   </li>
                 </ol>
               </div>
@@ -627,7 +627,7 @@ export const StatsMetricModal: React.FC<StatsMetricModalProps> = ({ topic, onClo
                   Le rôle clé de la Zone 2 (&lt; {heartRateZones.zone2[1]} bpm)
                 </div>
                 <p style={{ margin: 0 }}>
-                  Consacrer au moins <strong>75% à 80%</strong> de vos kilomètres de course en Zone 2 d'endurance fondamentale est le seul moyen de maximiser l'AEI sans épuiser le système nerveux central.
+                  La majorité des séances d'endurance peut rester confortable pour soutenir le volume toléré. La répartition exacte des intensités dépend de l'historique, de la récupération et de la phase ; aucun pourcentage unique ne garantit la meilleure progression individuelle.
                 </p>
               </div>
             </>

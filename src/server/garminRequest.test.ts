@@ -46,4 +46,13 @@ describe('validateGarminRequest', () => {
       scheduledDate: '2026-09-24', workoutId: 'unknown'
     } })).toThrow('identifiant exact');
   });
+
+  it('bounds subjective-detail reads to five exact activity IDs', () => {
+    expect(validateGarminRequest({ action: 'get-activity-feedback', activityIds: ['123', '456'] }).activityIds)
+      .toEqual(['123', '456']);
+    expect(() => validateGarminRequest({ action: 'get-activity-feedback', activityIds: ['../../secrets'] }))
+      .toThrow('Identifiants');
+    expect(() => validateGarminRequest({ action: 'get-activity-feedback', activityIds: Array(6).fill('123') }))
+      .toThrow('Identifiants');
+  });
 });

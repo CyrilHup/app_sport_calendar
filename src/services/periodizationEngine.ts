@@ -248,6 +248,7 @@ export function getPeriodizationContext(
 
 export interface WorkoutTemplate {
   title: string;
+  optional?: boolean;
   duration: number; // minutes
   locName: string;
   address: string | null;
@@ -278,7 +279,6 @@ export function getDailyWorkoutPlan(
 ): WorkoutTemplate {
   const GLOBAL_APP_CONFIG = config;
   const isDeload = ctx.isDeload;
-  const setsNote = isDeload ? "(Deload: 2 maintenance sets, 0 failure)" : "(Build: 4 working sets)";
   const month = date.getMonth();
   const isWinter = (month === 0 || month === 1 || month === 2);
   const heartRateZones = calculateHeartRateZones(config.ATHLETE_FC_MAX, config.ATHLETE_FC_REST);
@@ -322,45 +322,48 @@ export function getDailyWorkoutPlan(
   else if (ctx.phase === "VOLUME_WEC_1" || ctx.phase === "SPECIFIQUE_PIC") elevationFactor = 5.5;
 
   const targetElevationSaturday = Math.round(durationSaturdayLong * elevationFactor);
-  const renfoTuesdayMin = ctx.phase === "FONDATION_RAMP_1" ? 15 : 20;
+
+  // Strength has a weekly target, not an automatically reserved weekday. The
+  // athlete places those sessions around classes, symptoms and key run days.
+  const flexibleStrengthDay: WorkoutTemplate = {
+    title: "Renforcement flexible (créneau à choisir)",
+    duration: 0,
+    locName: "Lieu au choix",
+    address: null,
+    chainedAfterCourse: false,
+    sportType: "MOBILITY",
+    emoji: "🧘",
+    colorHex: COLOR_MAP.MOBILITY.colorHex,
+    colorId: COLOR_MAP.MOBILITY.colorId,
+    description: "Objectif hebdomadaire : 3 séances de renforcement, une 4e facultative selon la récupération. Choisir les jours et consigner les séances réalisées.",
+  };
 
   switch (dayOfWeek) {
-    case 0: // Monday
-      return {
-        title: "Entraînement Calisthénie",
-        duration: isDeload ? 45 : 65,
-        locName: "ÉTS Gym",
-        address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
-        chainedAfterCourse: false,
-        sportType: "CALISTHENICS",
-        emoji: COLOR_MAP.CALISTHENICS.emoji,
-        colorHex: COLOR_MAP.CALISTHENICS.colorHex,
-        colorId: COLOR_MAP.CALISTHENICS.colorId,
-        description: "Séance libre au poids du corps et renforcement musculaire.",
-        targetHeartRate: "Zone 1-2 (Récupération neuromusculaire)"
-      };
+    case 0: // Monday: no fixed strength appointment
+      return flexibleStrengthDay;
 
-    case 1: // Tuesday (Hills D+ & Leg Strengthening)
+    case 1: // Tuesday (Hills D+)
       if (isWinter) {
         return {
           title: "Winter Indoor Trail: Incline Treadmill D+ (ÉTS Gym)",
-          duration: durationTuesday + renfoTuesdayMin,
-          locName: "ÉTS Gym (Treadmill D+ & Weight Room)",
+          duration: durationTuesday,
+          locName: "ÉTS Gym (Treadmill D+)",
           address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
           chainedAfterCourse: false,
           sportType: "TRAIL_INTENSE",
           emoji: COLOR_MAP.TRAIL_INTENSE.emoji,
           colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
           colorId: COLOR_MAP.TRAIL_INTENSE.colorId,
-          description: `❄️ WINTER SAFETY (Incline treadmill):\n• 15' flat warm-up\n• Hill intervals 12-15% incline (5.5 - 6.5 km/h) — Target HR: ${hillRange[0]}-${hillRange[1]} bpm (Zone 4/5)\n• Post-hill leg strength (${renfoTuesdayMin} min):\n  - Tempo squats (3s descent): ${isDeload ? '2x8' : '4x8'}\n  - Bulgarian split squats: ${isDeload ? '2x8' : '3x10'}\n  - Unilateral calf raises: ${isDeload ? '2x12' : '4x15'}`,
+          description: `• Tapis incliné : 15 min d'échauffement progressif, puis répétitions en pente selon l'aisance et la technique ; retour au calme.\n• Ajuster pente et vitesse à l'effort perçu, sans imposer une vitesse ou une FC absolue.\n• Le renforcement des jambes est une séance flexible distincte, à placer selon la récupération.`,
           targetHeartRate: "Effort tonique en côte (Zone 4/5)",
           targetHeartRateRange: hillRange,
-          targetElevationM: 400
+          // Indoor elevation depends on actual speed and incline; do not invent it.
+          targetElevationM: undefined
         };
       }
       return {
-        title: "Trail: Hill Repeats D+ (Mont-Royal) + Leg Strength",
-        duration: durationTuesday + renfoTuesdayMin,
+        title: "Trail: Hill Repeats D+ (Mont-Royal)",
+        duration: durationTuesday,
         locName: "Mont Royal",
         address: GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
         chainedAfterCourse: false,
@@ -368,26 +371,14 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.TRAIL_INTENSE.emoji,
         colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
         colorId: COLOR_MAP.TRAIL_INTENSE.colorId,
-        description: `• 15' warm-up + ${isDeload ? '1 set of 5x 1\' hill' : '2 sets of (5x 1\' hill, easy jog descent)'} + 10' cool-down.\n• Uphill target: HR ${hillRange[0]}-${hillRange[1]} bpm (Zone 4/5).\n• Post-hill leg strength (${renfoTuesdayMin} min): Bulgarian split squats, tempo squats and calf raises for eccentric quad resistance.`,
+        description: `• 15 min d'échauffement + ${isDeload ? '1 série de 5 × 1 min en côte' : 'jusqu’à 2 séries de 5 × 1 min en côte'} avec récupérations faciles + 10 min de retour au calme.\n• Effort contrôlé ; réduire la séance si la récupération ou la technique se dégrade.\n• Le renforcement des jambes reste une séance flexible distincte.`,
         targetHeartRate: "Effort tonique en côte (Zone 4/5)",
         targetHeartRateRange: hillRange,
         targetElevationM: 380
       };
 
-    case 2: // Wednesday
-      return {
-        title: "Entraînement Calisthénie",
-        duration: isDeload ? 45 : 65,
-        locName: "ÉTS Gym",
-        address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
-        chainedAfterCourse: false,
-        sportType: "GYM_FORCE",
-        emoji: COLOR_MAP.GYM_FORCE.emoji,
-        colorHex: COLOR_MAP.GYM_FORCE.colorHex,
-        colorId: COLOR_MAP.GYM_FORCE.colorId,
-        description: "Séance libre au poids du corps et renforcement musculaire.",
-        targetHeartRate: "Zone 1-2 (Force & Gainage)"
-      };
+    case 2: // Wednesday: no fixed strength appointment
+      return flexibleStrengthDay;
 
     case 3: // Thursday (Easy Aerobic Base Run)
       return {
@@ -400,42 +391,14 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.RUN_EASY.emoji,
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
         colorId: COLOR_MAP.RUN_EASY.colorId,
-        description: `• ${durationThursday} min strictement en allure aérobie fondamentale (Zone 2).\n• Cible Cardio : FC en aisance aérobie (Zone 2 personnalisée).\n• Consigne biomécanique : Cadence haute (170-175 spm) avec foulée courte et légère.`,
+        description: `• ${durationThursday} min en aisance respiratoire ; ralentir ou alterner marche et course si nécessaire.\n• Option tapis à pente faible si les conditions extérieures sont défavorables.\n• Le vélo facile peut remplacer ponctuellement ce footing pour varier la contrainte mécanique, sans équivalence garantie avec la course.`,
         targetHeartRate: "Endurance fondamentale (Zone 2)",
         targetHeartRateRange: easyRange,
-        targetCadence: "170 - 175 spm"
+        targetCadence: undefined
       };
 
-    case 4: // Friday
-      if (hasChainedClass) {
-        return {
-          title: "Entraînement Calisthénie",
-          duration: 45,
-          locName: "ÉTS Gym",
-          address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
-          chainedAfterCourse: true,
-          sportType: "CALISTHENICS",
-          emoji: COLOR_MAP.CALISTHENICS.emoji,
-          colorHex: COLOR_MAP.CALISTHENICS.colorHex,
-          colorId: COLOR_MAP.CALISTHENICS.colorId,
-          description: "Séance libre au poids du corps et renforcement musculaire.",
-          targetHeartRate: "Zone 1-2 (Mobilité & Technique)"
-        };
-      }
-      const isHomeFriday = Boolean(options?.hasOnlineClass && !options?.hasPresentialClass);
-      return {
-        title: "Entraînement Calisthénie",
-        duration: isDeload ? 45 : 65,
-        locName: isHomeFriday ? "Appartement / Dips & Barre" : "ÉTS Gym",
-        address: isHomeFriday ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.ETS_ADDRESS,
-        chainedAfterCourse: false,
-        sportType: "CALISTHENICS",
-        emoji: COLOR_MAP.CALISTHENICS.emoji,
-        colorHex: COLOR_MAP.CALISTHENICS.colorHex,
-        colorId: COLOR_MAP.CALISTHENICS.colorId,
-        description: `Séance calisthénie complète (haut du corps, gainage & stabilité lombaire). ${setsNote}`,
-        targetHeartRate: "Zone 1-2 (Force & Gainage)"
-      };
+    case 4: // Friday: no fixed strength appointment
+      return flexibleStrengthDay;
 
     case 5: // Saturday (Long Run D+)
       if (saturdayHasIntensiveClass) {
@@ -469,7 +432,7 @@ export function getDailyWorkoutPlan(
         };
       }
       return {
-        title: `Trail: Rando-Course D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
+        title: `${isWinter ? 'Sortie longue hivernale' : 'Trail: Rando-Course D+'} (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
         duration: durationSaturdayLong,
         locName: isWinter ? "Maisonneuve Park / Plowed Paths" : "Mont Royal",
         address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
@@ -478,11 +441,13 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.TRAIL_LONG.emoji,
         colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
         colorId: COLOR_MAP.TRAIL_LONG.colorId,
-        description: `• Rando-Course Ultra-Trail QMT-80 : alternance marche active en côte et foulée souple.\n• Règle d'or : Dès que la pente raidit (> 7-8%), passer impérativement en marche active (power-hike avec mains sur les cuisses ou bâtons) pour maintenir l'effort en Zone 2.\n• Relance immédiate en course souple sur le plat, faux-plat et descentes.\n• Cible Cardio : Zone 2 Rando-Course (~${easyRange[0]}-${easyRange[1]} bpm).\n• Nutrition : 40-50g glucides/h + 500 mL eau avec électrolytes/h.`,
+        description: isWinter
+          ? `• Sortie longue facile sur parcours déneigé et non glissant ; adapter l'effort aux conditions réelles.\n• Maintenir une aisance respiratoire et vérifier l'état des appuis.\n• Tester l'alimentation et la boisson selon la durée, la température et la tolérance personnelle.`
+          : `• Rando-course QMT : alterner marche active en montée et course souple quand l'appui le permet.\n• Descendre de façon contrôlée ; réduire le dénivelé si courbatures ou technique dégradée.\n• Cible : endurance confortable (zone 2 indicative).\n• Tester l'alimentation et l'hydratation en conditions proches de la course selon la tolérance individuelle.`,
         targetHeartRate: "Zone 2 Rando-Course",
         targetHeartRateRange: easyRange,
-        targetElevationM: targetElevationSaturday,
-        nutritionAdvice: "40-50g glucides/h + 500 mL water with electrolytes/h"
+        targetElevationM: isWinter ? 0 : targetElevationSaturday,
+        nutritionAdvice: "Tester progressivement glucides et hydratation selon durée, chaleur et tolérance"
       };
 
     case 6: // Sunday (Back-to-Back or Rest W1)
@@ -503,7 +468,7 @@ export function getDailyWorkoutPlan(
       }
       if (saturdayHasIntensiveClass) {
         return {
-          title: `Trail: Rando-Course D+ (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
+          title: `${isWinter ? 'Sortie longue hivernale reportée' : 'Trail: Rando-Course D+ reportée'} (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
           duration: durationSaturdayLong,
           locName: isWinter ? "Maisonneuve Park / Plowed Paths" : "Mont Royal",
           address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
@@ -512,15 +477,17 @@ export function getDailyWorkoutPlan(
           emoji: COLOR_MAP.TRAIL_LONG.emoji,
           colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
           colorId: COLOR_MAP.TRAIL_LONG.colorId,
-          description: `• Rando-Course décalée au dimanche suite aux cours intensifs du samedi.\n• Règle d'or : Power-hike actif en montée dès > 7% de pente pour bloquer les pulses en Zone 2.\n• Cible Cardio : Zone 2 Rando-Course (~${easyRange[0]}-${easyRange[1]} bpm) + nutrition 40-50g glucides/h.`,
+          description: `• Sortie longue décalée au dimanche suite aux cours intensifs du samedi.\n• ${isWinter ? 'Choisir un parcours déneigé, stable et facile.' : 'Marcher activement en montée et maîtriser les descentes.'}\n• Garder une aisance respiratoire et tester l'alimentation selon la tolérance.`,
           targetHeartRate: "Zone 2 Rando-Course",
           targetHeartRateRange: easyRange,
-          targetElevationM: targetElevationSaturday,
-          nutritionAdvice: "40-50g glucides/h + 500 mL electrolytes/h"
+          targetElevationM: isWinter ? 0 : targetElevationSaturday,
+          nutritionAdvice: "Tester progressivement glucides et hydratation selon les conditions"
         };
       }
+      const optionalSunday = true;
       return {
-        title: `Trail: Fatigued / Rolling Run (${durationSunday} min)`,
+        title: `${optionalSunday ? 'Optionnel : ' : ''}Trail: Fatigued / Rolling Run (${durationSunday} min)`,
+        optional: optionalSunday,
         duration: durationSunday,
         locName: isWinter ? "Neighborhood" : "Mont Royal / Neighborhood",
         address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
@@ -529,11 +496,11 @@ export function getDailyWorkoutPlan(
         emoji: COLOR_MAP.RUN_EASY.emoji,
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
         colorId: COLOR_MAP.RUN_EASY.colorId,
-        description: `• ${durationSunday} min d'endurance aérobie sur fatigue de la veille (effet back-to-back sur sentiers vallonnés).\n• Cible Cardio : Zone 2 personnalisée en aisance respiratoire complète.\n• Cadence dynamique : 170-175 spm.`,
+        description: `• ${durationSunday} min d'endurance facile. ${optionalSunday ? 'Séance facultative : à omettre si la récupération, la douleur ou le temps disponible ne le permet pas.' : 'Deuxième sortie de week-end spécifique, à revoir selon récupération.'}\n• Cible cardio : aisance respiratoire complète.`,
         targetHeartRate: "Endurance fondamentale (Zone 2)",
         targetHeartRateRange: easyRange,
         targetElevationM: Math.round(durationSunday * 2.5),
-        targetCadence: "170 - 175 spm"
+        targetCadence: undefined
       };
 
     default:

@@ -23,10 +23,10 @@ describe('shared athlete heart-rate zones', () => {
     const long = getDailyWorkoutPlan(5, false, false, context, date, undefined, config);
 
     expect(hill.targetHeartRateRange).toEqual([zones.zone4[0], zones.zone5[0]]);
-    expect(hill.description).toContain(`${zones.zone4[0]}-${zones.zone5[0]} bpm`);
+    expect(hill.description).toContain('effort perçu');
     expect(easy.targetHeartRateRange).toEqual(zones.zone2);
     expect(long.targetHeartRateRange).toEqual(zones.zone2);
-    expect(long.description).toContain(`${zones.zone2[0]}-${zones.zone2[1]} bpm`);
+    expect(long.description).toContain('aisance respiratoire');
   });
 
   it('counts race week by calendar date, including midday on race day', () => {

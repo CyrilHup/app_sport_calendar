@@ -4,6 +4,7 @@ import { ReadinessEvaluation } from './readinessEngine';
 import { computeTrainingLoadStats } from './loadEngine';
 import { evaluateAdaptivePlanStatus } from './adaptivePlanEngine';
 import { addDays, formatDateKey, parseLocalDate, toLocalDateKey } from './dateUtils';
+import { recentSubjectiveSignals } from './activityFeedback';
 
 type ProjectedActivity = {
   date: string;
@@ -53,7 +54,7 @@ export function projectWeeklyAdaptivePlan(
 ): { actions: AdaptiveWorkoutAction[]; projectedRatios: Record<string, number> } {
   const weekEnd = formatDateKey(addDays(parseLocalDate(weekStart), 6));
   const future = events
-    .filter(event => event.category === 'sport' && !event.metadata?.isPostponedPlaceholder)
+    .filter(event => event.category === 'sport' && !event.metadata?.isPostponedPlaceholder && !event.metadata?.isOptional)
     .filter(event => {
       const date = toLocalDateKey(event.startDate);
       return date >= weekStart && date <= weekEnd && new Date(event.startDate).getTime() > now.getTime()
@@ -65,12 +66,13 @@ export function projectWeeklyAdaptivePlan(
   const projected: ProjectedActivity[] = [];
   const actions: AdaptiveWorkoutAction[] = [];
   const projectedRatios: Record<string, number> = {};
+  const repeatedLowFeeling = recentSubjectiveSignals(activities, now).repeatedLowFeeling;
   for (const event of future) {
     const candidate = projectedActivity(event);
     const eventDate = parseLocalDate(candidate.date);
     const load = computeTrainingLoadStats([...activities, ...projected, candidate], eventDate, 60, athlete);
     projectedRatios[event.id] = load.trailAcwrRatio;
-    const action = evaluateAdaptivePlanStatus(load, readiness, [event], {}, now).recommendedActions[0];
+    const action = evaluateAdaptivePlanStatus(load, readiness, [event], {}, now, new Set(), repeatedLowFeeling).recommendedActions[0];
     if (action) actions.push(action);
     projected.push(projectedActivity(event, action));
   }

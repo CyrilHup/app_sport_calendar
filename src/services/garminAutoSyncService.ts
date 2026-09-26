@@ -138,6 +138,7 @@ export function filterCurrentWeekSportWorkouts(
   return events.filter(ev => {
     if (ev.category !== 'sport') return false;
     if (ev.metadata?.isPostponedPlaceholder) return false;
+    if (ev.metadata?.isOptional) return false;
     // A zero-minute adaptive REST is a calendar instruction, not a watch workout.
     if (!isValidGarminWorkoutDuration(ev.durationMinutes)) return false;
     const evDate = toLocalDateKey(ev.startDate);

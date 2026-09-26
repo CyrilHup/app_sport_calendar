@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { CalendarEvent, DailySchedule } from '../types/calendar';
-import { ActivityComparison } from '../types/garmin';
+import { ActivityComparison, ActivityFeedback } from '../types/garmin';
 import {
   ChevronLeft,
   ChevronRight,
@@ -42,6 +42,7 @@ import { MobilityEventChip } from './MobilityEventChip';
 import { ACWR_POLICY } from '../services/trainingModelConfig';
 import { WeeklyDecision } from '../services/adaptivePlanStore';
 import { projectWeeklyAdaptivePlan } from '../services/weeklyAdaptivePlan';
+import { recentSubjectiveSignals, weeklySessionRpeTrend } from '../services/activityFeedback';
 
 interface CalendarViewProps {
   schedules: DailySchedule[];
@@ -57,6 +58,7 @@ interface CalendarViewProps {
   onCancelPostponeWorkout?: (eventId: string) => void;
   comparisons?: ActivityComparison[];
   garminActivities?: GarminActivity[];
+  onSaveActivityFeedback?: (activityId: string, feedback: ActivityFeedback) => void;
   athlete?: { fcMax: number; fcRest: number };
   adaptiveOverrides?: Record<string, AdaptiveWorkoutOverride>;
   weeklyDecisions?: Record<string, WeeklyDecision>;
@@ -553,6 +555,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onCancelPostponeWorkout,
   comparisons = [],
   garminActivities = [],
+  onSaveActivityFeedback,
   athlete,
   adaptiveOverrides = {},
   weeklyDecisions = {},
@@ -670,6 +673,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     });
   }, [garminActivities, effectiveRefDate, athlete]);
 
+  const subjectiveSignals = useMemo(() => {
+    const endOfDay = new Date(effectiveRefDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    return recentSubjectiveSignals(garminActivities, endOfDay);
+  },
+    [garminActivities, effectiveRefDate]);
+
+  const subjectiveTrend = useMemo(() => weeklySessionRpeTrend(garminActivities, effectiveRefDate),
+    [garminActivities, effectiveRefDate]);
+  const subjectiveTrendMax = Math.max(1, ...subjectiveTrend.map(week => week.totalLoad));
+
   const adaptiveStatus = useMemo(() => {
     return evaluateAdaptivePlanStatus(
       trainingLoad,
@@ -677,9 +691,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       activeHorizonSportSessions,
       adaptiveOverrides,
       effectiveRefDate,
-      completedIds
+      completedIds,
+      subjectiveSignals.repeatedLowFeeling
     );
-  }, [trainingLoad, readiness, activeHorizonSportSessions, adaptiveOverrides, effectiveRefDate, completedIds]);
+  }, [trainingLoad, readiness, activeHorizonSportSessions, adaptiveOverrides, effectiveRefDate, completedIds, subjectiveSignals.repeatedLowFeeling]);
 
   const weeklyProjection = useMemo(() => projectWeeklyAdaptivePlan(
     garminActivities,
@@ -907,7 +922,29 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         </div>
       </div>
 
-      {/* 🛡️ Coach Adaptatif QMT : Anti-blessure & Progression */}
+      {subjectiveSignals.ratedSessions > 0 && <div style={{ padding: '8px 12px', marginBottom: 10, border: '1px solid var(--border-color)', borderRadius: 6, fontSize: '0.78rem' }}>
+        Ressenti sur 7 jours : {subjectiveSignals.ratedSessions} séance(s) notée(s), charge ressentie totale {subjectiveSignals.totalSessionRpeLoad} unités (durée × RPE). À lire avec le type de séance et votre tendance personnelle.
+      </div>}
+      {subjectiveTrend.some(week => week.ratedSessions > 0) && <div style={{ padding: '10px 12px', marginBottom: 10, border: '1px solid var(--border-color)', borderRadius: 6, fontSize: '0.78rem' }}>
+        <strong>Évolution du ressenti sur quatre semaines</strong>
+        <div style={{ display: 'grid', gap: 7, marginTop: 8 }}>
+          {subjectiveTrend.map((week, index) => <div key={index} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 145px', alignItems: 'center', gap: 8 }}>
+            <span>{week.start.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}–{week.end.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}</span>
+            <div style={{ height: 8, background: 'var(--bg-surface-elevated)', borderRadius: 4 }}>
+              <div style={{ height: '100%', width: `${week.totalLoad / subjectiveTrendMax * 100}%`, background: 'var(--primary)', borderRadius: 4 }} />
+            </div>
+            <span>{week.totalLoad} unités · {week.ratedSessions}/{week.recordedSessions} notées</span>
+          </div>)}
+        </div>
+        <small>Comparer seulement les semaines dont les séances sont suffisamment notées ; le total ne mesure pas à lui seul la forme ni le risque de blessure.</small>
+      </div>}
+      {subjectiveSignals.repeatedLowFeeling && <div role="status" style={{ padding: '8px 12px', marginBottom: 10, border: '1px solid #f59e0b', borderRadius: 6, fontSize: '0.78rem' }}>
+        Deux séances ou plus ont été notées « faible » cette semaine : réévaluez l'intensité prévue et votre récupération, même si le calendrier de la semaine est déjà figé.
+      </div>}
+      {subjectiveSignals.recentPain !== undefined && subjectiveSignals.recentPain > 0 && <div role="alert" style={{ padding: '8px 12px', marginBottom: 10, border: '1px solid #f59e0b', borderRadius: 6, fontSize: '0.78rem' }}>
+        Douleur déclarée récemment : {subjectiveSignals.recentPain}/10. Évaluez son évolution avant la prochaine séance ; si elle persiste, s'aggrave ou modifie votre foulée, interrompez l'effort et demandez un avis clinique.
+      </div>}
+      {/* Coach adaptatif QMT */}
       {!isViewingActiveHorizon ? (
         <div
           style={{
@@ -1070,7 +1107,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 color: '#c4b5fd'
               }}
             >
-              🤸 Calisthénie maintenue (zéro impact articulaire)
+              🤸 Renforcement à ajuster selon fatigue et douleurs
             </span>
           </div>
         </div>
@@ -1171,11 +1208,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Activity size={14} color={adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? '#38bdf8' : '#10b981'} />
             <span>
-              <strong>{adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? `🔵 Sous-charge Trail (< ${ACWR_POLICY.underloadBelow}) :` : `🟢 Sweet Spot (${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}) :`}</strong> ACWR mécanique à <strong>{adaptiveStatus.trailAcwrRatio}</strong>. {adaptiveStatus.trailAcwrRatio < ACWR_POLICY.underloadBelow ? 'Consolidez votre base en Zone 2.' : 'Charge d\'impact parfaitement assimilée.'}
+              <strong>Variation de charge de course :</strong> ratio 7/28 jours à <strong>{adaptiveStatus.trailAcwrRatio}</strong>. Ce chiffre décrit la charge récente ; examinez aussi les sorties isolées, la récupération et les douleurs.
             </span>
           </div>
           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-            🤖 Auto-Pilot Sweet Spot Actif
+            Suivi descriptif
           </span>
         </div>
       )}
@@ -1772,6 +1809,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         }}
         onPostpone={onPostponeWorkout}
         onCancelPostpone={onCancelPostponeWorkout}
+        onSaveActivityFeedback={onSaveActivityFeedback}
       />
     </div>
   );

@@ -58,7 +58,7 @@ export const AUTO_ADAPT_STORAGE_KEY = STORAGE_KEYS.AUTO_ADAPT_ENABLED;
 
 /**
  * Indique si le mode Auto-Pilot Adaptatif est activé.
- * Activé en permanence par défaut pour maintenir automatiquement l'athlète dans le Sweet Spot sans réglage manuel.
+ * Active les adaptations de précaution fondées sur la récupération, pas sur une zone ACWR prétendument sûre.
  */
 export function isAutoAdaptEnabled(): boolean {
   return storageGet<boolean>(AUTO_ADAPT_STORAGE_KEY, true);
@@ -84,7 +84,8 @@ export function evaluateAdaptivePlanStatus(
   upcomingSportEvents: CalendarEvent[],
   activeOverrides: Record<string, AdaptiveWorkoutOverride> = {},
   asOfDate?: Date,
-  completedEventIds: Set<string> = new Set()
+  completedEventIds: Set<string> = new Set(),
+  repeatedLowFeeling = false
 ): AdaptivePlanStatus {
   const asOfInstant = asOfDate?.getTime();
 
@@ -107,8 +108,7 @@ export function evaluateAdaptivePlanStatus(
   const tsb = trainingLoad.currentTsb;
   const adaptationPolicy = ADAPTIVE_WORKOUT_POLICY;
   const isAcwrCalibrating = trailAcwrStatus === 'CALIBRATING';
-  const acwrHighRisk = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.highAbove;
-  const acwrModerateRisk = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.moderateAbove;
+  const acwrElevated = !isAcwrCalibrating && trailAcwrRatio > ACWR_POLICY.moderateAbove;
   const acwrUnderload = !isAcwrCalibrating && trailAcwrRatio < ACWR_POLICY.underloadBelow;
 
   const hasActiveAdaptations = Object.keys(activeOverrides).length > 0;
@@ -116,18 +116,17 @@ export function evaluateAdaptivePlanStatus(
 
   let injuryRiskLevel: 'SAFE' | 'MODERATE' | 'HIGH' = 'SAFE';
   let headline = isAcwrCalibrating
-    ? 'Calibration mécanique : historique de course insuffisant'
-    : `Progression Optimale (Sweet Spot ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove})`;
+    ? 'Historique de course insuffisant pour interpréter le ratio'
+    : 'Charge de course suivie';
   let explanation = isAcwrCalibrating
     ? `Le ratio ACWR mécanique (${trailAcwrRatio}) reste indicatif, car l'historique de course est encore en calibration. Il ne déclenche pas seul d'adaptation ; la fatigue systémique (TSB) et la récupération peuvent toujours en déclencher une.`
-    : `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (zone saine ${ACWR_POLICY.underloadBelow} – ${ACWR_POLICY.moderateAbove}). La charge d'impacts au sol (${trailAcute} Km-Effort) est parfaitement assimilée par vos tendons et genoux. La calisthénie (${calisSessions} séance(s), ${calisAcute} TRIMP) est isolée et ne génère aucun choc articulaire.`;
+    : `Le ratio de charge de course est de ${trailAcwrRatio} (${trailAcute} Km-Effort sur 7 jours, contre ${trailChronic} par semaine en moyenne sur 28 jours). Il décrit une variation de charge, sans prédire votre risque individuel de blessure. Renforcement : ${calisSessions} séance(s) sur 7 jours, ${calisAcute} unités de charge estimées ; les jambes peuvent aussi être fatiguées par ces séances.`;
 
-  // 1. DANGER ZONE : ACWR Trail élevé ou surmenage sévère
-  if (acwrHighRisk || tsb < ACWR_POLICY.severeFatigueTsbBelow) {
+  // A ratio alone has no validated causal injury threshold. Automatic changes
+  // require an independent recovery signal; ACWR remains descriptive.
+  if (tsb < ACWR_POLICY.severeFatigueTsbBelow) {
     injuryRiskLevel = 'HIGH';
-    const dangerContext = acwrHighRisk
-      ? `ACWR ${trailAcwrRatio} > ${ACWR_POLICY.highAbove}`
-      : `TSB ${tsb} < ${ACWR_POLICY.severeFatigueTsbBelow}`;
+    const dangerContext = `TSB estimé ${tsb} < ${ACWR_POLICY.severeFatigueTsbBelow}`;
     headline = '⚠️ Alerte Charge ou Fatigue : Plan Allégé';
     explanation = `Alerte de charge ou de fatigue (${dangerContext}). Le plan limite les Km-Effort et le D+ futurs pour réduire les impacts prévus, sans modifier rétroactivement la charge déjà mesurée.`;
 
@@ -160,7 +159,7 @@ export function evaluateAdaptivePlanStatus(
           eventId: ev.id,
           date: dateStr,
           originalTitle: origTitle,
-          adaptedTitle: '🛡️ Repos Récupération Anti-blessure (ACWR critique)',
+          adaptedTitle: '🛡️ Repos de récupération (fatigue élevée)',
           originalDurationMinutes: origDuration,
           adaptedDurationMinutes: 0,
           originalElevationM: origElevation,
@@ -169,7 +168,7 @@ export function evaluateAdaptivePlanStatus(
           originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
           actionType: 'REST',
           reason: `Séance de fatigue cumulée annulée (repos complet) pour éviter des impacts supplémentaires dans le contexte ${dangerContext}.`,
-          coachingCue: 'Repos passif complet, hydratation et étirements doux. Donnez à vos tendons le temps de surcompenser.',
+          coachingCue: 'Repos ou mobilité douce selon les sensations ; réévaluer les symptômes avant la reprise.',
           adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• Séance remplacée par un repos complet pour éviter une charge supplémentaire.\n• Zéro impact au sol prévu.`,
           targetHeartRate: 'Repos',
           adaptedLocation: 'Domicile / Repos',
@@ -185,8 +184,8 @@ export function evaluateAdaptivePlanStatus(
         const recoveryHeartRateRange = adaptationPolicy.highRisk.recoveryHeartRateRangeBpm;
         const diffMin = origDuration - adaptedDurationMinutes;
         const reason = diffMin > 0
-          ? `Allégement de ${diffMin} min (${origDuration} ➔ ${adaptedDurationMinutes} min) et dénivelé aplati à 0m (terrain plat) pour désamorcer le stress excentrique des côtes et protéger les tendons.`
-          : `Dénivelé aplati à 0m (terrain plat régénérant) pour désamorcer le stress excentrique des côtes et protéger les tendons.`;
+          ? `Allégement de ${diffMin} min (${origDuration} ➔ ${adaptedDurationMinutes} min) et terrain plat pour réduire la sollicitation des côtes et des descentes.`
+          : 'Terrain plat pour réduire la sollicitation des côtes et des descentes.';
 
         recommendedActions.push({
           eventId: ev.id,
@@ -232,7 +231,7 @@ export function evaluateAdaptivePlanStatus(
           eventId: ev.id,
           date: dateStr,
           originalTitle: origTitle,
-          adaptedTitle: `🛡️ Sortie Longue Modulée Anti-blessure (${Math.floor(adaptedMins / 60)}h${(adaptedMins % 60).toString().padStart(2, '0')})`,
+          adaptedTitle: `🛡️ Sortie longue allégée (${Math.floor(adaptedMins / 60)}h${(adaptedMins % 60).toString().padStart(2, '0')})`,
           originalDurationMinutes: origDuration,
           adaptedDurationMinutes: adaptedMins,
           originalElevationM: origElevation,
@@ -241,7 +240,7 @@ export function evaluateAdaptivePlanStatus(
           originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
           actionType: 'LIGHTEN',
           reason,
-          coachingCue: `Volume plafonné à ${adaptedMins} min et +${adaptedElevationM}m D+. Marche active (power hike) obligatoire dès ${adaptationPolicy.highRisk.walkingInclineThresholdPercent}% de pente pour protéger les tendons d'Achille.`,
+          coachingCue: `Volume plafonné à ${adaptedMins} min et +${adaptedElevationM}m D+. Passer en marche active quand la pente ou la fatigue rend la course moins contrôlée.`,
           adaptedDescription: `• Adaptation de précaution (${dangerContext}) :\n• Durée ramenée à ${adaptedMins} min et D+ modulé à +${adaptedElevationM} m (au lieu de +${origElevation} m) pour limiter les impacts prévus.\n• Cardio : Zone 2 stricte.\n• Règle d'or : marcher activement en montée (power hike) dès que la pente dépasse ${adaptationPolicy.highRisk.walkingInclineThresholdPercent}%.\n• Éviter les descentes trop raides et techniques.`,
           targetHeartRate: 'Zone 2 Endurance douce',
           targetHeartRateRange: [...longTrailHeartRateRange],
@@ -271,7 +270,7 @@ export function evaluateAdaptivePlanStatus(
           actionType: 'LIGHTEN',
           reason: diffMin > 0 ? `Durée ramenée à ${adaptedMins} min sur terrain plat pour limiter les impacts sans couper l'aérobie.` : 'Course sur terrain plat pour soulager les tendons.',
           coachingCue: `${adaptedMins} min de trot très souple en Zone 1/2.`,
-          adaptedDescription: `• Footing raccourci à ${adaptedMins} min à plat pour protéger les tendons d'Achille.`,
+          adaptedDescription: `• Footing raccourci à ${adaptedMins} min à plat pour réduire la contrainte prévue.`,
           targetHeartRate: 'Zone 1/2 Récupération',
           targetHeartRateRange: [...recoveryHeartRateRange],
           adaptedLocation: 'Terrain plat / Parc (évite le D+)',
@@ -281,18 +280,13 @@ export function evaluateAdaptivePlanStatus(
       }
     }
   }
-  // 2. MODERATE RISK : ACWR Trail au-dessus du seuil modéré ou récupération dégradée
-  else if (acwrModerateRisk || readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow) {
+  // 2. Recovery alert: the score is a heuristic, not a medical diagnosis.
+  else if (repeatedLowFeeling || (!readiness.isDefaultBaseline && (readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow))) {
     injuryRiskLevel = 'MODERATE';
-    const lowReadiness = readiness.status === 'LOW' || readiness.score < ACWR_POLICY.lowReadinessBelow;
-    headline = acwrModerateRisk
-      ? '⚡ Charge Mécanique Soutenue : Vigilance Recommandée'
-      : '⚡ Récupération basse : vigilance recommandée';
-    const vigilanceReasons = [
-      acwrModerateRisk ? `l'ACWR (${trailAcwrRatio}; seuil ${ACWR_POLICY.moderateAbove} – ${ACWR_POLICY.highAbove})` : null,
-      lowReadiness ? 'un score de récupération bas' : null
-    ].filter((reason): reason is string => reason !== null);
-    explanation = `Le plan signale une vigilance liée à ${vigilanceReasons.join(' et ')}. Les séances futures peuvent être modérées sans changer rétroactivement la charge mesurée.`;
+    headline = '⚡ Récupération basse : vigilance recommandée';
+    explanation = repeatedLowFeeling
+      ? 'Deux séances ou plus ont été notées « faible » cette semaine. La prochaine séance intense peut être allégée par précaution ; ce signal subjectif ne diagnostique aucune blessure.'
+      : 'Le score de récupération est bas. Une réduction de la prochaine séance intense est proposée comme précaution ; elle ne constitue pas un diagnostic de blessure.';
 
     for (const ev of upcomingSportEvents) {
       if (!isEligibleForAdaptation(ev)) continue;
@@ -316,8 +310,8 @@ export function evaluateAdaptivePlanStatus(
         const originalHillSetCount = hillPolicy.originalHillSetCount;
         const diffMin = origDuration - adaptedMins;
         const reason = diffMin > 0
-          ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ limité à +${adaptedElevationM}m (${hillSetCount} série au lieu de ${originalHillSetCount}) pour stabiliser l'ACWR mécanique dans le Sweet Spot.`
-          : `D+ limité à +${adaptedElevationM}m (${hillSetCount} série de côtes au lieu de ${originalHillSetCount}) pour stabiliser l'ACWR mécanique dans le Sweet Spot.`;
+          ? `Réduction de ${diffMin} min (${origDuration} ➔ ${adaptedMins} min) et D+ limité à +${adaptedElevationM}m (${hillSetCount} série au lieu de ${originalHillSetCount}) pour tenir compte de la récupération basse.`
+          : `D+ limité à +${adaptedElevationM}m (${hillSetCount} série de côtes au lieu de ${originalHillSetCount}) pour tenir compte de la récupération basse.`;
 
         recommendedActions.push({
           eventId: ev.id,
@@ -333,7 +327,7 @@ export function evaluateAdaptivePlanStatus(
           actionType: 'LIGHTEN',
           reason,
           coachingCue: `Réaliser ${hillSetCount} seule série de répétitions de côtes au lieu de ${originalHillSetCount}. Descentes marchées très souples.`,
-          adaptedDescription: `• Adaptation modérée (ACWR Mécanique ${trailAcwrRatio}) :\n• Échauffement ${hillPolicy.hillWarmupMinutes} min + ${hillSetCount} série unique de côtes (${hillPolicy.hillRepetitionCount}x ${hillPolicy.hillRepetitionDurationMinutes} min) + retour au calme.\n• D+ limité à +${adaptedElevationM} m.\n• Allure montée contrôlée : FC max ${heartRateRange[1]} bpm.\n• Descente en marchant pour amortir les chocs excentriques.`,
+          adaptedDescription: `• Adaptation de précaution (récupération basse) :\n• Échauffement ${hillPolicy.hillWarmupMinutes} min + ${hillSetCount} série de côtes (${hillPolicy.hillRepetitionCount}x ${hillPolicy.hillRepetitionDurationMinutes} min) + retour au calme.\n• D+ limité à +${adaptedElevationM} m.\n• Effort confortable et descente maîtrisée.`,
           targetHeartRate: formatHeartRateRange(heartRateRange),
           adaptedLocation: 'Mont-Royal (pentes douces)',
           adaptedElevationM,
@@ -342,47 +336,14 @@ export function evaluateAdaptivePlanStatus(
       }
     }
   }
-  // 3. UNDERLOAD : ACWR Trail sous le seuil de sous-charge
+  // 3. A low ratio can reflect intentional rest; it must not force progression.
   else if (acwrUnderload) {
     injuryRiskLevel = 'SAFE';
-    headline = `🔵 Sous-charge Mécanique (< ${ACWR_POLICY.underloadBelow}) : Consolidation Progressive`;
-    explanation = `Votre ratio ACWR mécanique est de ${trailAcwrRatio} (< ${ACWR_POLICY.underloadBelow}, zone de sous-charge). Vos tendons et articulations sont reposés mais sous-stimulés par rapport au volume cible. Selon le modèle de Tim Gabbett, consolidez progressivement vos Km-Effort en endurance fondamentale (Zone 2) sans hausses brutales de volume.`;
-
-    // Si sous-charge marquée et côtes intenses au programme, modérer les côtes pour éviter un saut brutal
-    if (trailAcwrRatio < ACWR_POLICY.severeUnderloadBelow) {
-      for (const ev of upcomingSportEvents) {
-        if (!isEligibleForAdaptation(ev)) continue;
-        if (ev.sportType === 'TRAIL_INTENSE') {
-          const dateStr = toLocalDateKey(ev.startDate);
-          const origElevation = ev.metadata?.targetElevationM ?? adaptationPolicy.defaultTrailElevationMeters;
-          const origSportType = ev.sportType;
-          const hillPolicy = adaptationPolicy.underload;
-          const heartRateRange = hillPolicy.hillTargetHeartRateRangeBpm;
-          const hillSetCount = hillPolicy.hillSetCount;
-          const [minimumRepetitions, maximumRepetitions] = hillPolicy.hillRepetitionRange;
-          recommendedActions.push({
-            eventId: ev.id,
-            date: dateStr,
-            originalTitle: ev.title,
-            adaptedTitle: `🔵 Côtes Progressives Anti-pic (${hillSetCount} série douce - ${hillPolicy.hillDurationMinutes} min)`,
-            originalDurationMinutes: ev.durationMinutes,
-            adaptedDurationMinutes: hillPolicy.hillDurationMinutes,
-            originalElevationM: origElevation,
-            originalSportType: origSportType,
-            originalTargetHeartRate: ev.metadata?.targetHeartRate,
-            originalTargetHeartRateRange: ev.metadata?.targetHeartRateRange,
-            actionType: 'LIGHTEN',
-            reason: `Réintroduction progressive des contraintes de côtes post-sous-charge (Gabbett ${hillPolicy.maximumProgressionPercent}%).`,
-            coachingCue: `${hillSetCount} seule série de ${minimumRepetitions}-${maximumRepetitions} répétitions en aisance avec récupération marchée complète.`,
-            adaptedDescription: `• Adaptation Anti-pic post sous-charge (ACWR ${trailAcwrRatio}) :\n• ${hillSetCount} série de côtes contrôlées pour remonter graduellement dans le Sweet Spot sans agresser les tendons.\n• Cardio : FC max ${heartRateRange[1]} bpm.`,
-            targetHeartRate: formatHeartRateRange(heartRateRange),
-            adaptedLocation: 'Mont-Royal (pente douce)',
-            adaptedElevationM: hillPolicy.hillElevationMeters,
-            adaptedSportType: 'TRAIL_INTENSE'
-          });
-        }
-      }
-    }
+    headline = 'Charge récente sous la moyenne';
+    explanation = `Le ratio de charge de course (${trailAcwrRatio}) est sous la moyenne récente. Cela peut correspondre à une récupération voulue, une reprise ou des données incomplètes. La progression se décide avec les séances réalisées et les sensations.`;
+  } else if (acwrElevated) {
+    headline = 'Charge récente au-dessus de la moyenne';
+    explanation += ' Vérifiez aussi les symptômes, le sommeil et les longues séances isolées avant de modifier le plan.';
   }
 
   return {
@@ -552,7 +513,7 @@ export function applyAdaptiveModifications(
         sportType: override.adaptedSportType || ev.sportType,
         emoji: isRest ? '🛌' : ev.emoji,
         colorHex: isRest ? '#64748b' : ev.colorHex,
-        description: override.adaptedDescription || `${ev.description}\n\n🛡️ Adaptation Anti-blessure :\n${override.adaptationReason}\nConsigne : ${override.coachingCue}`,
+        description: override.adaptedDescription || `${ev.description}\n\n🛡️ Adaptation de précaution :\n${override.adaptationReason}\nConsigne : ${override.coachingCue}`,
         metadata: {
           ...ev.metadata,
           isAdapted: true,
@@ -605,7 +566,7 @@ export function applyAdaptiveModifications(
       sportType: override.adaptedSportType || ev.sportType,
       emoji: isRest ? '🛌' : ev.emoji,
       colorHex: isRest ? '#64748b' : ev.colorHex,
-      description: override.adaptedDescription || `${ev.description}\n\n🛡️ Adaptation Anti-blessure :\n${override.adaptationReason}\nConsigne : ${override.coachingCue}`,
+      description: override.adaptedDescription || `${ev.description}\n\n🛡️ Adaptation de précaution :\n${override.adaptationReason}\nConsigne : ${override.coachingCue}`,
       metadata: {
         ...ev.metadata,
         isAdapted: true,

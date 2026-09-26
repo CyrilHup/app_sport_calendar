@@ -8,7 +8,7 @@ import {
   WorkoutStepDefinition
 } from '../types/garmin';
 import { CalendarEvent } from '../types/calendar';
-import { classifyGarminActivityType, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
+import { classifyGarminActivityType, isCycling, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { sanitizeGarminText } from './garminText';
 import { AthleteHeartRateZones, calculateHeartRateZones } from './heartRateZones';
 export type { AthleteHeartRateZones } from './heartRateZones';
@@ -459,7 +459,9 @@ async function getGarminApiHeaders(): Promise<Record<string, string>> {
 export function normalizeGarminActivity(a: GarminActivity): GarminActivity {
   const normalized = normalizeActivityElevation(a);
   let type = a.activityType;
-  if (type === 'OTHER' || !type) {
+  if (type === 'OTHER' || !type ||
+    (type === 'STRENGTH_TRAINING' &&
+      (isCycling(a) || /stair|escalier|stepper|treadmill|tapis roulant|tapis de course/i.test(`${a.activityName} ${a.garminTypeKey || ''}`)))) {
     type = classifyGarminActivityType(a.garminTypeKey, a.activityName);
   }
 
@@ -648,6 +650,55 @@ async function performGarminActivitySync(
         count: combinedActivities.length,
         error: 'La synchronisation complète Garmin nécessite plus de 25 requêtes. Les pages déjà récupérées ont été conservées.'
       };
+    }
+
+    // Backfill Garmin self-evaluations in bounded batches. Older checks are
+    // revisited because athletes may add their RPE after the activity sync.
+    const now = Date.now();
+    const eligible = combinedActivities.filter(activity =>
+      activity.source === 'GARMIN_CONNECT' && /^[1-9]\d{0,19}$/.test(activity.activityId));
+    const recent = eligible.filter(activity =>
+      now - Date.parse(activity.startTimeLocal) <= 90 * 86400_000 &&
+      (!activity.garminFeedbackCheckedAt ||
+        now - Date.parse(activity.garminFeedbackCheckedAt) > 14 * 86400_000));
+    const olderUnchecked = eligible.filter(activity =>
+      now - Date.parse(activity.startTimeLocal) > 90 * 86400_000 && !activity.garminFeedbackCheckedAt);
+    const candidates = [...recent, ...olderUnchecked].slice(0, 20);
+    for (let i = 0; i < candidates.length; i += 5) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        let response: Response;
+        try {
+          response = await fetch(getApiUrl('/api/garmin-sync'), {
+            method: 'POST',
+            headers: await getGarminApiHeaders(),
+            body: JSON.stringify({ ...(credsToUse || {}), action: 'get-activity-feedback',
+              activityIds: candidates.slice(i, i + 5).map(a => a.activityId) }),
+            signal: controller.signal
+          });
+        } finally { clearTimeout(timeout); }
+        if (!response.ok) break;
+        const payload = await response.json();
+        if (storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) !== startingLocalOwner) {
+          return { success: false, activities: [], count: 0, error: 'Le compte a changé pendant la synchronisation Garmin.' };
+        }
+        const byId = new Map<string, GarminActivity>();
+        for (const result of payload.results || []) {
+          if (!result?.checked || typeof result.activityId !== 'string') continue;
+          const activity = combinedActivities.find(a => a.activityId === result.activityId);
+          if (activity) byId.set(activity.activityId, {
+            ...activity,
+            garminFeedback: result.feedback || activity.garminFeedback,
+            garminFeedbackCheckedAt: new Date().toISOString()
+          });
+        }
+        combinedActivities = mergeGarminActivities(combinedActivities, [...byId.values()]);
+        saveGarminActivities(combinedActivities);
+      } catch (error) {
+        console.warn('Garmin subjective feedback backfill will retry on the next sync:', error);
+        break;
+      }
     }
 
     // Keep credentials only in memory for this app session.

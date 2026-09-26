@@ -4,6 +4,15 @@ import { CalendarEvent } from '../types/calendar';
 import { GarminActivity } from '../types/garmin';
 
 describe('comparisonEngine - Same-Day Multi-Session Consolidation', () => {
+  it('does not mark an unperformed optional second run as missed', () => {
+    const optionalRun: CalendarEvent = {
+      id: 'optional-sunday', category: 'sport', sportType: 'RUN_EASY',
+      title: 'Footing facultatif', startDate: '2026-09-06T12:00:00', endDate: '2026-09-06T12:40:00',
+      durationMinutes: 40, location: 'Parc', description: '', emoji: '🏃', colorId: '5', colorHex: '#4cc9f0',
+      metadata: { isOptional: true }
+    };
+    expect(compareWorkoutsWithGarmin([optionalRun], [], {}, new Date('2026-09-07T12:00:00'))).toHaveLength(0);
+  });
   it('consolidateGarminActivities computes correct cumulative duration, distance, D+ and weighted HR', () => {
     const act1: GarminActivity = {
       activityId: 'run-1',

@@ -3,8 +3,8 @@ import { ACWR_POLICY, acwrGaugePosition, acwrGaugeWidth } from '../services/trai
 
 const zones = [
   { start: 0, end: ACWR_POLICY.underloadBelow, color: '#38bdf8', label: 'Sous-charge' },
-  { start: ACWR_POLICY.underloadBelow, end: ACWR_POLICY.moderateAbove, color: '#10b981', label: 'Sweet Spot' },
-  { start: ACWR_POLICY.moderateAbove, end: ACWR_POLICY.highAbove, color: '#f59e0b', label: 'Surcharge' },
+  { start: ACWR_POLICY.underloadBelow, end: ACWR_POLICY.moderateAbove, color: '#10b981', label: 'Proche moyenne' },
+  { start: ACWR_POLICY.moderateAbove, end: ACWR_POLICY.highAbove, color: '#f59e0b', label: 'Hausse' },
   { start: ACWR_POLICY.highAbove, end: ACWR_POLICY.gaugeMaximum, color: '#ef4444', label: 'Charge élevée' }
 ] as const;
 
@@ -26,7 +26,7 @@ export const AcwrGauge: React.FC<{ ratio: number }> = ({ ratio }) => (
     </div>
     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '6px' }}>
       {zones.map(zone => (
-        <span key={zone.label} style={{ color: zone.color, fontWeight: zone.label === 'Sweet Spot' ? 700 : undefined }}>
+        <span key={zone.label} style={{ color: zone.color, fontWeight: zone.label === 'Proche moyenne' ? 700 : undefined }}>
           {zone.start === 0 ? '< ' : zone.start === ACWR_POLICY.highAbove ? '> ' : `${zone.start} – `}
           {zone.start === 0 ? zone.end : zone.start === ACWR_POLICY.highAbove ? zone.start : zone.end} : {zone.label}
         </span>

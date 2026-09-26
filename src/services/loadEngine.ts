@@ -1,5 +1,5 @@
 import { formatDateKey, getGarminLocalDateKey } from './dateUtils';
-import { isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
+import { isCycling, isStrengthOrCalisthenics, isTrailOrRunning } from './activityClassifier';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 import { getDynamicAthleteProfile, getExpectedHeartRateForEvent } from './garminService';
 import { ACWR_POLICY, classifyAcwr, TRAINING_LOAD_WINDOWS } from './trainingModelConfig';
@@ -294,14 +294,17 @@ export function computeTrainingLoadStats(
       athleteFcRest: profile.fcRest
     });
     const load = sessionInfo.trimp;
+    // CTL/ATL/TSB describe estimated whole-body load; running Km-Effort stays separate.
+    dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
 
-    // Moteur de charge centré exclusivement sur la Course & le Trail (renforcement exclu)
+    // Keep running-specific external load separate from strength and aerobic cross-training.
     if (sessionInfo.isMechanicalImpact || isTrailOrRunning(act)) {
-      dailyLoads[dKey] = (dailyLoads[dKey] || 0) + load;
       // CHARGE MÉCANIQUE EXTERNE EN KM-EFFORT (Standard ITRA : Distance (km) + D+ (m) / 100)
       dailyTrailLoads[dKey] = (dailyTrailLoads[dKey] || 0) + sessionInfo.mechanicalKmEffort;
       dailyRunningCardioLoads[dKey] = (dailyRunningCardioLoads[dKey] || 0) + load;
-    } else {
+    } else if (!isCycling(act) && !/stair|escalier|tapis|treadmill/i.test(actName) &&
+      (actType === 'STRENGTH_TRAINING' || actType === 'CALISTHENICS' || actType === 'GYM_FORCE' ||
+        /calisth|muscu|renfo|traction|gainage|strength|weight|squat|deadlift|fente/i.test(actName))) {
       dailyCalisthenicsLoads[dKey] = (dailyCalisthenicsLoads[dKey] || 0) + load;
       calisthenicsSessionsByDay[dKey] = (calisthenicsSessionsByDay[dKey] || 0) + 1;
     }
@@ -349,7 +352,7 @@ export function computeTrainingLoadStats(
   const currentAtl = latestPoint.atl;
   const currentTsb = latestPoint.tsb;
 
-  // Trail-specific ACWR (Gabbett model applied exclusively to external mechanical ground impact: Km-Effort)
+  // Descriptive running-load ratio in Km-Effort; these bands are not validated injury-risk thresholds.
   let trailAcuteSum = 0;
   let cardioAcuteSum = 0;
   for (let i = 0; i < TRAINING_LOAD_WINDOWS.acuteFatigueDays; i++) {
@@ -410,29 +413,29 @@ export function computeTrainingLoadStats(
   }
 
   let formStatus: TrainingLoadStats['formStatus'] = 'OPTIMAL_BUILD';
-  let formLabel = 'Phase de développement optimale (Charge bien assimilée)';
+  let formLabel = 'Charge et récupération estimées : à confronter aux sensations';
   if (currentTsb > 15) {
     formStatus = 'RACE_PEAK';
-    formLabel = 'Pic de Fraîcheur Course (Fraîcheur maximale, prêt pour le départ)';
+    formLabel = 'Charge récente inférieure à la charge de fond estimée';
   } else if (currentTsb > 5) {
     formStatus = 'TRANSITION_FRESH';
     formLabel = 'Très frais (Période d\'assimilation ou reprise)';
   } else if (currentTsb < ACWR_POLICY.severeFatigueTsbBelow) {
     formStatus = 'HIGH_OVERLOAD';
-    formLabel = 'Surmenage / Fatigue sévère (Délestage nécessaire)';
+    formLabel = 'Charge récente élevée dans ce modèle ; vérifier la récupération';
   } else if (currentTsb < -10) {
     formStatus = 'FATIGUED';
-    formLabel = 'Fatigue productive accumulée (Bloc en cours)';
+    formLabel = 'Charge récente supérieure à la charge de fond estimée';
   }
 
   const acwrStatusLabel = acwrStatus === 'OPTIMAL'
-    ? 'Sweet Spot Mécanique (Km-Effort)'
+    ? 'Charge proche de la moyenne (Km-Effort)'
     : (acwrStatus === 'CALIBRATING'
       ? 'Calibration Mécanique'
       : (acwrStatus === 'UNDERLOAD'
         ? 'Sous-charge Mécanique'
         : (acwrStatus === 'DANGER_HIGH_RISK'
-          ? `Pic Critique d'Impacts (> ${ACWR_POLICY.highAbove})`
+          ? `Charge au-dessus de la moyenne (> ${ACWR_POLICY.highAbove})`
           : `Charge Mécanique Soutenue (${ACWR_POLICY.moderateAbove} - ${ACWR_POLICY.highAbove})`)));
 
   // 7-day window individual sessions

@@ -36,6 +36,9 @@ describe('Activity Classifier', () => {
     expect(classifyGarminActivityType('cardio_training', 'Montréal Cardio')).toBe('STRENGTH_TRAINING');
     expect(classifyGarminActivityType('indoor_cardio', 'Renfo maison')).toBe('STRENGTH_TRAINING');
     expect(classifyGarminActivityType('cardio_training', 'Cardio')).toBe('STRENGTH_TRAINING');
+    expect(classifyGarminActivityType('cardio_training', 'Vélo facile')).toBe('CYCLING');
+    expect(classifyGarminActivityType('fitness_equipment', 'Stairmaster')).toBe('FITNESS_EQUIPMENT');
+    expect(classifyGarminActivityType('treadmill_running', 'Course sur tapis')).toBe('RUNNING');
   });
 
   it('unifies generic Garmin Cardio names with planned workouts or fallback', () => {

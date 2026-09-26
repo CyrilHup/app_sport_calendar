@@ -62,6 +62,8 @@ export function isTrailOrRunning(
     return true;
   }
 
+  if (isCycling(inputOrType, nameOrTitle, rawKey)) return false;
+
   // 2. Mots-clés de trail, côtes, rando-course et dénivelé
   if (
     text.includes('trail') ||
@@ -119,6 +121,8 @@ export function isStrengthOrCalisthenics(
   }
 
   const { typeKey, text } = normalizePredicateTokens(inputOrType, nameOrTitle, rawKey);
+  if (isCycling(inputOrType, nameOrTitle, rawKey) ||
+    /stair|escalier|stepper|treadmill|tapis roulant|tapis de course/i.test(text)) return false;
 
   // 2. Double garde de sécurité textuelle et de types pour le Trail/Running
   if (
@@ -227,12 +231,11 @@ export function classifyGarminActivityType(
     return 'RUNNING';
   }
 
+  if (isCycling(input)) return 'CYCLING';
+  if (/stair|escalier|stepper/i.test(`${rawTypeKey || ''} ${activityName || ''}`)) return 'FITNESS_EQUIPMENT';
+
   if (isStrengthOrCalisthenics(input)) {
     return 'STRENGTH_TRAINING';
-  }
-
-  if (isCycling(input)) {
-    return 'CYCLING';
   }
 
   if (isWalking(input)) {

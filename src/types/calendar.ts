@@ -24,6 +24,7 @@ export interface CalendarEvent {
   colorHex: string;
   durationMinutes: number;
   metadata?: {
+    isOptional?: boolean;
     courseCode?: string;
     room?: string;
     targetHeartRate?: string;

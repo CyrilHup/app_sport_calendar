@@ -12,6 +12,16 @@ export type GarminActivityType =
 
 export type ElevationSource = 'GARMIN_CONNECT' | 'GPX_IMPORT';
 
+export type SubjectiveFeeling = 'VERY_WEAK' | 'WEAK' | 'NORMAL' | 'STRONG' | 'VERY_STRONG';
+
+export interface ActivityFeedback {
+  perceivedEffort?: number; // Garmin-style session RPE, 1–10
+  feeling?: SubjectiveFeeling;
+  notes?: string;
+  pain?: number; // Optional self-report, 0–10; never inferred from telemetry
+  updatedAt?: string;
+}
+
 export interface GarminActivity {
   activityId: string;
   activityName: string;
@@ -32,6 +42,9 @@ export interface GarminActivity {
   anaerobicTrainingEffect?: number;
   trainingLoad?: number; // Firstbeat EPOC load score
   trainingEffectLabel?: string; // e.g. "BASE", "TEMPO", "VO2_MAX", "RECOVERY"
+  garminFeedback?: ActivityFeedback;
+  garminFeedbackCheckedAt?: string;
+  manualFeedback?: ActivityFeedback;
   elapsedDurationMinutes?: number; // Total gross elapsed time including pauses
   movingDurationMinutes?: number; // Net moving time
   vo2MaxValue?: number;

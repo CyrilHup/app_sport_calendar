@@ -17,6 +17,8 @@ import {
   Zap
 } from 'lucide-react';
 import { RunAlarmModal } from './RunAlarmModal';
+import { ActivityFeedbackEditor } from './ActivityFeedbackEditor';
+import { ActivityFeedback } from '../types/garmin';
 import { triggerHapticFeedback } from '../services/hapticsService';
 import { AthletePhysiologicalProfile, buildWorkoutPayloadFromEvent, isValidGarminWorkoutDuration } from '../services/garminService';
 import { GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
@@ -42,6 +44,7 @@ interface WorkoutDetailModalProps {
     targetStartTime?: string
   ) => void;
   onCancelPostpone?: (eventId: string) => void;
+  onSaveActivityFeedback?: (activityId: string, feedback: ActivityFeedback) => void;
   athlete?: { fcMax: number; fcRest: number };
   athleteProfile?: AthletePhysiologicalProfile;
 }
@@ -53,6 +56,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   onClose,
   onPostpone,
   onCancelPostpone,
+  onSaveActivityFeedback,
   athlete,
   athleteProfile
 }) => {
@@ -625,7 +629,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
               {/* Fiche Pédagogique Cumul de Charge */}
               <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: 6, padding: '10px 12px', fontSize: '0.74rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                💡 <strong>Comment ces séances cumulées alimentent votre entraînement ?</strong> Le modèle de Banister et le ratio ACWR (Sweet Spot Tim Gabbett) additionnent directement le volume et la charge physiologique de vos {unifiedGroup!.items.length} sorties de la journée (<strong>{unifiedGroup!.totalTrimp} TRIMP cumulés</strong>). La charge aiguë (ATL 7 jours) intègre cette fatigue globale pour calibrer précisément votre niveau de forme et votre risque de blessure.
+                💡 <strong>Charge cumulée :</strong> ces {unifiedGroup!.items.length} activités représentent <strong>{unifiedGroup!.totalTrimp} unités de charge estimée</strong>. La tendance sur plusieurs semaines aide à interpréter l'entraînement ; elle ne mesure pas à elle seule le risque individuel de blessure.
               </div>
             </div>
           ) : (
@@ -684,7 +688,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 800, color: '#38bdf8', fontSize: '0.88rem' }}>
                   <ShieldCheck size={17} />
-                  <span>{isRestSession ? 'Séance Annulée Anti-blessure (Repos Complet & ACWR)' : 'Séance Allégée Anti-blessure (Protection Tendons & ACWR)'}</span>
+                  <span>{isRestSession ? 'Séance remplacée par du repos' : 'Séance allégée par précaution'}</span>
                 </div>
                 {isRestSession ? (
                   <span style={{ background: 'rgba(56, 189, 248, 0.2)', border: '1px solid #38bdf8', color: '#38bdf8', padding: '2px 8px', borderRadius: 9999, fontWeight: 800, fontSize: '0.74rem' }}>
@@ -717,7 +721,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               )}
 
               <p style={{ margin: 0, fontSize: '0.73rem', color: '#93c5fd', lineHeight: 1.45 }}>
-                💡 <strong>Pourquoi cette modulation de charge ?</strong> La charge aiguë (7 jours) additionne directement les TRIMPs et Km-Effort de vos séances de course. En modulant la séance {isRestSession ? 'vers un repos complet' : 'avec dénivelé allégé ou terrain plat'}, vous retirez {trimpSaved > 0 ? `${trimpSaved} TRIMP` : 'des chocs mécaniques'} du numérateur ACWR pour ramener le ratio dans le Sweet Spot (&lt; 1.3) et donner à vos tendons le temps de surcompenser.
+                💡 <strong>Pourquoi cette modulation ?</strong> La séance {isRestSession ? 'est remplacée par du repos' : 'prévoit moins de durée ou de dénivelé'} dans un contexte de fatigue ou de récupération basse. La charge réelle sera connue après l'activité ; aucun seuil de ratio ne garantit l'absence de blessure.
               </p>
             </div>
           )}
@@ -826,6 +830,8 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 )}
               </div>
 
+              <ActivityFeedbackEditor activity={effectiveComparison.actualActivity} onSave={onSaveActivityFeedback} />
+
               {/* Feedback notes */}
               {effectiveComparison.feedbackNotes && effectiveComparison.feedbackNotes.length > 0 && (
                 <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', background: 'rgba(0,0,0,0.2)', padding: '6px 8px', borderRadius: 4, lineHeight: 1.4 }}>
@@ -871,7 +877,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                 </span>
               ) : isAdapted ? (
                 <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 600 }}>
-                  {isRestSession ? 'Repos passif' : (isRecoveryFooting ? 'Plat sans chocs' : 'Adapté anti-blessure')}
+                  {isRestSession ? 'Repos passif' : (isRecoveryFooting ? 'Terrain plat' : 'Séance adaptée')}
                 </span>
               ) : isCalisthenics ? (
                 <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600 }}>
@@ -984,7 +990,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     )}
                     {plannedTrimpInfo && actualTrimpInfo.trimp !== plannedTrimpInfo.trimp && (
                       <div style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.25)', padding: '6px 8px', borderRadius: 4, color: '#93c5fd', marginTop: 4, lineHeight: 1.4 }}>
-                        💡 <strong>Plan vs Réel :</strong> Le plan prévoyait {effectiveEvent.durationMinutes} min de {isCalisthenics ? 'calisthénie / renforcement' : (titleLower.includes('trail') || titleLower.includes('côte') || titleLower.includes('hill') ? 'trail & côtes' : 'course à pied')} ({plannedTrimpInfo.trimp} TRIMP, {plannedTrimpInfo.mechanicalKmEffort} Km-e). La séance réalisée ({effectiveComparison?.actualActivity?.durationMinutes} min) {isCalisthenics ? 'a été réalisée' : 'a été courue'} à un rythme plus soutenu (FC moy. {effectiveComparison?.actualActivity?.avgHeartRate || '--'} bpm, pic {effectiveComparison?.actualActivity?.maxHeartRate || '--'} bpm). Sa contrainte mécanique (<strong>{actualTrimpInfo.mechanicalKmEffort} Km-Effort</strong>) alimente votre ratio ACWR de protection articulaire, et sa charge cardio (<strong>{actualTrimpInfo.trimp} TRIMP</strong>) alimente votre forme Banister (ATL/CTL).
+                        💡 <strong>Plan vs réel :</strong> {effectiveEvent.durationMinutes} min et {plannedTrimpInfo.mechanicalKmEffort} Km-Effort prévus ; {effectiveComparison?.actualActivity?.durationMinutes} min et <strong>{actualTrimpInfo.mechanicalKmEffort} Km-Effort</strong> enregistrés. La charge physiologique estimée est de <strong>{actualTrimpInfo.trimp} unités</strong>. Comparez ces valeurs à vos sensations et à la nature de la séance.
                       </div>
                     )}
                   </>
@@ -1006,11 +1012,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 {sessionTrimpInfo.isMechanicalImpact ? (
                   <>
-                    🏃 <strong>Impact articulaire mécanique (Course / Trail) :</strong> Cette séance applique des contraintes mécaniques d'impacts et de dénivelé (<strong>{sessionTrimpInfo.mechanicalKmEffort} Km-Effort</strong> selon le standard ITRA). Ces <strong>{sessionTrimpInfo.mechanicalKmEffort} Km-Effort</strong> alimentent directement votre <strong>charge aiguë mécanique (7 jours)</strong> pour surveiller le risque de blessure (ratio ACWR de Tim Gabbett), tandis que ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre condition aérobie (CTL/ATL).
+                    🏃 <strong>Charge de course :</strong> <strong>{sessionTrimpInfo.mechanicalKmEffort} Km-Effort</strong> estimés à partir de la distance et du D+, et <strong>{sessionTrimpInfo.trimp} unités de charge physiologique</strong> estimées. Ces indicateurs servent au suivi de progression, sans diagnostic du risque de blessure.
                   </>
                 ) : (
                   <>
-                    🛡️ <strong>Renforcement / Force au poids du corps :</strong> Cette séance ne génère <strong>aucun impact articulaire au sol (0 Km-Effort)</strong>. Ses <strong>{sessionTrimpInfo.trimp} TRIMP</strong> développent votre force structurelle et votre système cardiovasculaire sans agresser vos tendons, et sont <strong>totalement isolés du ratio ACWR de blessure articulaire</strong> pour éviter toute fausse alerte.
+                    🛡️ <strong>Activité sans course enregistrée :</strong> 0 Km-Effort de course dans ce modèle et <strong>{sessionTrimpInfo.trimp} unités de charge physiologique estimée</strong>. Le renforcement peut aussi fatiguer les muscles et les tendons ; adaptez la séance selon le ressenti.
                   </>
                 )}
               </div>

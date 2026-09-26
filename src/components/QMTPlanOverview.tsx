@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { PeriodizationContext } from '../types/calendar';
-import { formatMinutes, QmtRacePrediction } from '../services/statsEngine';
 import {
   AlertTriangle,
   Calendar,
@@ -20,14 +19,27 @@ import {
   Zap
 } from 'lucide-react';
 import { QMT_PHASES, QMT_AID_STATIONS, QMT_MANDATORY_GEAR_ITEMS, TrainingPhaseDetail } from '../data/qmtPlanData';
+import { FlexibleTrainingWeek } from './FlexibleTrainingWeek';
+import { recentRunBaseline } from '../services/trainingBaseline';
 
 interface QMTPlanOverviewProps {
   currentContext: PeriodizationContext;
-  qmtPrediction?: QmtRacePrediction;
+  strengthSessionsThisWeek: number;
+  strengthSessionsLast28d: number;
+  runBaseline: ReturnType<typeof recentRunBaseline>;
 }
 
-export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext, qmtPrediction }) => {
-  const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(0);
+function phaseIndex(phase: string): number {
+  if (phase.startsWith('FONDATION_RAMP')) return 0;
+  if (phase === 'FONDATION') return 1;
+  if (phase === 'PUISSANCE_HIVERNALE') return 2;
+  if (phase === 'VOLUME_WEC_1') return 3;
+  if (phase === 'SPECIFIQUE_PIC') return 4;
+  return 5;
+}
+
+export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext, strengthSessionsThisWeek, strengthSessionsLast28d, runBaseline }) => {
+  const [selectedPhaseIndex, setSelectedPhaseIndex] = useState<number>(() => phaseIndex(currentContext.phase));
   const [activeSubTab, setActiveSubTab] = useState<'roadmap' | 'weekly' | 'raceStrategy' | 'gearSetup'>('roadmap');
   const [checkedGear, setCheckedGear] = useState<Record<string, boolean>>({});
 
@@ -54,7 +66,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
           className={`chip-btn ${activeSubTab === 'weekly' ? 'active' : ''}`}
           onClick={() => setActiveSubTab('weekly')}
         >
-          <Calendar size={13} /> 2. Planning Hebdo Type
+          <Calendar size={13} /> 2. Semaine flexible
         </button>
 
         <button
@@ -202,116 +214,10 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
         </div>
       )}
 
-      {/* TAB 2: DAY-BY-DAY WEEKLY SCHEDULE TABLE */}
+      {/* TAB 2: FLEXIBLE WEEKLY TRAINING */}
       {activeSubTab === 'weekly' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div className="pro-table-wrapper">
-            <table className="pro-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '120px' }}>Jour & Durée</th>
-                  <th>Protocole de Séance & Thématique</th>
-                  <th>Lieu</th>
-                  <th style={{ width: '140px' }}>Zone Cible</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Lundi</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 45 – 65 min</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🤸 Calisthénie 1 (Poussée & Gainage)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Dips, pompes pikes (renforcement épaules), pompes aux anneaux, gainage hollow body. Zéro impact sur les jambes après les sorties du weekend.</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Gym ÉTS</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Récupération (Z1)</span></td>
-                </tr>
-
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Mardi</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 65 – 85 min</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>⚡ Côtes D+ & Renforcement Jambes</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Répétitions de côtes courtes au Mont-Royal (172-190 bpm) ou tapis incliné l'hiver (15% @ 6 km/h) enchaînées avec fentes bulgares et squats lents pour blinder les cuisses en descente.</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Mont-Royal / Gym</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 87, 34, 0.15)', border: '1px solid var(--primary-border)', color: 'var(--primary)' }}>❤️ Zone 4/5 (172-190)</span></td>
-                </tr>
-
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Mercredi</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 45 – 65 min</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏋️ Calisthénie 2 (Tirage & Dos - Zéro Jambes)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Tractions strictes, tractions horizontales aux anneaux, travail du front lever, suspensions à la barre. Permet une récupération complète des cuisses post-mardi.</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Gym ÉTS</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Zone 1 (Force)</span></td>
-                </tr>
-
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Jeudi</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 35 – 50 min</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏃 Footing Aérobie Fondamentale Z2</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Aisance respiratoire absolue. Fréquence cardiaque strictement sous 148 bpm. Foulée légère et économique (170-175 pas/min sous les hanches).</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Quartier / Maisonneuve</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}>❤️ Zone 1/2 (&lt; 148)</span></td>
-                </tr>
-
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Vendredi</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 40 – 60 min</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🤸 Calisthénie 3 (Équilibre, Mobilité Épaules & Gainage)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Équilibres sur les mains (Handstand), mobilité active des épaules, L-sit/V-sit. Enchaîné directement après les cours au Gym ÉTS. Repos pour les jambes avant le choc du weekend.</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Gym ÉTS</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>❤️ Zone 1 (Mobilité)</span></td>
-                </tr>
-
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Samedi</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 1h45 – 4h30</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏔️ Sortie Longue Choc en Montagne (WEC 1)</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>La séance pilier pour le QMT-80. Cumul de dénivelé continu, alternance course / marche active dès que la pente dépasse 8-10%, résistance musculaire en descente. Ravitaillement : 60g de glucides/h.</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Sentiers Mont-Royal</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(255, 87, 34, 0.15)', border: '1px solid var(--primary-border)', color: 'var(--primary)' }}>❤️ Zone 2 (&lt; 155)</span></td>
-                </tr>
-
-                <tr>
-                  <td>
-                    <div style={{ fontWeight: 800, color: '#ffffff', fontSize: '0.88rem' }}>Dimanche</div>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⏱️ 40 – 75 min</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: 2 }}>🏃 Footing sur Fatigue (WEC 2) + Mobilité</div>
-                    <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>Couru directement sur la fatigue musculaire du samedi pour habituer le système nerveux à la fin de course (simulation des KM 50-77 du QMT). Suivi de 20 min d'étirements du bassin et des mollets.</div>
-                  </td>
-                  <td style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>📍 Mont-Royal / Domicile</td>
-                  <td><span className="badge-tag" style={{ background: 'rgba(56, 189, 248, 0.15)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8' }}>❤️ Strict Z2 (&lt; 148)</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <FlexibleTrainingWeek context={currentContext} strengthSessionsThisWeek={strengthSessionsThisWeek} strengthSessionsLast28d={strengthSessionsLast28d} runBaseline={runBaseline} />
       )}
-
       {/* TAB 3: RACE PROFILE & AID STATIONS (OFFICIAL QMT DATA) */}
       {activeSubTab === 'raceStrategy' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -342,150 +248,17 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             </div>
           </div>
 
-          {/* SIMULATEUR DE COURSE OFFICIEL QMT-80 */}
-          {qmtPrediction && (
-            <div
-              style={{
-                background: 'linear-gradient(135deg, rgba(255, 87, 34, 0.10), rgba(14, 20, 36, 0.95))',
-                border: '1px solid var(--primary-border)',
-                borderRadius: 'var(--radius-md)',
-                padding: '20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '14px'
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                <div>
-                  <span
-                    style={{
-                      background: 'var(--primary-subtle)',
-                      color: 'var(--primary)',
-                      padding: '3px 8px',
-                      borderRadius: 'var(--radius-xs)',
-                      fontSize: '0.72rem',
-                      fontWeight: 800
-                    }}
-                  >
-                    SIMULATEUR DE COURSE OFFICIEL
-                  </span>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800, margin: '6px 0 2px 0', color: '#fff' }}>
-                    Québec Méga Trail QMT-80 (77 km • +3 370m D+)
-                  </h3>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>
-                    Prévision chronométrique et allures personnalisées selon votre volume et endurance aérobie actuels.
-                  </p>
-                </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Chrono Prévisionnel Cible</div>
-                  <div style={{ fontSize: '1.75rem', fontWeight: 900, color: 'var(--primary)' }}>
-                    {formatMinutes(qmtPrediction.predictedMinutes)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Barre d'amplitude chronométrique */}
-              <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem', marginBottom: '8px', flexWrap: 'wrap', gap: '6px' }}>
-                  <span style={{ color: 'var(--accent-green)' }}>
-                    Ambitieux : <strong>{formatMinutes(qmtPrediction.ambitiousMinutes)}</strong>
-                  </span>
-                  <span style={{ color: 'var(--primary)', fontWeight: 800 }}>
-                    Cible : <strong>{formatMinutes(qmtPrediction.predictedMinutes)}</strong>
-                  </span>
-                  <span style={{ color: 'var(--accent-amber)' }}>
-                    Prudent : <strong>{formatMinutes(qmtPrediction.conservativeMinutes)}</strong>
-                  </span>
-                  <span style={{ color: 'var(--accent-red)' }}>
-                    Barrière finale : <strong>19h00</strong>
-                  </span>
-                </div>
-                <div style={{ height: '7px', background: 'rgba(255,255,255,0.08)', borderRadius: '9999px', position: 'relative', overflow: 'hidden' }}>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: `${Math.round((qmtPrediction.ambitiousMinutes / 1140) * 100)}%`,
-                      width: `${Math.round(((qmtPrediction.conservativeMinutes - qmtPrediction.ambitiousMinutes) / 1140) * 100)}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, var(--accent-green), var(--primary), var(--accent-amber))'
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Analyse & Marge */}
-              <div style={{ background: 'rgba(255,255,255,0.025)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <div>{qmtPrediction.predictionAnalysis}</div>
-                <span style={{ color: 'var(--accent-green)', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                  +{formatMinutes(qmtPrediction.cutoffMarginMinutes)} de marge de sécurité
-                </span>
-              </div>
-
-              {/* Tableau des splits calculés par poste */}
-              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
-                <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-color)', fontSize: '0.82rem', fontWeight: 700, color: '#fff' }}>
-                  Temps de Passage & Allures Cibles aux 6 Ravitaillements Officiels
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', textAlign: 'left' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                        <th style={{ padding: '8px 12px' }}>Poste</th>
-                        <th style={{ padding: '8px 12px' }}>KM</th>
-                        <th style={{ padding: '8px 12px' }}>D+</th>
-                        <th style={{ padding: '8px 12px' }}>Chrono Passage</th>
-                        <th style={{ padding: '8px 12px' }}>Allure Section</th>
-                        <th style={{ padding: '8px 12px' }}>Stratégie</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {qmtPrediction.aidStationSplits.map((split, i) => (
-                        <tr
-                          key={split.name}
-                          style={{
-                            borderBottom: '1px solid rgba(255,255,255,0.04)',
-                            background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)'
-                          }}
-                        >
-                          <td style={{ padding: '8px 12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                            {split.name}
-                          </td>
-                          <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
-                            KM {split.km}
-                          </td>
-                          <td style={{ padding: '8px 12px', color: 'var(--accent-cyan)' }}>
-                            +{split.elevationGainM}m
-                          </td>
-                          <td style={{ padding: '8px 12px', fontWeight: 800, color: 'var(--primary)' }}>
-                            {split.elapsedFormatted}
-                          </td>
-                          <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>
-                            {split.paceMinKm}
-                          </td>
-                          <td style={{ padding: '8px 12px', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                            {split.notes}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Aid Stations Breakdown Table */}
           <div className="glass-panel" style={{ padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Mountain size={16} color="var(--primary)" />
                 <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1rem', fontWeight: 800, color: '#fff' }}>
-                  Postes de Ravitaillement & Découpage Officiel du Parcours
+                  Repères des postes de ravitaillement
                 </h3>
               </div>
               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                Fournisseur officiel : Produits XACT Nutrition & Électrolytes à tous les postes
+                Distances et services à revérifier dans le guide 2027 de l'organisation.
               </span>
             </div>
 
@@ -678,17 +451,17 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
               🎒 Stratégie "Sac de Délestage" (Drop Bag) à Saint-Tite-des-Caps (KM 57) :
             </h4>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 10 }}>
-              Comme ton sac fait 5L, tu ne dois <strong>pas le surcharger dès le KM 0</strong> ! Utilise le sac officiel fourni par l'organisation pour le déposer au ravitaillement de Saint-Tite (KM 57) avec :
+              Le sac de délestage annoncé par l'organisation est disponible à Saint-Tite-des-Caps. Teste à l'entraînement ce que tu peux porter confortablement et confirme les modalités 2027 avant de préparer le sac :
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '8px', fontSize: '0.76rem' }}>
               <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border-color)' }}>
-                <strong>🔦 Lampe frontale & piles :</strong> Obligatoire à partir de Saint-Tite ! Inutile de la porter dans le sac 5L sur les 57 premiers kilomètres de jour.
+                <strong>🔦 Lampe frontale & batterie :</strong> Exigées à partir de Saint-Tite selon la page actuelle de la course ; prépare aussi un plan si la progression est plus lente que prévu.
               </div>
               <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border-color)' }}>
-                <strong>🧦 Chaussettes sèches + Crème Nok :</strong> Pieds neufs avant d'attaquer le terrible canyon du Mestachibo.
+                <strong>🧦 Soin des pieds :</strong> Chaussettes ou matériel déjà testés, selon tes besoins et l'état du terrain.
               </div>
               <div style={{ background: 'rgba(255, 255, 255, 0.025)', padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border-color)' }}>
-                <strong>🍌 Ravitaillement fin de course :</strong> Tes 4-5 gels préférés pour les 23 derniers kilomètres (KM 57 à 77).
+                <strong>🍌 Alimentation :</strong> Prévois des options que tu as tolérées sur les sorties longues, sans quantité imposée par défaut.
               </div>
             </div>
           </div>
@@ -704,7 +477,7 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
               color: 'var(--accent-amber)'
             }}
           >
-            <strong>⚠️ RÈGLE OFFICIELLE CRUCIALE SUR LES BÂTONS :</strong> Les bâtons de marche sont <strong>strictement interdits dans la section Mestachibo (KM 57-67)</strong> pour des raisons de sécurité (chutes entre les blocs de granit et mains libres requises sur les échelles). Tu as l'obligation de les porter durant toute la course si tu choisis d'en avoir. Assure-toi que ton sac de 5L possède un carquois trail ou des élastiques de portage pour ranger tes bâtons pliés sans gêner tes bras !
+            <strong>⚠️ Bâtons :</strong> L'organisation les autorise sauf dans la section Mestashibo et interdit de les placer dans le sac de délestage. Vérifie la règle 2027 et entraîne-toi à les ranger sans gêner tes mains.
           </div>
 
           {/* Official Mandatory Gear Interactive Checklist */}
@@ -712,10 +485,10 @@ export const QMTPlanOverview: React.FC<QMTPlanOverviewProps> = ({ currentContext
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 6 }}>
               <h4 style={{ fontSize: '0.9rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <ShieldCheck size={16} color="#10b981" />
-                Matériel Obligatoire Officiel QMT-80 (Checklist de Contrôle)
+                Matériel obligatoire QMT-80 (liste publiée actuellement)
               </h4>
               <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                Vérifications aléatoires sur le parcours par les commissaires de course
+                <a href="https://ultratrailcanada.com/courses-ultra-trail/qmt-80/" target="_blank" rel="noopener noreferrer">Revérifier la liste officielle avant la course</a>
               </span>
             </div>
 

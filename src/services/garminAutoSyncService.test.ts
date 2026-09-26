@@ -111,6 +111,11 @@ describe('Garmin Auto-Sync Service', () => {
         location: 'Mont-Royal'
       }),
       createMockEvent({
+        id: 'optional_sunday', title: 'Footing facultatif',
+        startDate: '2026-09-13T08:00:00Z', endDate: '2026-09-13T08:40:00Z',
+        category: 'sport', durationMinutes: 40, metadata: { isOptional: true }
+      }),
+      createMockEvent({
         id: 'study_current_week',
         title: 'Cours Math ÉTS',
         startDate: '2026-09-10T10:00:00Z',

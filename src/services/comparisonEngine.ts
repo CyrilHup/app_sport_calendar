@@ -363,6 +363,9 @@ export function compareWorkoutsWithGarmin(
       }
 
       comparisons.push(comp);
+    } else if (plan.metadata?.isOptional) {
+      // Optional runs contribute when completed, but absence is not noncompliance.
+      continue;
     } else if (planDateKey === asOfKey) {
       // Séance d'aujourd'hui pas encore téléversée
       comparisons.push({

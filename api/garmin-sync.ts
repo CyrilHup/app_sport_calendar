@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { normalizeGarminActivities } from '../src/server/garminActivityNormalizer.js';
+import { extractGarminFeedback } from '../src/services/activityFeedback.js';
 import { fetchGarminWellness, getGarminLocalDate } from '../src/server/garminWellness.js';
 import { sanitizeGarminText } from '../src/services/garminText.js';
 import { GARMIN_TRAINING_POLICY, isValidGarminMaxHeartRate, isValidRecordedHeartRatePeak } from '../src/services/garminTrainingPolicy.js';
@@ -53,6 +54,14 @@ function parsePaceSeconds(paceStr?: string): number {
   }
   const val = parseFloat(paceStr);
   return isNaN(val) ? 0 : Math.round(val * 60);
+}
+
+function within<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Garmin detail timeout')), ms);
+    promise.then(value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); });
+  });
 }
 
 function getSessionFile(userId: string): string {
@@ -203,6 +212,20 @@ export default async function handler(req: any, res: any) {
     // ----------------------------------------------------
     // ACTION: PUSH WORKOUT TO GARMIN CONNECT & SCHEDULE
     // ----------------------------------------------------
+    if (action === 'get-activity-feedback') {
+      const results = await Promise.all((body.activityIds || []).map(async activityId => {
+        try {
+          const detail = await within(gc.getActivity({ activityId }), 6000);
+          return { activityId, checked: true, feedback: extractGarminFeedback(detail) };
+        } catch (error) {
+          console.warn('Could not read Garmin subjective feedback for activity', activityId, error);
+          return { activityId, checked: false };
+        }
+      }));
+      res.status(200).json({ success: true, results });
+      return;
+    }
+
     if (action === 'cancel-workout') {
       const cancellation = body.cancellation!;
       const { scheduledDate, workoutId } = cancellation;
