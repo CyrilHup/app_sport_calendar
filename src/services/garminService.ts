@@ -1232,7 +1232,13 @@ export async function pushWorkoutToGarmin(
       return {
         success: false,
         error: data?.error || 'Erreur lors de l\'envoi de la séance vers Garmin Connect.',
-        errorCode: data?.code === 'GARMIN_AUTH_REQUIRED' ? 'GARMIN_AUTH_REQUIRED' : undefined
+        errorCode: data?.code === 'GARMIN_AUTH_REQUIRED' ? 'GARMIN_AUTH_REQUIRED'
+          : data?.code === 'GARMIN_REPLACE_MISSING' ? 'GARMIN_REPLACE_MISSING'
+          : undefined,
+        scheduledDate: typeof data?.scheduledDate === 'string' ? data.scheduledDate : undefined,
+        scheduledWorkoutIds: Array.isArray(data?.scheduledWorkoutIds)
+          ? data.scheduledWorkoutIds.filter((id: unknown): id is string => typeof id === 'string')
+          : undefined
       };
     }
 

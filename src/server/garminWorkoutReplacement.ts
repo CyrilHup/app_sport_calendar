@@ -296,9 +296,17 @@ export async function findScheduledQmtWorkoutReplacementIds(
     client, scheduledDate, expectedSportTypeKeys, replaceWorkoutId
   );
   if (!existingIds.includes(replaceWorkoutId)) {
-    throw manualReviewError(
+    // The expected ID is gone but Garmin still knows what is scheduled on
+    // this date. Report those exact IDs so the client can reconcile an
+    // exchange that already happened (e.g. after a lost response) instead of
+    // creating a duplicate workout.
+    const missing = manualReviewError(
       `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
-    );
+    ) as Error & { code?: string; scheduledDate?: string; scheduledWorkoutIds?: string[] };
+    missing.code = 'GARMIN_REPLACE_MISSING';
+    missing.scheduledDate = scheduledDate;
+    missing.scheduledWorkoutIds = existingIds;
+    throw missing;
   }
   const unregisteredIds = existingIds.filter(id => id !== replaceWorkoutId);
   if (unregisteredIds.length > 0) {

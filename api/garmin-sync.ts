@@ -273,12 +273,33 @@ export default async function handler(req: any, res: any) {
       // Replacements use only the exact Garmin ID previously stored by this
       // app. Verify it is still scheduled on this date before creating; never
       // infer additional IDs from a title or same-day duplicate.
-      const previousWorkoutIds = await findScheduledQmtWorkoutReplacementIds(
-        gc,
-        workout.scheduledDate,
-        workout.sportType,
-        workout.replaceWorkoutId
-      );
+      let previousWorkoutIds: string[];
+      try {
+        previousWorkoutIds = await findScheduledQmtWorkoutReplacementIds(
+          gc,
+          workout.scheduledDate,
+          workout.sportType,
+          workout.replaceWorkoutId
+        );
+      } catch (lookupError: any) {
+        if (lookupError?.code === 'GARMIN_REPLACE_MISSING') {
+          // No workout was created; the date lease is released below so a
+          // later reconciliation can proceed. The client uses the reported
+          // schedule to adopt an exchange Garmin already applied.
+          try { await runLease?.release(); } catch {}
+          res.status(200).json({
+            success: false,
+            error: lookupError?.message || 'Séance exacte introuvable sur Garmin.',
+            code: 'GARMIN_REPLACE_MISSING',
+            scheduledDate: lookupError?.scheduledDate || workout.scheduledDate,
+            scheduledWorkoutIds: Array.isArray(lookupError?.scheduledWorkoutIds)
+              ? lookupError.scheduledWorkoutIds
+              : []
+          });
+          return;
+        }
+        throw lookupError;
+      }
 
       const wb = new WorkoutBuilder(wt, cleanTitle, cleanDesc);
 

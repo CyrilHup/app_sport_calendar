@@ -8,12 +8,13 @@ import {
   GARMIN_SYNCED_WORKOUT_IDS_KEY,
   syncCurrentWeekWorkoutsToGarmin
 } from './garminAutoSyncService';
-import { fetchGarminRunRegistry, saveGarminRunRegistryEntry } from './supabaseClient';
+import { fetchGarminRunRegistry, saveGarminRunRegistryEntry, exchangeGarminRunRegistryEntries } from './supabaseClient';
 import { STORAGE_KEYS } from './storageService';
 
 vi.mock('./supabaseClient', () => ({
   fetchGarminRunRegistry: vi.fn(),
-  saveGarminRunRegistryEntry: vi.fn()
+  saveGarminRunRegistryEntry: vi.fn(),
+  exchangeGarminRunRegistryEntries: vi.fn()
 }));
 
 const values = new Map<string, string>();
@@ -232,6 +233,7 @@ describe('cloud-backed Garmin run IDs', () => {
       { eventId: second.id, workoutDate: '2026-09-24', workoutId: '222', signature: 'old-second' }
     ]);
     vi.mocked(saveGarminRunRegistryEntry).mockResolvedValue(true);
+    vi.mocked(exchangeGarminRunRegistryEntries).mockResolvedValue(true);
     const push = vi.spyOn(garminService, 'pushWorkoutToGarmin')
       .mockResolvedValueOnce({ success: true, workoutId: '333' })
       .mockResolvedValueOnce({ success: true, workoutId: '444' });
@@ -242,6 +244,110 @@ describe('cloud-backed Garmin run IDs', () => {
     expect(push).toHaveBeenNthCalledWith(1, first, '2026-09-24', 'FORERUNNER_55', undefined, '222');
     expect(push).toHaveBeenNthCalledWith(2, second, '2026-09-23', 'FORERUNNER_55', undefined, '111');
     expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')).toMatchObject({ [first.id]: '333', [second.id]: '444' });
+    // A swap can never be persisted with sequential single-row upserts: the
+    // first swapped row collides with the row still holding the old date/ID.
+    expect(saveGarminRunRegistryEntry).not.toHaveBeenCalled();
+    expect(exchangeGarminRunRegistryEntries).toHaveBeenCalledWith('account-a', {
+      eventId: first.id,
+      workoutDate: '2026-09-24',
+      workoutId: '333',
+      signature: computeWorkoutSyncSignature(first)
+    }, {
+      eventId: second.id,
+      workoutDate: '2026-09-23',
+      workoutId: '444',
+      signature: computeWorkoutSyncSignature(second)
+    });
+  });
+
+  it('heals the cloud registry without pushing when Garmin already holds the swap', async () => {
+    // Garmin + local storage already swapped (new IDs, fresh signatures) but
+    // the cloud registry still shows the old mapping because sequential
+    // upserts cannot express a swap.
+    const first = { ...run('SPORT_WORKOUT_2026-09-23'), startDate: '2026-09-24T12:00:00.000Z',
+      endDate: '2026-09-24T13:00:00.000Z', metadata: { originalDate: '2026-09-23', isPostponed: true } };
+    const second = { ...run('SPORT_WORKOUT_2026-09-24'), startDate: '2026-09-23T12:00:00.000Z',
+      endDate: '2026-09-23T13:00:00.000Z', metadata: { originalDate: '2026-09-24', isPostponed: true } };
+    values.set(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [first.id]: '333', [second.id]: '444' }));
+    values.set(GARMIN_SYNCED_SIGNATURES_KEY, JSON.stringify({
+      [first.id]: computeWorkoutSyncSignature(first),
+      [second.id]: computeWorkoutSyncSignature(second)
+    }));
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([
+      { eventId: first.id, workoutDate: '2026-09-23', workoutId: '111', signature: 'old-first' },
+      { eventId: second.id, workoutDate: '2026-09-24', workoutId: '222', signature: 'old-second' }
+    ]);
+    vi.mocked(saveGarminRunRegistryEntry).mockResolvedValue(true);
+    vi.mocked(exchangeGarminRunRegistryEntries).mockResolvedValue(true);
+    const push = vi.spyOn(garminService, 'pushWorkoutToGarmin');
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([first, second], new Date('2026-09-23T13:00:00Z'), { userId: 'account-a' });
+
+    expect(result.success).toBe(true);
+    expect(push).not.toHaveBeenCalled();
+    expect(saveGarminRunRegistryEntry).not.toHaveBeenCalled();
+    expect(exchangeGarminRunRegistryEntries).toHaveBeenCalledWith('account-a', {
+      eventId: first.id,
+      workoutDate: '2026-09-24',
+      workoutId: '333',
+      signature: computeWorkoutSyncSignature(first)
+    }, {
+      eventId: second.id,
+      workoutDate: '2026-09-23',
+      workoutId: '444',
+      signature: computeWorkoutSyncSignature(second)
+    });
+  });
+
+  it('adopts Garmin-reported IDs when both replace targets already vanished', async () => {
+    // Local + cloud still reference the pre-swap IDs, but Garmin already
+    // swapped: each push reports its replace target gone with exactly one
+    // QMT session scheduled. Adopt instead of duplicating.
+    const first = { ...run('SPORT_WORKOUT_2026-09-23'), startDate: '2026-09-24T12:00:00.000Z',
+      endDate: '2026-09-24T13:00:00.000Z', metadata: { originalDate: '2026-09-23', isPostponed: true } };
+    const second = { ...run('SPORT_WORKOUT_2026-09-24'), startDate: '2026-09-23T12:00:00.000Z',
+      endDate: '2026-09-23T13:00:00.000Z', metadata: { originalDate: '2026-09-24', isPostponed: true } };
+    values.set(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [first.id]: '111', [second.id]: '222' }));
+    values.set(GARMIN_SYNCED_SIGNATURES_KEY, JSON.stringify({ [first.id]: 'old-first', [second.id]: 'old-second' }));
+    vi.mocked(fetchGarminRunRegistry).mockResolvedValue([
+      { eventId: first.id, workoutDate: '2026-09-23', workoutId: '111', signature: 'old-first' },
+      { eventId: second.id, workoutDate: '2026-09-24', workoutId: '222', signature: 'old-second' }
+    ]);
+    vi.mocked(saveGarminRunRegistryEntry).mockResolvedValue(true);
+    vi.mocked(exchangeGarminRunRegistryEntries).mockResolvedValue(true);
+    const push = vi.spyOn(garminService, 'pushWorkoutToGarmin')
+      .mockResolvedValueOnce({
+        success: false,
+        errorCode: 'GARMIN_REPLACE_MISSING',
+        error: "La séance exacte 222 n'est plus programmée le 2026-09-24. Vérifiez manuellement le calendrier Garmin avant de réessayer.",
+        scheduledDate: '2026-09-24',
+        scheduledWorkoutIds: ['333']
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        errorCode: 'GARMIN_REPLACE_MISSING',
+        error: "La séance exacte 111 n'est plus programmée le 2026-09-23. Vérifiez manuellement le calendrier Garmin avant de réessayer.",
+        scheduledDate: '2026-09-23',
+        scheduledWorkoutIds: ['444']
+      });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([first, second], new Date('2026-09-23T13:00:00Z'), { userId: 'account-a' });
+
+    expect(result.success).toBe(true);
+    expect(push).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')).toMatchObject({ [first.id]: '333', [second.id]: '444' });
+    expect(exchangeGarminRunRegistryEntries).toHaveBeenCalledWith('account-a', {
+      eventId: first.id,
+      workoutDate: '2026-09-24',
+      workoutId: '333',
+      signature: computeWorkoutSyncSignature(first)
+    }, {
+      eventId: second.id,
+      workoutDate: '2026-09-23',
+      workoutId: '444',
+      signature: computeWorkoutSyncSignature(second)
+    });
+    expect(result.error).toBeUndefined();
   });
 
   it('does not synchronize an exchange when an actual activity is associated with a workout', async () => {

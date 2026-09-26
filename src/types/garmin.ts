@@ -148,5 +148,7 @@ export interface WorkoutPushResult {
   sportType?: string;
   message?: string;
   error?: string;
-  errorCode?: 'GARMIN_AUTH_REQUIRED';
+  errorCode?: 'GARMIN_AUTH_REQUIRED' | 'GARMIN_REPLACE_MISSING';
+  /** Exact QMT workout IDs Garmin reports scheduled when a replace target is gone. */
+  scheduledWorkoutIds?: string[];
 }

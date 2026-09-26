@@ -1465,7 +1465,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           setDraggedEvent(null);
                         }
                       }}
-                      style={isDragTarget ? { position: 'relative', outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : undefined}
+                      style={isDragTarget ? { position: 'relative', outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : { position: 'relative' }}
                     >
                       {isDragTarget && exchangeTarget && (
                         <div role="status" style={{ position: 'absolute', top: 8, left: 8, right: 8, zIndex: 2, pointerEvents: 'none', padding: '7px 9px', borderRadius: 6, background: '#1e3a5f', color: '#bfdbfe', fontSize: '0.75rem', fontWeight: 700, boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)' }}>
