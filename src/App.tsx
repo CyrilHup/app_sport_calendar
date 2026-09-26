@@ -823,6 +823,8 @@ export const App: React.FC = () => {
     reason?: string,
     targetStartTime?: string
   ) => {
+    const currentWorkout = allEvents.find(event => event.id === eventId && event.category === 'sport');
+    const currentDate = currentWorkout ? formatDateKey(new Date(currentWorkout.startDate)) : originalDate;
     const originalWorkout = baseCalendarRef.current.allEvents.find(event =>
       event.id === eventId && event.category === 'sport' && formatDateKey(new Date(event.startDate)) === originalDate
     );
@@ -831,17 +833,35 @@ export const App: React.FC = () => {
         title: 'Séance introuvable',
         message: 'Cette séance a changé depuis son affichage. Actualise le calendrier avant de la reporter.'
       });
-      return;
+      return false;
     }
-    const updated = postponeWorkout(
-      appStateRef.current.postponeOverrides,
-      eventId,
-      originalDate,
-      targetDate,
-      reason,
-      targetStartTime,
-      originalWorkout
+    if (targetDate === currentDate) return false;
+    const targetRuns = allEvents.filter(event => event.category === 'sport' &&
+      !event.metadata?.isPostponedPlaceholder && isTrailOrRunning(event) &&
+      formatDateKey(new Date(event.startDate)) === targetDate && event.id !== eventId);
+    if (isTrailOrRunning(currentWorkout || originalWorkout) && targetRuns.length > 1) {
+      setSyncError({ title: 'Échange ambigu', message: 'Plusieurs courses sont prévues ce jour. Choisis une autre date ou ajuste le planning avant de déplacer cette séance.' });
+      return false;
+    }
+    // Moving a run onto another run exchanges their days in one calendar update.
+    // This prevents the temporary two-run day that Garmin cannot synchronize.
+    const other = isTrailOrRunning(currentWorkout || originalWorkout) ? targetRuns[0] : undefined;
+    const otherOriginalDate = other?.metadata?.originalDate || targetDate;
+    const otherOriginal = other && baseCalendarRef.current.allEvents.find(event =>
+      event.id === other.id && event.category === 'sport' && formatDateKey(new Date(event.startDate)) === otherOriginalDate
     );
+    if (other && !otherOriginal) {
+      setSyncError({ title: 'Séance introuvable', message: 'La séance à échanger a changé. Actualise le calendrier avant de recommencer.' });
+      return false;
+    }
+    const move = (overrides: typeof postponeOverrides, workout: CalendarEvent, from: string, to: string, time?: string) =>
+      to === from
+        ? cancelPostponeWorkout(overrides, workout.id)
+        : postponeWorkout(overrides, workout.id, from, to, reason, time, workout);
+    let updated = move(appStateRef.current.postponeOverrides, originalWorkout, originalDate, targetDate, targetStartTime);
+    if (otherOriginal) {
+      updated = move(updated, otherOriginal, otherOriginalDate, currentDate);
+    }
     appStateRef.current.postponeOverrides = updated;
     setPostponeOverrides(updated);
     savePostponeOverrides(updated);

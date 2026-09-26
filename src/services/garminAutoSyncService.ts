@@ -245,6 +245,46 @@ async function runCurrentWeekWorkoutSync(
     const conflictingEventIds = new Set<string>();
     const completedEventIds = new Set(options?.completedEventIds);
     let cancelledCount = 0;
+    const runningByDate = new Map<string, number>();
+    for (const workout of weekWorkouts) {
+      if (!isTrailOrRunning(workout.sportType, workout.title)) continue;
+      const date = toLocalDateKey(workout.startDate);
+      runningByDate.set(date, (runningByDate.get(date) || 0) + 1);
+    }
+
+    // For a two-day exchange, each date's registered Garmin ID is the exact
+    // workout to replace on that date. Keep the pair together so a partially
+    // completed exchange can safely resume after a lost response.
+    const exchangedTargetIds = new Map<string, string>();
+    const reviewedExchangeIds = new Set<string>();
+    for (const workout of weekWorkouts) {
+      if (!cloudRegistry || !isTrailOrRunning(workout.sportType, workout.title) ||
+        !workout.metadata?.originalDate || exchangedTargetIds.has(workout.id) || reviewedExchangeIds.has(workout.id)) continue;
+      const targetDate = toLocalDateKey(workout.startDate);
+      const originalDate = workout.metadata.originalDate;
+      const partner = weekWorkouts.find(candidate => candidate.id !== workout.id &&
+        isTrailOrRunning(candidate.sportType, candidate.title) &&
+        candidate.metadata?.originalDate === targetDate && toLocalDateKey(candidate.startDate) === originalDate);
+      if (!partner || runningByDate.get(targetDate) !== 1 || runningByDate.get(originalDate) !== 1) continue;
+      const originalEntry = cloudRegistry.find(entry => entry.eventId === workout.id && entry.workoutDate === originalDate);
+      const partnerEntry = cloudRegistry.find(entry => entry.eventId === partner.id && entry.workoutDate === targetDate);
+      if (!originalEntry || !partnerEntry ||
+        !/^[1-9]\d{0,19}$/.test(originalEntry.workoutId) || !/^[1-9]\d{0,19}$/.test(partnerEntry.workoutId) ||
+        (existingWorkoutIds[workout.id] && existingWorkoutIds[workout.id] !== originalEntry.workoutId) ||
+        (existingWorkoutIds[partner.id] && existingWorkoutIds[partner.id] !== partnerEntry.workoutId)) continue;
+      if (new Date(workout.startDate).getTime() <= referenceDate.getTime() ||
+        new Date(partner.startDate).getTime() <= referenceDate.getTime() ||
+        completedEventIds.has(workout.id) || completedEventIds.has(partner.id) ||
+        workout.metadata?.isCompleted || partner.metadata?.isCompleted) {
+        manualReviewErrors.push(`Échange ${originalDate} ↔ ${targetDate} : au moins une séance a commencé. Planning modifié ici ; vérifier Garmin manuellement.`);
+        reviewedExchangeIds.add(workout.id);
+        reviewedExchangeIds.add(partner.id);
+        continue;
+      }
+      exchangedTargetIds.set(workout.id, partnerEntry.workoutId);
+      exchangedTargetIds.set(partner.id, originalEntry.workoutId);
+    }
+    for (const [eventId, targetId] of exchangedTargetIds) updatedWorkoutIds[eventId] = targetId;
 
     for (const rest of restCancellations) {
       if (completedEventIds.has(rest.id) || rest.metadata?.isCompleted) continue;
@@ -313,7 +353,8 @@ async function runCurrentWeekWorkoutSync(
       );
       if (!matchingWorkout) continue;
       const eventId = matchingWorkout.id;
-      const localId = existingWorkoutIds[eventId];
+      if (reviewedExchangeIds.has(eventId)) continue;
+      const localId = updatedWorkoutIds[eventId];
       if (localId && localId !== entry.workoutId) {
         manualReviewErrors.push(`Identifiants Garmin divergents pour ${eventId} : vérification manuelle nécessaire.`);
         conflictingEventIds.add(eventId);
@@ -323,15 +364,9 @@ async function runCurrentWeekWorkoutSync(
       if (!existingSignatures[eventId]) updatedSignatures[eventId] = entry.signature;
     }
 
-    const runningByDate = new Map<string, number>();
-    for (const workout of weekWorkouts) {
-      if (!isTrailOrRunning(workout.sportType, workout.title)) continue;
-      const date = toLocalDateKey(workout.startDate);
-      runningByDate.set(date, (runningByDate.get(date) || 0) + 1);
-    }
-
     for (const workout of weekWorkouts) {
       const date = toLocalDateKey(workout.startDate);
+      if (reviewedExchangeIds.has(workout.id)) continue;
       if (isTrailOrRunning(workout.sportType, workout.title) && (runningByDate.get(date) || 0) > 1) {
         manualReviewErrors.push(`Plusieurs séances de course prévues le ${date} : synchronisation Garmin suspendue pour ce jour.`);
         continue;

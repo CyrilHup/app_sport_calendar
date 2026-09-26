@@ -98,6 +98,30 @@ describe('Workout Postpone Service', () => {
     });
   });
 
+  it('keeps two exchanged weekend workouts distinct without ghost cards', () => {
+    const sundayWorkout: CalendarEvent = {
+      ...saturdayWorkout,
+      id: 'SPORT_WORKOUT_2026-09-06',
+      title: 'Footing facile',
+      startDate: '2026-09-06T09:00:00.000Z',
+      endDate: '2026-09-06T10:15:00.000Z'
+    };
+    const baseSunday = { ...sundaySchedule, events: [sundayWorkout], sportSession: sundayWorkout };
+    let overrides = postponeWorkout({}, saturdayWorkout.id, saturdaySchedule.date, baseSunday.date,
+      undefined, undefined, saturdayWorkout);
+    overrides = postponeWorkout(overrides, sundayWorkout.id, baseSunday.date, saturdaySchedule.date,
+      undefined, undefined, sundayWorkout);
+
+    const result = applyPostponements([saturdaySchedule, baseSunday], [saturdayWorkout, sundayWorkout], overrides);
+    const saturday = result.schedules[0];
+    const sunday = result.schedules[1];
+    expect(saturday.events.filter(event => event.category === 'sport').map(event => event.id)).toEqual([sundayWorkout.id]);
+    expect(sunday.events.filter(event => event.category === 'sport').map(event => event.id)).toEqual([saturdayWorkout.id]);
+    expect(saturday.sportSession?.id).toBe(sundayWorkout.id);
+    expect(sunday.sportSession?.id).toBe(saturdayWorkout.id);
+    expect(result.allEvents).toHaveLength(2);
+  });
+
   it('restores the original workout when postponement is cancelled', () => {
     const baseSchedules = [saturdaySchedule, sundaySchedule];
     const baseEvents = [saturdayWorkout];

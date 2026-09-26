@@ -25,6 +25,7 @@ export const SyncErrorModal: React.FC<SyncErrorModalProps> = ({
   isRetrying = false
 }) => {
   if (!error) return null;
+  const needsCalendarReview = /Identifiants Garmin divergents|au moins une séance a commencé/.test(error.details || '');
 
   return (
     <div
@@ -158,7 +159,9 @@ export const SyncErrorModal: React.FC<SyncErrorModalProps> = ({
               lineHeight: 1.45
             }}
           >
-            💡 <em>Astuce :</em> Vos séances et calculs locaux restent accessibles. Connectez ou reconnectez votre compte Garmin Connect pour importer vos dernières activités réelles.
+            💡 <em>Astuce :</em> {needsCalendarReview
+              ? 'Vérifiez les deux dates dans Garmin Connect. La synchronisation reste suspendue pour éviter un doublon ou la modification d’une séance déjà commencée.'
+              : 'Vos séances et calculs locaux restent accessibles. Connectez ou reconnectez votre compte Garmin Connect pour importer vos dernières activités réelles.'}
           </div>
         </div>
 
@@ -220,7 +223,7 @@ export const SyncErrorModal: React.FC<SyncErrorModalProps> = ({
               <span>Connecter Garmin</span>
               <ArrowRight size={14} />
             </button>
-          ) : (
+          ) : !needsCalendarReview ? (
             <>
               <button
                 type="button"
@@ -268,7 +271,7 @@ export const SyncErrorModal: React.FC<SyncErrorModalProps> = ({
                 <span>{isRetrying ? 'Nouvelle tentative...' : 'Réessayer'}</span>
               </button>
             </>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

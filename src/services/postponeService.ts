@@ -107,6 +107,17 @@ export function applyPostponements(
   }
 
   let currentAllEvents = [...baseAllEvents];
+  const exchangedIds = new Set<string>();
+  for (const first of overrideList) {
+    const second = overrideList.find(candidate =>
+      candidate.originalEventId !== first.originalEventId &&
+      candidate.originalDate === first.targetDate && candidate.targetDate === first.originalDate
+    );
+    if (second) {
+      exchangedIds.add(first.originalEventId);
+      exchangedIds.add(second.originalEventId);
+    }
+  }
 
   for (const override of overrideList) {
     const sourceDay = schedulesMap.get(override.originalDate);
@@ -183,8 +194,12 @@ export function applyPostponements(
         postponedReason: override.reason
       }
     };
-    sourceDay.events.push(ghostPlaceholder);
-    sourceDay.events.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    // An exchange already has a real workout on each day; ghost cards would
+    // make the two distinct sessions look merged again.
+    if (!exchangedIds.has(override.originalEventId)) {
+      sourceDay.events.push(ghostPlaceholder);
+      sourceDay.events.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    }
 
     // Calculer les nouveaux horaires pour le jour cible
     const newStartDate = buildTargetDate(override.targetDate, originalStartDate, override.targetStartTime);
@@ -280,6 +295,13 @@ export function applyPostponements(
   }
 
   currentAllEvents.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+  for (const day of schedulesMap.values()) {
+    if (day.events.some(event => event.category === 'sport' && !event.metadata?.isPostponedPlaceholder &&
+      event.sportType !== 'CALISTHENICS' && event.sportType !== 'GYM_FORCE')) {
+      day.events = day.events.filter(event => !event.metadata?.isPostponedPlaceholder);
+    }
+  }
 
   const newSchedules = baseSchedules.map(s => schedulesMap.get(s.date) || s);
 

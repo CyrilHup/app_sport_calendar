@@ -1440,6 +1440,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   const dateObj = parseLocalDate(day.date);
                   const isToday = day.date === todayKey;
                   const isDragTarget = dragOverDate === day.date;
+                  const exchangeTarget = draggedEvent && isTrailOrRunning(draggedEvent)
+                    ? day.events.find(event => event.id !== draggedEvent.id && event.category === 'sport' &&
+                      !event.metadata?.isPostponedPlaceholder && isTrailOrRunning(event))
+                    : undefined;
 
                   return (
                     <div
@@ -1466,6 +1470,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       }}
                       style={isDragTarget ? { outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : undefined}
                     >
+                      {isDragTarget && exchangeTarget && (
+                        <div role="status" style={{ margin: '8px', padding: '7px 9px', borderRadius: 6, background: 'rgba(59, 130, 246, 0.16)', color: '#bfdbfe', fontSize: '0.75rem', fontWeight: 700 }}>
+                          ↔ Échanger avec « {exchangeTarget.title} »
+                        </div>
+                      )}
                       <div className="day-header">
                         <div>
                           <div className="day-name">{dayNames[day.dayOfWeek]}</div>
@@ -1724,6 +1733,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {/* Modale de Détail de Séance */}
       <WorkoutDetailModal
         event={selectedEvent}
+        schedules={schedules}
         comparison={selectedComparison}
         unifiedGroup={selectedUnifiedGroup}
         athlete={athlete}

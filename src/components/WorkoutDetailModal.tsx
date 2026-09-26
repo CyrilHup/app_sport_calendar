@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CalendarEvent } from '../types/calendar';
+import { CalendarEvent, DailySchedule } from '../types/calendar';
 import {
   Bell,
   CalendarClock,
@@ -33,6 +33,7 @@ import { getBaselineRestingHeartRate } from '../services/readinessEngine';
 
 interface WorkoutDetailModalProps {
   event: CalendarEvent | null;
+  schedules?: DailySchedule[];
   comparison?: ActivityComparison | null;
   unifiedGroup?: UnifiedDayWorkoutGroup | null;
   onClose: () => void;
@@ -42,7 +43,7 @@ interface WorkoutDetailModalProps {
     targetDate: string,
     reason?: string,
     targetStartTime?: string
-  ) => void;
+  ) => boolean | void;
   onCancelPostpone?: (eventId: string) => void;
   onSaveActivityFeedback?: (activityId: string, feedback: ActivityFeedback) => void;
   athlete?: { fcMax: number; fcRest: number };
@@ -51,6 +52,7 @@ interface WorkoutDetailModalProps {
 
 export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   event,
+  schedules,
   comparison,
   unifiedGroup,
   onClose,
@@ -135,6 +137,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
   const [reasonInput, setReasonInput] = useState<string>(effectiveEvent.metadata?.postponedReason || 'Déplacée / Reportée');
   const [isPostponeExpanded, setIsPostponeExpanded] = useState<boolean>(Boolean(effectiveEvent.metadata?.isPostponed));
   const [postponeSuccessMsg, setPostponeSuccessMsg] = useState<string | null>(null);
+  const exchangeRun = isTrailOrRunning(effectiveEvent) && targetDateInput !== currentEventDateKey
+    ? schedules?.find(day => day.date === targetDateInput)?.events.find(candidate =>
+      candidate.id !== effectiveEvent.id && candidate.category === 'sport' &&
+      !candidate.metadata?.isPostponedPlaceholder && isTrailOrRunning(candidate))
+    : undefined;
 
   React.useEffect(() => {
     if (!hasContent) return;
@@ -168,14 +175,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
 
   const handleConfirmPostpone = () => {
     if (!onPostpone) return;
-    onPostpone(
+    const accepted = onPostpone(
       effectiveEvent.id,
       originalDateKey,
       targetDateInput,
       reasonInput,
       targetTimeInput
     );
-    setPostponeSuccessMsg(`Séance reportée avec succès au ${targetDateInput} !`);
+    if (accepted === false) return;
+    setPostponeSuccessMsg(exchangeRun
+      ? `Séances échangées entre le ${currentEventDateKey} et le ${targetDateInput}.`
+      : `Séance déplacée au ${targetDateInput}.`);
     scheduleTimeout(() => {
       onClose();
     }, 1200);
@@ -1254,6 +1264,11 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                     </div>
                   </div>
 
+                  {exchangeRun && (
+                    <p role="status" style={{ margin: 0, padding: '8px 10px', borderRadius: 6, background: 'rgba(59, 130, 246, 0.12)', color: 'var(--text-secondary)', fontSize: '0.76rem' }}>
+                      Une course est déjà prévue le {targetDateInput} : « {exchangeRun.title} ». Les deux séances échangeront leurs jours.
+                    </p>
+                  )}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                     <button
                       type="button"
@@ -1273,7 +1288,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                       }}
                     >
                       <CalendarClock size={13} />
-                      <span>Valider pour le {targetDateInput}</span>
+                      <span>{exchangeRun ? 'Échanger les deux séances' : `Valider pour le ${targetDateInput}`}</span>
                     </button>
 
                     {effectiveEvent.metadata?.isPostponed && onCancelPostpone && (
