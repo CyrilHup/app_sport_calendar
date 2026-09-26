@@ -1456,9 +1456,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           if (dragOverDate !== day.date) setDragOverDate(day.date);
                         }
                       }}
-                      onDragLeave={() => {
-                        if (dragOverDate === day.date) setDragOverDate(null);
-                      }}
                       onDrop={(e) => {
                         e.preventDefault();
                         setDragOverDate(null);
@@ -1468,10 +1465,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           setDraggedEvent(null);
                         }
                       }}
-                      style={isDragTarget ? { outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : undefined}
+                      style={isDragTarget ? { position: 'relative', outline: '2px dashed var(--primary)', background: 'rgba(255, 87, 34, 0.08)' } : undefined}
                     >
                       {isDragTarget && exchangeTarget && (
-                        <div role="status" style={{ margin: '8px', padding: '7px 9px', borderRadius: 6, background: 'rgba(59, 130, 246, 0.16)', color: '#bfdbfe', fontSize: '0.75rem', fontWeight: 700 }}>
+                        <div role="status" style={{ position: 'absolute', top: 8, left: 8, right: 8, zIndex: 2, pointerEvents: 'none', padding: '7px 9px', borderRadius: 6, background: '#1e3a5f', color: '#bfdbfe', fontSize: '0.75rem', fontWeight: 700, boxShadow: '0 4px 16px rgba(0, 0, 0, 0.35)' }}>
                           ↔ Échanger avec « {exchangeTarget.title} »
                         </div>
                       )}

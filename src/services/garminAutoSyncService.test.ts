@@ -319,7 +319,7 @@ describe('Garmin Auto-Sync Service', () => {
     expect(result.totalWeekWorkouts).toBe(2);
   });
 
-  it('never creates or replaces a workout after it has started', async () => {
+  it('never creates or replaces a workout with a recorded activity', async () => {
     const started = createMockEvent({
       id: 'already-started',
       startDate: '2026-09-09T08:00:00Z',
@@ -330,7 +330,9 @@ describe('Garmin Auto-Sync Service', () => {
     const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin');
 
     const changed = { ...started, durationMinutes: 45 };
-    const result = await syncCurrentWeekWorkoutsToGarmin([changed], new Date('2026-09-09T12:00:00Z'));
+    const result = await syncCurrentWeekWorkoutsToGarmin([changed], new Date('2026-09-09T12:00:00Z'), {
+      completedEventIds: [started.id]
+    });
 
     expect(result.success).toBe(true);
     expect(pushSpy).not.toHaveBeenCalled();
@@ -339,6 +341,21 @@ describe('Garmin Auto-Sync Service', () => {
     const completedEarly = createMockEvent({ id: 'completed-early', metadata: { isCompleted: true } });
     await syncCurrentWeekWorkoutsToGarmin([completedEarly], new Date('2026-09-09T12:00:00Z'));
     expect(pushSpy).not.toHaveBeenCalled();
+  });
+
+  it('updates a same-day workout after its scheduled hour when no activity was recorded', async () => {
+    const scheduled = createMockEvent({ id: 'same-day-unstarted', startDate: '2026-09-09T08:00:00Z' });
+    saveSyncedWeekWorkoutSignatures({ [scheduled.id]: computeWorkoutSyncSignature(scheduled) });
+    localStorage.setItem(GARMIN_SYNCED_WORKOUT_IDS_KEY, JSON.stringify({ [scheduled.id]: '123' }));
+    const changed = { ...scheduled, durationMinutes: 45 };
+    const pushSpy = vi.spyOn(garminService, 'pushWorkoutToGarmin').mockResolvedValue({
+      success: true, workoutId: '456', scheduledDate: '2026-09-09'
+    });
+
+    const result = await syncCurrentWeekWorkoutsToGarmin([changed], new Date('2026-09-09T12:00:00Z'));
+
+    expect(result.success).toBe(true);
+    expect(pushSpy).toHaveBeenCalledWith(changed, '2026-09-09', 'FORERUNNER_55', undefined, '123');
   });
 
   it('does not recreate a workout completed before its scheduled start', async () => {

@@ -156,7 +156,7 @@ export function filterCurrentWeekRestCancellations(
     if (event.category !== 'sport' || event.metadata?.isPostponedPlaceholder ||
       !event.metadata?.isAdapted || event.durationMinutes !== 0 ||
       !isTrailOrRunning(event.metadata.originalSportType, event.metadata.originalTitle || event.title) ||
-      new Date(event.startDate).getTime() <= referenceDate.getTime()) return false;
+      toLocalDateKey(event.startDate) < toLocalDateKey(referenceDate)) return false;
     const date = toLocalDateKey(event.startDate);
     return date >= weekStartStr && date <= weekEndStr;
   });
@@ -272,11 +272,14 @@ async function runCurrentWeekWorkoutSync(
         !/^[1-9]\d{0,19}$/.test(originalEntry.workoutId) || !/^[1-9]\d{0,19}$/.test(partnerEntry.workoutId) ||
         (existingWorkoutIds[workout.id] && existingWorkoutIds[workout.id] !== originalEntry.workoutId) ||
         (existingWorkoutIds[partner.id] && existingWorkoutIds[partner.id] !== partnerEntry.workoutId)) continue;
-      if (new Date(workout.startDate).getTime() <= referenceDate.getTime() ||
-        new Date(partner.startDate).getTime() <= referenceDate.getTime() ||
-        completedEventIds.has(workout.id) || completedEventIds.has(partner.id) ||
-        workout.metadata?.isCompleted || partner.metadata?.isCompleted) {
-        manualReviewErrors.push(`Échange ${originalDate} ↔ ${targetDate} : au moins une séance a commencé. Planning modifié ici ; vérifier Garmin manuellement.`);
+      const hasRecordedActivity = completedEventIds.has(workout.id) || completedEventIds.has(partner.id) ||
+        workout.metadata?.isCompleted || partner.metadata?.isCompleted;
+      const hasPastCalendarDate = targetDate < toLocalDateKey(referenceDate) ||
+        originalDate < toLocalDateKey(referenceDate);
+      if (hasRecordedActivity || hasPastCalendarDate) {
+        manualReviewErrors.push(`Échange ${originalDate} ↔ ${targetDate} : ${hasRecordedActivity
+          ? 'une activité réalisée est déjà associée à une séance'
+          : 'une date du calendrier est passée'}. Planning modifié ici ; vérifier Garmin manuellement.`);
         reviewedExchangeIds.add(workout.id);
         reviewedExchangeIds.add(partner.id);
         continue;
@@ -371,10 +374,10 @@ async function runCurrentWeekWorkoutSync(
         manualReviewErrors.push(`Plusieurs séances de course prévues le ${date} : synchronisation Garmin suspendue pour ce jour.`);
         continue;
       }
-      // A session already started (or completed early) must not be rewritten
-      // on Garmin after an algorithm/configuration change.
+      // A scheduled time passing is not proof that the athlete started the
+      // workout. Same-day changes remain eligible unless an activity exists.
       if (completedEventIds.has(workout.id) || workout.metadata?.isCompleted ||
-        new Date(workout.startDate).getTime() <= referenceDate.getTime()) {
+        date < toLocalDateKey(referenceDate)) {
         continue;
       }
       const sig = computeWorkoutSyncSignature(workout, options?.athleteProfile);

@@ -25,7 +25,7 @@ export const SyncErrorModal: React.FC<SyncErrorModalProps> = ({
   isRetrying = false
 }) => {
   if (!error) return null;
-  const needsCalendarReview = /Identifiants Garmin divergents|au moins une séance a commencé/.test(error.details || '');
+  const needsCalendarReview = /Identifiants Garmin divergents|une activité réalisée est déjà associée|une date du calendrier est passée/.test(error.details || '');
 
   return (
     <div
@@ -160,7 +160,7 @@ export const SyncErrorModal: React.FC<SyncErrorModalProps> = ({
             }}
           >
             💡 <em>Astuce :</em> {needsCalendarReview
-              ? 'Vérifiez les deux dates dans Garmin Connect. La synchronisation reste suspendue pour éviter un doublon ou la modification d’une séance déjà commencée.'
+              ? 'Vérifiez les deux dates dans Garmin Connect. La synchronisation reste suspendue pour éviter un doublon ou la modification d’une activité déjà réalisée.'
               : 'Vos séances et calculs locaux restent accessibles. Connectez ou reconnectez votre compte Garmin Connect pour importer vos dernières activités réelles.'}
           </div>
         </div>

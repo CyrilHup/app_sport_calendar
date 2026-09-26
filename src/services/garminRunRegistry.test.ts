@@ -220,7 +220,7 @@ describe('cloud-backed Garmin run IDs', () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it('exchanges two future runs using the exact Garmin ID registered on each target date', async () => {
+  it('exchanges two runs when the same-day scheduled time passed but no activity was recorded', async () => {
     const first = { ...run('SPORT_WORKOUT_2026-09-23'), startDate: '2026-09-24T12:00:00.000Z',
       endDate: '2026-09-24T13:00:00.000Z', metadata: { originalDate: '2026-09-23', isPostponed: true } };
     const second = { ...run('SPORT_WORKOUT_2026-09-24'), startDate: '2026-09-23T12:00:00.000Z',
@@ -236,7 +236,7 @@ describe('cloud-backed Garmin run IDs', () => {
       .mockResolvedValueOnce({ success: true, workoutId: '333' })
       .mockResolvedValueOnce({ success: true, workoutId: '444' });
 
-    const result = await syncCurrentWeekWorkoutsToGarmin([first, second], new Date('2026-09-23T09:00:00Z'), { userId: 'account-a' });
+    const result = await syncCurrentWeekWorkoutsToGarmin([first, second], new Date('2026-09-23T13:00:00Z'), { userId: 'account-a' });
 
     expect(result.success).toBe(true);
     expect(push).toHaveBeenNthCalledWith(1, first, '2026-09-24', 'FORERUNNER_55', undefined, '222');
@@ -244,7 +244,7 @@ describe('cloud-backed Garmin run IDs', () => {
     expect(JSON.parse(values.get(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')).toMatchObject({ [first.id]: '333', [second.id]: '444' });
   });
 
-  it('does not synchronize an exchange when one target workout has already started', async () => {
+  it('does not synchronize an exchange when an actual activity is associated with a workout', async () => {
     const first = { ...run('SPORT_WORKOUT_2026-09-23'), startDate: '2026-09-24T12:00:00.000Z',
       metadata: { originalDate: '2026-09-23', isPostponed: true } };
     const second = { ...run('SPORT_WORKOUT_2026-09-24'), startDate: '2026-09-23T12:00:00.000Z',
@@ -256,10 +256,12 @@ describe('cloud-backed Garmin run IDs', () => {
     ]);
     const push = vi.spyOn(garminService, 'pushWorkoutToGarmin');
 
-    const result = await syncCurrentWeekWorkoutsToGarmin([first, second], new Date('2026-09-23T13:00:00Z'), { userId: 'account-a' });
+    const result = await syncCurrentWeekWorkoutsToGarmin([first, second], new Date('2026-09-23T13:00:00Z'), {
+      userId: 'account-a', completedEventIds: [second.id]
+    });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('au moins une séance a commencé');
+    expect(result.error).toContain('une activité réalisée est déjà associée');
     expect(push).not.toHaveBeenCalled();
   });
 
