@@ -284,7 +284,7 @@ describe('Garmin Auto-Sync Service', () => {
     );
 
     expect(result.success).toBe(true);
-    expect(pushSpy).toHaveBeenCalledWith(event, '2026-09-09', 'FORERUNNER_55', athleteProfile, undefined);
+    expect(pushSpy).toHaveBeenCalledWith(event, '2026-09-09', 'FORERUNNER_55', athleteProfile, undefined, undefined, computeWorkoutSyncSignature(event, athleteProfile));
     expect(isWorkoutSyncedToGarmin(event, athleteProfile)).toBe(true);
   });
 
@@ -355,7 +355,7 @@ describe('Garmin Auto-Sync Service', () => {
     const result = await syncCurrentWeekWorkoutsToGarmin([changed], new Date('2026-09-09T12:00:00Z'));
 
     expect(result.success).toBe(true);
-    expect(pushSpy).toHaveBeenCalledWith(changed, '2026-09-09', 'FORERUNNER_55', undefined, '123');
+    expect(pushSpy).toHaveBeenCalledWith(changed, '2026-09-09', 'FORERUNNER_55', undefined, '123', '2026-09-09', computeWorkoutSyncSignature(changed));
   });
 
   it('does not recreate a workout completed before its scheduled start', async () => {
@@ -375,7 +375,7 @@ describe('Garmin Auto-Sync Service', () => {
     );
 
     expect(pushSpy).toHaveBeenCalledOnce();
-    expect(pushSpy).toHaveBeenCalledWith(upcoming, '2026-09-10', 'FORERUNNER_55', undefined, undefined);
+    expect(pushSpy).toHaveBeenCalledWith(upcoming, '2026-09-10', 'FORERUNNER_55', undefined, undefined, undefined, computeWorkoutSyncSignature(upcoming));
   });
 
   it('syncs only changed workouts and skips already synced ones', async () => {
@@ -490,7 +490,7 @@ describe('Garmin Auto-Sync Service', () => {
     const retried = await syncCurrentWeekWorkoutsToGarmin([changed], refDate, { retryManualReview: true });
     expect(retried.success).toBe(true);
     expect(pushSpy).toHaveBeenCalledTimes(3);
-    expect(pushSpy).toHaveBeenLastCalledWith(changed, '2026-09-09', 'FORERUNNER_55', undefined, '123');
+    expect(pushSpy).toHaveBeenLastCalledWith(changed, '2026-09-09', 'FORERUNNER_55', undefined, '123', '2026-09-09', computeWorkoutSyncSignature(changed));
     expect(JSON.parse(localStorage.getItem(GARMIN_SYNCED_WORKOUT_IDS_KEY) || '{}')[workout.id]).toBe('789');
   });
 

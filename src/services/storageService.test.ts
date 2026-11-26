@@ -46,11 +46,11 @@ describe('storageService', () => {
   });
 
   it('handles raw string storage and retrieval without JSON serialization', () => {
-    const rawIcs = 'BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR';
-    storageSetRaw(STORAGE_KEYS.CACHED_ETS_ICS, rawIcs);
+    const rawValue = 'raw test value';
+    storageSetRaw('raw_test_key', rawValue);
 
-    const retrieved = storageGetRaw(STORAGE_KEYS.CACHED_ETS_ICS, '');
-    expect(retrieved).toBe(rawIcs);
+    const retrieved = storageGetRaw('raw_test_key', '');
+    expect(retrieved).toBe(rawValue);
   });
 
   it('removes keys properly', () => {

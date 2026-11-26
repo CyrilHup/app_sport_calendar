@@ -50,35 +50,25 @@ export const ShareTab: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="account-stack">
       {/* Public Share Toggle Card */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Share2 size={18} color="#f59e0b" />
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff' }}>
+      <div className="account-card account-row account-share-toggle">
+        <div className="account-leading">
+          <Share2 size={18} />
+          <div className="account-copy">
+            <div className="account-title">
               Lien public en lecture seule
             </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+            <div className="account-description">
               Permet de partager votre planning QMT-80 à un proche ou un coach
             </div>
           </div>
         </div>
 
-        <label className="settings-toggle-switch">
+        <label className="settings-toggle-switch" aria-label="Rendre le planning public">
           <input
             type="checkbox"
+            aria-label="Rendre le planning public"
             checked={isSharePublic}
             onChange={e => setIsSharePublic(e.target.checked)}
           />
@@ -87,82 +77,55 @@ export const ShareTab: React.FC = () => {
       </div>
 
       {/* Slug & Link Configuration */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10
-        }}
-      >
-        <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+      <div className="account-card account-card--stack">
+        <div className="account-field">
+          <label htmlFor="account-share-slug">
             Identifiant personnalisé du lien (slug)
           </label>
           <input
+            id="account-share-slug"
             type="text"
             value={shareSlug}
             onChange={e => setShareSlug(e.target.value)}
             placeholder="mon-plan-qmt80"
-            style={{
-              width: '100%',
-              padding: '8px 10px',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 4,
-              color: '#fff',
-              fontSize: '0.8rem'
-            }}
           />
         </div>
 
-        <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+        <div className="account-field">
+          <label htmlFor="account-share-url">
             URL de partage
           </label>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="account-share-url-row">
             <input
+              id="account-share-url"
               type="text"
               readOnly
               value={shareUrl}
-              style={{
-                flex: 1,
-                padding: '8px 10px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid var(--border-color)',
-                borderRadius: 4,
-                color: '#fff',
-                fontSize: '0.76rem'
-              }}
+              className="account-input"
             />
             <button
               type="button"
               className="btn-secondary"
               onClick={handleCopyShareUrl}
-              style={{ padding: '8px 12px', fontSize: '0.76rem' }}
             >
-              {shareCopied ? <CheckCircle2 size={13} color="#10b981" /> : <Copy size={13} />}
+              {shareCopied ? <CheckCircle2 size={13} /> : <Copy size={13} />}
               <span>{shareCopied ? 'Copié !' : 'Copier'}</span>
             </button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+        <div className="account-action-row">
           <button
             type="button"
             className="btn-primary"
             onClick={handleSaveShareSettings}
             disabled={shareSaving}
-            style={{ padding: '8px 16px', fontSize: '0.8rem' }}
           >
             <Save size={13} />
             <span>{shareSaving ? 'Enregistrement...' : 'Enregistrer'}</span>
           </button>
           {shareSuccess && (
-            <span style={{ fontSize: '0.74rem', color: '#34d399', fontWeight: 600 }}>
+            <span className="account-feedback account-feedback--success" role="status">
               Paramètres de partage enregistrés !
             </span>
           )}

@@ -345,7 +345,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         badgeTitle: 'Cible Séance',
         icon: '🕊️',
         value: 'Libre au feeling Z2',
-        color: '#a78bfa',
+        color: 'var(--text-secondary)',
         subtitle: 'Zéro vibration • Aisance respiratoire'
       };
     }
@@ -354,7 +354,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
       badgeTitle: 'Cible Séance',
       icon: '🕊️',
       value: 'Libre au feeling Z2',
-      color: '#a78bfa',
+      color: 'var(--text-secondary)',
       subtitle: 'Zéro alerte de montre'
     };
   }, [isSport, isCalisthenics, workoutPreview, isTrailIntense, isTrailLong, hasLegStrength, effectiveElevationM, athleteFcMax, effectiveEvent.metadata?.targetHeartRate]);
@@ -367,7 +367,6 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
         {/* Header */}
         <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '26px' }}>{isMultiMerged && activeItemIndex === 'global' ? unifiedGroup!.emoji : effectiveEvent.emoji}</span>
             <div>
               <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.15rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>
                 {isMultiMerged && activeItemIndex === 'global'
@@ -465,7 +464,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
               {/* Synthèse Télémetrique Globale */}
               <div
                 style={{
-                  background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(16, 185, 129, 0.08))',
+                  background: 'var(--bg-surface)',
                   border: '1px solid rgba(56, 189, 248, 0.35)',
                   borderRadius: 'var(--radius-sm)',
                   padding: '14px',
@@ -671,18 +670,17 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           {isCalisthenics && (
             <div
               style={{
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.12), rgba(14, 20, 36, 0.95))',
-                border: '1px solid rgba(168, 85, 247, 0.35)',
+                background: 'var(--bg-surface)',
+                border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-sm)',
                 padding: '10px 14px',
                 fontSize: '0.78rem',
-                color: '#e9d5ff',
+                color: 'var(--text-secondary)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '8px'
               }}
             >
-              <span style={{ fontSize: '1.2rem' }}>💪</span>
               <div>
                 <strong>{effectiveEvent.metadata?.isOptional ? 'Séance facultative' : effectiveEvent.metadata?.isRecommendedStrength ? 'Créneau conseillé' : 'Renforcement indicatif'} :</strong> ajuste le jour et le volume à ta récupération. Cette séance ne s’ajoute pas au volume de course.
               </div>
@@ -705,7 +703,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           {isAdapted && (
             <div
               style={{
-                background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(14, 20, 36, 0.95))',
+                background: 'var(--bg-surface)',
                 border: '1px solid #38bdf8',
                 borderRadius: 'var(--radius-sm)',
                 padding: '12px 16px',
@@ -761,7 +759,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
           {effectiveComparison?.actualActivity && (
             <div
               style={{
-                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(6, 182, 212, 0.1))',
+                background: 'var(--bg-surface)',
                 border: '1px solid rgba(16, 185, 129, 0.4)',
                 borderRadius: 'var(--radius-sm)',
                 padding: '12px 14px',
@@ -911,7 +909,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   {isRestSession ? 'Repos passif' : (isRecoveryFooting ? 'Terrain plat' : 'Séance adaptée')}
                 </span>
               ) : isCalisthenics ? (
-                <span style={{ fontSize: '0.68rem', color: '#c4b5fd', fontWeight: 600 }}>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-primary)', fontWeight: 600 }}>
                   Poids du corps / Salle
                 </span>
               ) : null}
@@ -936,9 +934,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             {isSport && isCalisthenics && (
               <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
-                  <Activity size={11} color="var(--accent-purple)" /> Discipline
+                  <Activity size={11} color="var(--text-secondary)" /> Discipline
                 </span>
-                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: '#c4b5fd', marginTop: 3 }}>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)', marginTop: 3 }}>
                   Calisthénie
                 </div>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
@@ -966,9 +964,9 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
             {isSport && sessionTrimpInfo && (
               <div style={{ background: 'var(--bg-surface-elevated)', padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-color)' }}>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
-                  <Zap size={11} color={sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : '#a78bfa'} /> Charge Séance
+                  <Zap size={11} color={sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : 'var(--text-secondary)'} /> Charge Séance
                 </span>
-                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : '#c4b5fd', marginTop: 3 }}>
+                <div style={{ fontWeight: 800, fontSize: '0.95rem', color: sessionTrimpInfo.isMechanicalImpact ? '#38bdf8' : 'var(--text-primary)', marginTop: 3 }}>
                   {sessionTrimpInfo.trimp} TRIMP
                 </div>
                 <span style={{ fontSize: '0.68rem', color: actualTrimpInfo ? '#38bdf8' : (sessionTrimpInfo.isMechanicalImpact ? 'var(--accent-green)' : 'var(--text-secondary)') }}>
@@ -1088,7 +1086,7 @@ export const WorkoutDetailModal: React.FC<WorkoutDetailModalProps> = ({
                   const badgeColor = isWarmup
                     ? '#38bdf8'
                     : isCooldown
-                    ? '#a78bfa'
+                    ? 'var(--text-secondary)'
                     : isInterval
                     ? '#f97316'
                     : '#34d399';

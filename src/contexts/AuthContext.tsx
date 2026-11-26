@@ -44,9 +44,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!p.avatarUrl && googleAvatar) {
         p.avatarUrl = googleAvatar;
       }
-      if (!p.icalUrl && u.user_metadata?.ical_url) {
-        p.icalUrl = u.user_metadata.ical_url;
-      }
       if (authGenerationRef.current === generation && activeUserIdRef.current === u.id) setProfile(p);
     } else {
       // Create initial profile if missing
@@ -55,7 +52,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: u.email || '',
         displayName: u.user_metadata?.full_name || u.email?.split('@')[0] || 'Athlète QMT',
         avatarUrl: googleAvatar,
-        icalUrl: u.user_metadata?.ical_url,
         isPublic: false
       };
       await upsertUserProfile(newP);
@@ -209,9 +205,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const ok = await upsertUserProfile({ id: user.id, ...data });
     if (ok && activeUserIdRef.current === userId) {
       setProfile(prev => prev ? { ...prev, ...data } : null);
-      if (data.icalUrl) {
-        supabase.auth.updateUser({ data: { ical_url: data.icalUrl } }).catch(() => {});
-      }
     }
     return ok;
   };

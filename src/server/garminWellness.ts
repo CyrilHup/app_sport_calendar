@@ -44,6 +44,31 @@ export async function fetchGarminWellness(
     optionalWithin(client.client.get(`https://connectapi.garmin.com/metrics-service/metrics/trainingreadiness/${date}`), timeoutMs)
   ]);
 
+  return normalizeGarminWellness(date, syncedAt, sleepResponse, heartRateResponse, hrvResponse, readinessResponse);
+}
+
+/** These reads are covered by the official Personal API. */
+export async function fetchPersonalGarminWellness(
+  client: { get(path: string): Promise<unknown> },
+  date: string,
+  timeoutMs = 8_000
+): Promise<GarminWellnessData> {
+  const [sleep, heartRate, hrv] = await Promise.all([
+    optionalWithin(client.get(`/sleep-service/sleep/dailySleep?date=${date}`), timeoutMs),
+    optionalWithin(client.get(`/wellness-service/wellness/dailyHeartRate?date=${date}`), timeoutMs),
+    optionalWithin(client.get(`/hrv-service/hrv/${date}`), timeoutMs)
+  ]);
+  return normalizeGarminWellness(date, new Date().toISOString(), sleep, heartRate, hrv);
+}
+
+function normalizeGarminWellness(
+  date: string,
+  syncedAt: string,
+  sleepResponse: any,
+  heartRateResponse: any,
+  hrvResponse: any,
+  readinessResponse?: any
+): GarminWellnessData {
   const sleepDto = sleepResponse?.dailySleepDTO;
   const sleep = sleepDto ? {
     score: sleepDto.sleepScores?.overall?.value || sleepDto.sleepScoreFeedback || undefined,

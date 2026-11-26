@@ -51,7 +51,12 @@ export const WeatherWidget: React.FC<WeatherWidgetProps> = ({ compact }) => {
         >
           <span>{weather.weatherEmoji}</span>
           <span>Mont-Royal {weather.currentTempC}°C</span>
-          <span style={{ color: cond.badgeColor, fontWeight: 700 }}>• Sentiers {cond.status === 'OPTIMAL' ? 'Optimaux' : cond.status}</span>
+          <span style={{ color: cond.badgeColor, fontWeight: 700 }}>{{
+            OPTIMAL: 'Sentiers dégagés',
+            WET_MUD: 'Sentiers humides ou boueux',
+            ICE_SNOW: 'Neige ou glace',
+            HEADLAMP_ALERT: 'Lampe frontale conseillée'
+          }[cond.status]}</span>
         </button>
 
         {isExpanded && (

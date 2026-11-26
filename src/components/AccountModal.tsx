@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { GarminActivity, GarminSyncState } from '../types/garmin';
-import { CalendarEvent } from '../types/calendar';
 import type {
   GarminActivitySyncMode,
   GarminActivitySyncResult,
@@ -9,18 +8,16 @@ import type {
 } from '../services/garminService';
 import {
   Activity,
-  Calendar,
-  RefreshCw,
   Share2,
   User as UserIcon,
   X
 } from 'lucide-react';
 import { ProfileTab } from './account/ProfileTab';
 import { GarminTab } from './account/GarminTab';
-import { CalendarTab } from './account/CalendarTab';
 import { ShareTab } from './account/ShareTab';
+import './AccountModal.css';
 
-export type AccountModalTab = 'profile' | 'garmin' | 'google' | 'share';
+export type AccountModalTab = 'profile' | 'garmin' | 'share';
 
 interface AccountModalProps {
   isOpen: boolean;
@@ -34,10 +31,7 @@ interface AccountModalProps {
     mode: GarminActivitySyncMode,
     credentials?: GarminCredentials
   ) => Promise<GarminActivitySyncResult | null>;
-  calendarEvents: CalendarEvent[];
   onRefreshAll: () => void;
-  isRecharging: boolean;
-  lastSyncTime?: string;
 }
 
 export const AccountModal: React.FC<AccountModalProps> = ({
@@ -49,12 +43,15 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   onUpdateGarminState,
   onActivitiesSynced,
   onRequestGarminSync,
-  calendarEvents,
-  onRefreshAll,
-  isRecharging,
-  lastSyncTime
+  onRefreshAll
 }) => {
   const [activeTab, setActiveTab] = useState<AccountModalTab>(initialTab);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -62,64 +59,78 @@ export const AccountModal: React.FC<AccountModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
-  const { user, profile } = useAuth();
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    dialogRef.current?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented) {
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (!first || !last) {
+        event.preventDefault();
+      } else if (document.activeElement === dialog) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [isOpen]);
+
+  const { user } = useAuth();
 
   if (!isOpen) return null;
 
-  const formattedSyncTime = lastSyncTime
-    ? new Date(lastSyncTime).toLocaleTimeString('fr-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
-    : 'Direct';
-
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay account-modal-overlay" onClick={onClose}>
       <div
-        className="modal-content"
+        className="modal-content account-modal-shell"
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: 620, width: '95%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-modal-title"
+        tabIndex={-1}
+        ref={dialogRef}
       >
         {/* Modal Header */}
-        <div
-          className="modal-header"
-          style={{
-            padding: '14px 18px',
-            borderBottom: '1px solid var(--border-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.1rem', fontWeight: 800, margin: 0, color: '#fff' }}>
-              Paramètres
-            </h2>
-            {user && (
-              <span
-                style={{
-                  fontSize: '0.72rem',
-                  padding: '2px 8px',
-                  borderRadius: 'var(--radius-full)',
-                  background: 'rgba(16, 185, 129, 0.12)',
-                  color: '#34d399',
-                  fontWeight: 600,
-                  border: '1px solid rgba(16, 185, 129, 0.25)'
-                }}
-              >
-                {user.email}
-              </span>
-            )}
+        <div className="modal-header account-modal-header">
+          <div className="account-modal-heading">
+            <h2 id="account-modal-title">Paramètres</h2>
+            {user?.email && <span>{user.email}</span>}
           </div>
           <button
+            type="button"
             onClick={onClose}
             aria-label="Fermer"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              padding: 4,
-              display: 'flex',
-              alignItems: 'center'
-            }}
+            className="account-modal-close"
           >
             <X size={20} />
           </button>
@@ -127,113 +138,85 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
         {/* Tab Navigation */}
         <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--border-color)',
-            background: 'rgba(0, 0, 0, 0.15)',
-            padding: '0 14px',
-            gap: 4
+          className="account-modal-tabs"
+          role="tablist"
+          aria-label="Sections des paramètres"
+          onKeyDown={event => {
+            const tabOrder: AccountModalTab[] = ['profile', 'garmin', 'share'];
+            const currentIndex = tabOrder.indexOf(activeTab);
+            let nextIndex = currentIndex;
+
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+              nextIndex = (currentIndex + 1) % tabOrder.length;
+            } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+              nextIndex = (currentIndex + tabOrder.length - 1) % tabOrder.length;
+            } else if (event.key === 'Home') {
+              nextIndex = 0;
+            } else if (event.key === 'End') {
+              nextIndex = tabOrder.length - 1;
+            } else {
+              return;
+            }
+
+            event.preventDefault();
+            const nextTab = tabOrder[nextIndex];
+            if (!nextTab) return;
+            setActiveTab(nextTab);
+            document.getElementById(`account-tab-${nextTab}`)?.focus();
           }}
         >
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '11px 12px',
-              border: 'none',
-              background: 'none',
-              color: activeTab === 'profile' ? 'var(--primary)' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'profile' ? '2px solid var(--primary)' : '2px solid transparent'
-            }}
+            className="account-modal-tab"
+            role="tab"
+            id="account-tab-profile"
+            aria-selected={activeTab === 'profile'}
+            aria-controls="account-modal-panel"
+            tabIndex={activeTab === 'profile' ? 0 : -1}
           >
             <UserIcon size={14} />
-            <span>Compte & Profil</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('google')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '11px 12px',
-              border: 'none',
-              background: 'none',
-              color: activeTab === 'google' ? '#4285F4' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'google' ? '2px solid #4285F4' : '2px solid transparent'
-            }}
-          >
-            <Calendar size={14} />
-            <span>Calendriers & Google</span>
+            <span>Profil</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('garmin')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '11px 12px',
-              border: 'none',
-              background: 'none',
-              color: activeTab === 'garmin' ? '#0077c8' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'garmin' ? '2px solid #0077c8' : '2px solid transparent'
-            }}
+            className="account-modal-tab"
+            role="tab"
+            id="account-tab-garmin"
+            aria-selected={activeTab === 'garmin'}
+            aria-controls="account-modal-panel"
+            tabIndex={activeTab === 'garmin' ? 0 : -1}
           >
             <Activity size={14} />
-            <span>Garmin Connect</span>
-            {garminState.connected && (
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-            )}
+            <span>Garmin</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('share')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '11px 12px',
-              border: 'none',
-              background: 'none',
-              color: activeTab === 'share' ? '#f59e0b' : 'var(--text-secondary)',
-              fontWeight: 700,
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              borderBottom: activeTab === 'share' ? '2px solid #f59e0b' : '2px solid transparent'
-            }}
+            className="account-modal-tab"
+            role="tab"
+            id="account-tab-share"
+            aria-selected={activeTab === 'share'}
+            aria-controls="account-modal-panel"
+            tabIndex={activeTab === 'share' ? 0 : -1}
           >
             <Share2 size={14} />
-            <span>Partage</span>
+            <span>Partager</span>
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '18px', gap: '14px' }}>
+        <div
+          className="modal-body account-modal-body"
+          id="account-modal-panel"
+          role="tabpanel"
+          aria-labelledby={`account-tab-${activeTab}`}
+          tabIndex={0}
+        >
           {activeTab === 'profile' && <ProfileTab onRefreshAll={onRefreshAll} />}
-
-          {activeTab === 'google' && (
-            <CalendarTab
-              calendarEvents={calendarEvents}
-              onRefreshAll={onRefreshAll}
-              isRecharging={isRecharging}
-            />
-          )}
 
           {activeTab === 'garmin' && (
             <GarminTab

@@ -270,7 +270,8 @@ export async function findScheduledQmtWorkoutReplacementIds(
   client: GarminWorkoutCalendarClient,
   scheduledDate: string,
   sportType: string,
-  replaceWorkoutId?: string
+  replaceWorkoutId?: string,
+  replaceWorkoutDate: string = scheduledDate
 ): Promise<string[]> {
   const normalizedSportType = sportType.toUpperCase();
   const expectedSportTypeKeys = getGarminSportTypeKeysForWorkout(normalizedSportType);
@@ -292,27 +293,30 @@ export async function findScheduledQmtWorkoutReplacementIds(
     expectedSportTypeKeys
   );
 
-  const existingIds = await findScheduledQmtWorkoutIds(
-    client, scheduledDate, expectedSportTypeKeys, replaceWorkoutId
+  const previousDateIds = await findScheduledQmtWorkoutIds(
+    client, replaceWorkoutDate, expectedSportTypeKeys, replaceWorkoutId
   );
-  if (!existingIds.includes(replaceWorkoutId)) {
-    // The expected ID is gone but Garmin still knows what is scheduled on
-    // this date. Report those exact IDs so the client can reconcile an
-    // exchange that already happened (e.g. after a lost response) instead of
-    // creating a duplicate workout.
+  if (!previousDateIds.includes(replaceWorkoutId)) {
+    // A move may only replace the exact ID on its recorded source date. Never
+    // infer ownership from a workout that happens to occupy the target date.
     const missing = manualReviewError(
-      `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${scheduledDate}.`
+      `La séance exacte ${replaceWorkoutId} n'est plus programmée le ${replaceWorkoutDate}.`
     ) as Error & { code?: string; scheduledDate?: string; scheduledWorkoutIds?: string[] };
     missing.code = 'GARMIN_REPLACE_MISSING';
-    missing.scheduledDate = scheduledDate;
-    missing.scheduledWorkoutIds = existingIds;
+    missing.scheduledDate = replaceWorkoutDate;
+    missing.scheduledWorkoutIds = previousDateIds;
     throw missing;
   }
-  const unregisteredIds = existingIds.filter(id => id !== replaceWorkoutId);
-  if (unregisteredIds.length > 0) {
+  const targetDateIds = replaceWorkoutDate === scheduledDate
+    ? previousDateIds
+    : await findScheduledQmtWorkoutIds(client, scheduledDate, expectedSportTypeKeys);
+  const targetConflicts = replaceWorkoutDate === scheduledDate
+    ? targetDateIds.filter(id => id !== replaceWorkoutId)
+    : targetDateIds;
+  if (targetConflicts.length > 0) {
     throw manualReviewError(
-      `D’autres séances [QMT] (${unregisteredIds.join(', ')}) sont programmées le ${scheduledDate}; ` +
-      'seul l’identifiant Garmin exact enregistré peut être remplacé automatiquement.'
+      `Une séance [QMT] (${targetConflicts.join(', ')}) est déjà programmée sur Garmin le ${scheduledDate}; ` +
+      'le déplacement est suspendu pour éviter de remplacer la mauvaise séance.'
     );
   }
   return [replaceWorkoutId];
@@ -433,14 +437,15 @@ export async function scheduleAndReplacePreviousWorkouts(
   newWorkoutId: string,
   scheduledDate: string,
   previousWorkoutIds: readonly string[],
-  expectedPriorSportTypeKey?: string | readonly string[]
+  expectedPriorSportTypeKey?: string | readonly string[],
+  previousWorkoutDate: string = scheduledDate
 ): Promise<void> {
   await scheduleWorkoutWithReadback(client, newWorkoutId, scheduledDate);
   for (const previousWorkoutId of previousWorkoutIds) {
     let previousIsScheduled: boolean;
     try {
       previousIsScheduled = await isExactWorkoutScheduledOnDate(
-        client, scheduledDate, previousWorkoutId
+        client, previousWorkoutDate, previousWorkoutId
       );
       if (previousIsScheduled) {
         await verifyReplaceableWorkout(client, previousWorkoutId, expectedPriorSportTypeKey);
@@ -459,13 +464,12 @@ export async function scheduleAndReplacePreviousWorkouts(
     let previousRemainsScheduled: boolean;
     try {
       previousRemainsScheduled = await isExactWorkoutScheduledOnDate(
-        client, scheduledDate, previousWorkoutId
+        client, previousWorkoutDate, previousWorkoutId
       );
     } catch {
-      await removeUnconfirmedWorkout(client, scheduledDate, newWorkoutId);
       throw manualReviewError(
         `Le retrait de l’ancienne séance ${previousWorkoutId} n’a pas pu être vérifié; ` +
-        'la nouvelle séance a été annulée et l’ancienne conservée.'
+        `la nouvelle séance ${newWorkoutId} reste programmée le ${scheduledDate}.`
       );
     }
 
@@ -480,13 +484,12 @@ export async function scheduleAndReplacePreviousWorkouts(
 
       try {
         previousRemainsScheduled = await isExactWorkoutScheduledOnDate(
-          client, scheduledDate, previousWorkoutId
+          client, previousWorkoutDate, previousWorkoutId
         );
       } catch {
-        await removeUnconfirmedWorkout(client, scheduledDate, newWorkoutId);
         throw manualReviewError(
           `Le retrait de l’ancienne séance ${previousWorkoutId} reste incertain; ` +
-          'la nouvelle séance a été annulée et l’ancienne conservée.'
+          `la nouvelle séance ${newWorkoutId} reste programmée le ${scheduledDate}.`
         );
       }
 

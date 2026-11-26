@@ -18,9 +18,9 @@ describe('shared athlete heart-rate zones', () => {
 
     const date = new Date('2027-01-12T12:00:00');
     const context = getPeriodizationContext(date, config);
-    const hill = getDailyWorkoutPlan(1, false, false, context, date, undefined, config);
-    const easy = getDailyWorkoutPlan(3, false, false, context, date, undefined, config);
-    const long = getDailyWorkoutPlan(5, false, false, context, date, undefined, config);
+    const hill = getDailyWorkoutPlan(1, context, date, config);
+    const easy = getDailyWorkoutPlan(3, context, date, config);
+    const long = getDailyWorkoutPlan(5, context, date, config);
 
     expect(hill.targetHeartRateRange).toEqual([zones.zone4[0], zones.zone5[0]]);
     expect(hill.description).toContain('effort perçu');

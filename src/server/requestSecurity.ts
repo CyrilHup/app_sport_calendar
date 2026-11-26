@@ -68,6 +68,14 @@ function isLocalDevelopmentRequest(req: any): boolean {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '';
 }
 
+/** The personal key can be enabled without Supabase on an explicitly local server. */
+export function isLocalGarminPersonalRequest(req: any): boolean {
+  const host = readHeader(req, 'host').toLowerCase();
+  return isLocalDevelopmentRequest(req) && /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) &&
+    !readHeader(req, 'forwarded') && !readHeader(req, 'x-forwarded-for') &&
+    ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket?.remoteAddress);
+}
+
 /**
  * Verifies the caller's Supabase access token. Local Vite development is the
  * only bypass, and only when the request itself targets a loopback host.

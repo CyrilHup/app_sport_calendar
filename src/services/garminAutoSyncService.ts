@@ -78,6 +78,8 @@ interface AutoSyncOptions {
   athleteProfile?: AthletePhysiologicalProfile;
   userId?: string;
   completedEventIds?: readonly string[];
+  /** Explicit calendar edits may publish beyond the automatic current-week window. */
+  changedEventIds?: readonly string[];
 }
 
 /**
@@ -153,13 +155,17 @@ export function filterCurrentWeekRestCancellations(
 ): CalendarEvent[] {
   const { weekStartStr, weekEndStr } = getCurrentWeekDateBounds(referenceDate);
   return events.filter(event => {
-    if (event.category !== 'sport' || event.metadata?.isPostponedPlaceholder ||
-      !event.metadata?.isAdapted || event.durationMinutes !== 0 ||
-      !isTrailOrRunning(event.metadata.originalSportType, event.metadata.originalTitle || event.title) ||
+    if (!isRestCancellation(event) ||
       toLocalDateKey(event.startDate) < toLocalDateKey(referenceDate)) return false;
     const date = toLocalDateKey(event.startDate);
     return date >= weekStartStr && date <= weekEndStr;
   });
+}
+
+function isRestCancellation(event: CalendarEvent): boolean {
+  return event.category === 'sport' && !event.metadata?.isPostponedPlaceholder &&
+    Boolean(event.metadata?.isAdapted) && event.durationMinutes === 0 &&
+    isTrailOrRunning(event.metadata?.originalSportType, event.metadata?.originalTitle || event.title);
 }
 
 // All callers share the active operation. Changes arriving during a push are
@@ -185,10 +191,9 @@ function workoutSyncRequestKey(
     userId: options?.userId,
     athlete: options?.athleteProfile,
     completedEventIds: [...(options?.completedEventIds || [])].sort(),
-    signatures: [
-      ...filterCurrentWeekSportWorkouts(events, referenceDate),
-      ...filterCurrentWeekRestCancellations(events, referenceDate)
-    ].map(event => computeWorkoutSyncSignature(event, options?.athleteProfile)).sort()
+    changedEventIds: [...(options?.changedEventIds || [])].sort(),
+    signatures: events.filter(event => event.category === 'sport' && !event.metadata?.isPostponedPlaceholder)
+      .map(event => computeWorkoutSyncSignature(event, options?.athleteProfile)).sort()
   });
 }
 
@@ -196,543 +201,255 @@ function workoutSyncRequestKey(
  * Automatically pushes current week's sport workouts to Garmin Connect.
  * Compares workout signatures to avoid redundant pushes and duplicates on Garmin calendar.
  */
+function signatureDate(signature?: string): string | undefined {
+  if (!signature) return undefined;
+  try {
+    const jsonStart = signature.indexOf('::{');
+    if (jsonStart < 0) return undefined;
+    const date = JSON.parse(signature.slice(jsonStart + 2)).startDate;
+    return typeof date === 'string' && !Number.isNaN(Date.parse(date)) ? toLocalDateKey(date) : undefined;
+  } catch { return undefined; }
+}
+
+function isPublishableWorkout(event: CalendarEvent): boolean {
+  return event.category === 'sport' && !event.metadata?.isPostponedPlaceholder &&
+    !event.metadata?.isOptional && isValidGarminWorkoutDuration(event.durationMinutes);
+}
+
 async function runCurrentWeekWorkoutSync(
   events: CalendarEvent[],
   referenceDate: Date = new Date(),
   options?: AutoSyncOptions
 ): Promise<AutoSyncResult> {
   const startingOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
-  const sameLocalOwner = () => storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) === startingOwner;
-  const isEnabled = isGarminAutoSyncEnabled();
-  if (!isEnabled && !options?.force) {
-    return {
-      success: false,
-      pushedCount: 0,
-      totalWeekWorkouts: 0,
-      alreadyUpToDate: false,
-      results: [],
-      reason: 'DISABLED'
-    };
+  const assertOwner = () => {
+    if (storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER) !== startingOwner) {
+      throw new Error('Le compte a changé pendant la synchronisation Garmin.');
+    }
+  };
+  const signatures = getSyncedWeekWorkoutSignatures();
+  const ids = storageGet<Record<string, string>>(GARMIN_SYNCED_WORKOUT_IDS_KEY, {});
+  const changedIds = new Set(options?.changedEventIds);
+  const weeklyIds = new Set(filterCurrentWeekSportWorkouts(events, referenceDate).map(event => event.id));
+  const today = toLocalDateKey(referenceDate);
+  // Explicit edits and previously published future sessions remain eligible on
+  // retry. A Sunday-to-Monday move must not disappear from synchronization.
+  const workouts = events.filter(event => isPublishableWorkout(event) &&
+    (weeklyIds.has(event.id) || changedIds.has(event.id) ||
+      (event.metadata?.isPostponed && toLocalDateKey(event.startDate) >= today) ||
+      (ids[event.id] && toLocalDateKey(event.startDate) >= today)));
+  const rests = filterCurrentWeekRestCancellations(events, referenceDate);
+  for (const event of events) {
+    if (isRestCancellation(event) && changedIds.has(event.id) &&
+      toLocalDateKey(event.startDate) >= today && !rests.some(rest => rest.id === event.id)) rests.push(event);
   }
-
-  const weekWorkouts = filterCurrentWeekSportWorkouts(events, referenceDate);
-  const restCancellations = filterCurrentWeekRestCancellations(events, referenceDate);
-  if (weekWorkouts.length === 0 && restCancellations.length === 0) {
-    return {
-      success: true,
-      pushedCount: 0,
-      totalWeekWorkouts: 0,
-      alreadyUpToDate: true,
-      results: [],
-      reason: 'NO_WORKOUTS'
+  const results: WorkoutPushResult[] = [];
+  const errors: string[] = [];
+  let pushedCount = 0;
+  let cancelledCount = 0;
+  let authRequired = false;
+  const finish = (reason?: AutoSyncResult['reason']): AutoSyncResult => {
+    const success = errors.length === 0 && results.every(result => result.success);
+    const result: AutoSyncResult = {
+      success, pushedCount, totalWeekWorkouts: workouts.length,
+      alreadyUpToDate: success && pushedCount === 0 && cancelledCount === 0,
+      results, reason: reason || (authRequired ? 'NO_CREDENTIALS' : success ? 'SUCCESS' : 'ERROR'),
+      error: [...new Set([...errors, ...results.filter(result => !result.success).map(result => result.error)]
+        .filter(Boolean))].join(' | ') || undefined,
+      lastSyncTimestamp: new Date().toISOString()
     };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('garmin_auto_sync_status', { detail: result }));
+    }
+    return result;
+  };
+  const persist = () => {
+    assertOwner();
+    storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, ids);
+    saveSyncedWeekWorkoutSignatures(signatures);
+  };
+  if (!isGarminAutoSyncEnabled() && !options?.force) {
+    errors.push('Synchronisation automatique Garmin désactivée. Planning enregistré dans l’application.');
+    return finish('DISABLED');
   }
+  if (!workouts.length && !rests.length && !options?.userId) return finish('NO_WORKOUTS');
 
   try {
     const registryClient = options?.userId ? await import('./supabaseClient') : null;
-    const cloudRegistry = options?.userId && registryClient
-      ? await registryClient.fetchGarminRunRegistry(options.userId)
-      : null;
-    if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
-    const existingSignatures = getSyncedWeekWorkoutSignatures();
-    const existingWorkoutIds = storageGet<Record<string, string>>(GARMIN_SYNCED_WORKOUT_IDS_KEY, {});
-    const updatedSignatures = { ...existingSignatures };
-    const updatedWorkoutIds = { ...existingWorkoutIds };
-    const toPush: CalendarEvent[] = [];
-    let legacyStaleCount = 0;
-    const manualReviewErrors: string[] = [];
-    const cloudWarnings: string[] = [];
-    const conflictingEventIds = new Set<string>();
-    const completedEventIds = new Set(options?.completedEventIds);
-    let cancelledCount = 0;
-    const runningByDate = new Map<string, number>();
-    for (const workout of weekWorkouts) {
-      if (!isTrailOrRunning(workout.sportType, workout.title)) continue;
-      const date = toLocalDateKey(workout.startDate);
-      runningByDate.set(date, (runningByDate.get(date) || 0) + 1);
+    const registry = options?.userId && registryClient
+      ? await registryClient.fetchGarminRunRegistry(options.userId) : null;
+    assertOwner();
+    if (options?.userId && !registry) {
+      throw new Error('Registre Garmin indisponible. Planning enregistré ; aucune séance envoyée.');
     }
+    // Cloud ownership also restores future edits/undo after local storage is
+    // lost; keep automatically generated, unpublished future sessions out.
+    const publishedEventIds = new Set(registry?.map(entry => entry.eventId));
+    const selectedIds = new Set(workouts.map(event => event.id));
+    for (const event of events) {
+      if (isPublishableWorkout(event) && !selectedIds.has(event.id) &&
+        publishedEventIds.has(event.id) && toLocalDateKey(event.startDate) >= today) workouts.push(event);
+      if (isRestCancellation(event) && publishedEventIds.has(event.id) &&
+        toLocalDateKey(event.startDate) >= today && !rests.some(rest => rest.id === event.id)) rests.push(event);
+    }
+    if (!workouts.length && !rests.length) return finish('NO_WORKOUTS');
+    const completedIds = new Set(options?.completedEventIds);
+    const completed = (event: CalendarEvent) => completedIds.has(event.id) || Boolean(event.metadata?.isCompleted);
+    const isRun = (event: CalendarEvent) => isTrailOrRunning(event.sportType, event.title);
+    const validId = (id?: string): id is string => Boolean(id && /^[1-9]\d{0,19}$/.test(id));
+    const byDate = (date: string) => registry?.find(entry => entry.workoutDate === date);
+    const byEvent = (event: CalendarEvent) => registry?.find(entry => entry.eventId === event.id);
+    const desiredSignatures = new Map(workouts.map(event => [event.id, computeWorkoutSyncSignature(event, options?.athleteProfile)]));
+    const blocked = new Set<string>();
+    const pairs: Array<[CalendarEvent, CalendarEvent]> = [];
+    const pairMembers = new Set<string>();
 
-    // For a two-day exchange, each date's registered Garmin ID is the exact
-    // workout to replace on that date. Keep the pair together so a partially
-    // completed exchange can safely resume after a lost response.
-    const exchangedTargetIds = new Map<string, string>();
-    const reviewedExchangeIds = new Set<string>();
-    // Calendar-level swap candidates (A moved to B's day and B moved to A's
-    // day, exactly one run per date), independent of registry state.
-    // Individual cloud upserts can never persist a swap (primary key
-    // (user_id, event_id) plus unique (user_id, workout_date) and unique
-    // (user_id, workout_id) collide), so candidates always go through the
-    // atomic exchange path and never through single-row cloud writes.
-    interface SwapCandidate {
-      workout: CalendarEvent;
-      partner: CalendarEvent;
-      targetDate: string;
-      originalDate: string;
-    }
-    const swapCandidates: SwapCandidate[] = [];
-    const seenSwapKeys = new Set<string>();
-    for (const workout of weekWorkouts) {
-      if (!isTrailOrRunning(workout.sportType, workout.title) ||
-        !workout.metadata?.originalDate) continue;
-      const targetDate = toLocalDateKey(workout.startDate);
-      const originalDate = workout.metadata.originalDate;
-      const partner = weekWorkouts.find(candidate => candidate.id !== workout.id &&
-        isTrailOrRunning(candidate.sportType, candidate.title) &&
-        candidate.metadata?.originalDate === targetDate && toLocalDateKey(candidate.startDate) === originalDate);
-      if (!partner || runningByDate.get(targetDate) !== 1 || runningByDate.get(originalDate) !== 1) continue;
-      const key = [workout.id, partner.id].sort().join('|');
-      if (seenSwapKeys.has(key)) continue;
-      seenSwapKeys.add(key);
-      swapCandidates.push({ workout, partner, targetDate, originalDate });
-    }
-    const swapMemberIds = new Set(swapCandidates.flatMap(candidate => [candidate.workout.id, candidate.partner.id]));
-    const exchangePairs: SwapCandidate[] = [];
-    for (const candidate of swapCandidates) {
-      const { workout, partner, targetDate, originalDate } = candidate;
-      if (!cloudRegistry || exchangedTargetIds.has(workout.id) || reviewedExchangeIds.has(workout.id)) continue;
-      const originalEntry = cloudRegistry.find(entry => entry.eventId === workout.id && entry.workoutDate === originalDate);
-      const partnerEntry = cloudRegistry.find(entry => entry.eventId === partner.id && entry.workoutDate === targetDate);
-      if (!originalEntry || !partnerEntry ||
-        !/^[1-9]\d{0,19}$/.test(originalEntry.workoutId) || !/^[1-9]\d{0,19}$/.test(partnerEntry.workoutId) ||
-        (existingWorkoutIds[workout.id] && existingWorkoutIds[workout.id] !== originalEntry.workoutId) ||
-        (existingWorkoutIds[partner.id] && existingWorkoutIds[partner.id] !== partnerEntry.workoutId)) continue;
-      const hasRecordedActivity = completedEventIds.has(workout.id) || completedEventIds.has(partner.id) ||
-        workout.metadata?.isCompleted || partner.metadata?.isCompleted;
-      const hasPastCalendarDate = targetDate < toLocalDateKey(referenceDate) ||
-        originalDate < toLocalDateKey(referenceDate);
-      if (hasRecordedActivity || hasPastCalendarDate) {
-        manualReviewErrors.push(`Échange ${originalDate} ↔ ${targetDate} : ${hasRecordedActivity
-          ? 'une activité réalisée est déjà associée à une séance'
-          : 'une date du calendrier est passée'}. Planning modifié ici ; vérifier Garmin manuellement.`);
-        reviewedExchangeIds.add(workout.id);
-        reviewedExchangeIds.add(partner.id);
-        continue;
-      }
-      exchangedTargetIds.set(workout.id, partnerEntry.workoutId);
-      exchangedTargetIds.set(partner.id, originalEntry.workoutId);
-      exchangePairs.push(candidate);
-    }
-    for (const [eventId, targetId] of exchangedTargetIds) updatedWorkoutIds[eventId] = targetId;
-
-    // Cloud-only repair: Garmin already holds the swapped sessions (a previous
-    // run pushed them and persisted local IDs/signatures) but the cloud
-    // registry still shows the old mapping because sequential upserts cannot
-    // express a swap. Heal the registry without touching Garmin so the next
-    // retry does not loop on stale cloud writes or re-push duplicates.
-    if (cloudRegistry && options?.userId) {
-      for (const candidate of swapCandidates) {
-        if (exchangedTargetIds.has(candidate.workout.id)) continue;
-        const { workout, partner, targetDate, originalDate } = candidate;
-        const oldWorkoutEntry = cloudRegistry.find(entry =>
-          entry.eventId === workout.id && entry.workoutDate === originalDate);
-        const oldPartnerEntry = cloudRegistry.find(entry =>
-          entry.eventId === partner.id && entry.workoutDate === targetDate);
-        if (!oldWorkoutEntry || !oldPartnerEntry) continue;
-        const localWorkoutId = existingWorkoutIds[workout.id];
-        const localPartnerId = existingWorkoutIds[partner.id];
-        if (!/^[1-9]\d{0,19}$/.test(localWorkoutId || '') ||
-          !/^[1-9]\d{0,19}$/.test(localPartnerId || '')) continue;
-        const freshWorkoutSig = computeWorkoutSyncSignature(workout, options?.athleteProfile);
-        const freshPartnerSig = computeWorkoutSyncSignature(partner, options?.athleteProfile);
-        // Fresh local signatures prove a previous run confirmed these exact
-        // versions on Garmin; only the cloud write was lost.
-        if (existingSignatures[workout.id] !== freshWorkoutSig ||
-          existingSignatures[partner.id] !== freshPartnerSig) continue;
-        if (completedEventIds.has(workout.id) || completedEventIds.has(partner.id) ||
-          workout.metadata?.isCompleted || partner.metadata?.isCompleted) continue;
-        const dateW = toLocalDateKey(workout.startDate);
-        const dateP = toLocalDateKey(partner.startDate);
-        if (dateW < toLocalDateKey(referenceDate) || dateP < toLocalDateKey(referenceDate)) continue;
-        const healed = await registryClient!.exchangeGarminRunRegistryEntries(options.userId, {
-          eventId: workout.id, workoutDate: dateW, workoutId: localWorkoutId, signature: freshWorkoutSig
-        }, {
-          eventId: partner.id, workoutDate: dateP, workoutId: localPartnerId, signature: freshPartnerSig
-        });
-        if (!healed) {
-          manualReviewErrors.push(`Échange ${originalDate} ↔ ${targetDate} : Identifiants Garmin divergents entre l'appareil et le cloud ; vérifiez Garmin manuellement puis réessayez.`);
-          conflictingEventIds.add(workout.id);
-          conflictingEventIds.add(partner.id);
-          continue;
-        }
-        updatedWorkoutIds[workout.id] = localWorkoutId;
-        updatedWorkoutIds[partner.id] = localPartnerId;
-        updatedSignatures[workout.id] = freshWorkoutSig;
-        updatedSignatures[partner.id] = freshPartnerSig;
-        oldWorkoutEntry.workoutDate = dateW;
-        oldWorkoutEntry.workoutId = localWorkoutId;
-        oldWorkoutEntry.signature = freshWorkoutSig;
-        oldPartnerEntry.workoutDate = dateP;
-        oldPartnerEntry.workoutId = localPartnerId;
-        oldPartnerEntry.signature = freshPartnerSig;
+    // Detect exchanges from confirmed placement, not permanent original-date
+    // metadata. This also handles undo and exchanging previously moved sessions.
+    for (const event of workouts.filter(isRun)) {
+      if (pairMembers.has(event.id)) continue;
+      const source = byEvent(event);
+      const target = byDate(toLocalDateKey(event.startDate));
+      if (!source || !target || target.eventId === event.id) continue;
+      const partner = workouts.find(candidate => candidate.id === target.eventId && isRun(candidate) &&
+        toLocalDateKey(candidate.startDate) === source.workoutDate);
+      if (!partner) continue;
+      pairs.push([event, partner]);
+      pairMembers.add(event.id);
+      pairMembers.add(partner.id);
+      if (completed(event) || completed(partner) || source.workoutDate < today || target.workoutDate < today) {
+        errors.push(`Échange ${source.workoutDate} ↔ ${target.workoutDate} : une activité réalisée est déjà associée à une séance ou une date est passée. Vérification manuelle nécessaire.`);
+        blocked.add(event.id); blocked.add(partner.id);
       }
     }
 
-    for (const rest of restCancellations) {
-      if (completedEventIds.has(rest.id) || rest.metadata?.isCompleted) continue;
+    for (const rest of rests) {
+      if (completed(rest)) continue;
       const date = toLocalDateKey(rest.startDate);
-      if (weekWorkouts.some(workout =>
-        isTrailOrRunning(workout.sportType, workout.title) && toLocalDateKey(workout.startDate) === date
-      ) || restCancellations.filter(candidate => toLocalDateKey(candidate.startDate) === date).length > 1) {
-        manualReviewErrors.push(`Repos du ${date} ambigu : annulation Garmin suspendue.`);
+      if (events.some(event => isPublishableWorkout(event) && isRun(event) && toLocalDateKey(event.startDate) === date) ||
+        rests.filter(event => toLocalDateKey(event.startDate) === date).length > 1) {
+        errors.push(`Repos du ${date} ambigu : annulation Garmin suspendue.`); continue;
+      }
+      if (!options?.userId || !registry) {
+        errors.push(`Identifiant Garmin du ${date} invérifiable dans le compte : annulation suspendue.`); continue;
+      }
+      const entry = byEvent(rest) || byDate(date);
+      const localId = ids[rest.id];
+      if (entry && localId && entry.workoutId !== localId && entry.signature !== GARMIN_REST_CANCELLED_SIGNATURE) {
+        errors.push(`Identifiants Garmin divergents pour le repos du ${date} : vérification manuelle nécessaire.`); continue;
+      }
+      if (entry?.signature === GARMIN_REST_CANCELLED_SIGNATURE) {
+        ids[rest.id] = entry.workoutId; signatures[rest.id] = GARMIN_REST_CANCELLED_SIGNATURE;
+        persist(); continue;
+      }
+      if (!entry && signatures[rest.id] === GARMIN_REST_CANCELLED_SIGNATURE && localId) continue;
+      const workoutId = entry?.workoutId || localId;
+      if (!validId(workoutId)) {
+        if (signatures[rest.id]) errors.push(`Séance Garmin du ${date} remplacée par un repos sans identifiant exact enregistré : annulation non tentée.`);
         continue;
       }
-      if (!options?.userId || !cloudRegistry) {
-        manualReviewErrors.push(`Identifiant Garmin du ${date} invérifiable dans le compte : annulation suspendue.`);
-        continue;
-      }
-      const cloudEntry = cloudRegistry.find(entry => entry.workoutDate === date);
-      const localId = existingWorkoutIds[rest.id];
-      if (cloudEntry && localId && cloudEntry.workoutId !== localId) {
-        manualReviewErrors.push(`Identifiants Garmin divergents pour le repos du ${date} : vérification manuelle nécessaire.`);
-        continue;
-      }
-      if (cloudEntry?.signature === GARMIN_REST_CANCELLED_SIGNATURE) {
-        updatedWorkoutIds[rest.id] = cloudEntry.workoutId;
-        updatedSignatures[rest.id] = GARMIN_REST_CANCELLED_SIGNATURE;
-        storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
-        saveSyncedWeekWorkoutSignatures(updatedSignatures);
-        continue;
-      }
-      if (!cloudEntry && existingSignatures[rest.id] === GARMIN_REST_CANCELLED_SIGNATURE && localId) {
-        continue;
-      }
-      // A lost cancellation response can leave the browser ID behind after
-      // the server has already removed the cloud row. The server accepts that
-      // exact ID only if Garmin also confirms it is no longer scheduled.
-      const workoutId = cloudEntry?.workoutId || localId;
-      if (!workoutId) {
-        if (existingSignatures[rest.id] && existingSignatures[rest.id] !== GARMIN_REST_CANCELLED_SIGNATURE) {
-          manualReviewErrors.push(
-            `Séance Garmin du ${date} remplacée par un repos sans identifiant exact enregistré : annulation non tentée.`
-          );
-        }
-        continue;
-      }
-      if (!/^[1-9]\d{0,19}$/.test(workoutId)) {
-        manualReviewErrors.push(`Identifiant Garmin invalide pour le repos du ${date}.`);
-        continue;
-      }
-      if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
-      const cancellation = await cancelWorkoutOnGarmin(date, workoutId);
-      if (!cancellation.success) {
-        manualReviewErrors.push(`Repos du ${date} non répercuté sur Garmin : ${cancellation.error || 'annulation non confirmée'}`);
-        continue;
-      }
-      if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
-      updatedWorkoutIds[rest.id] = workoutId;
-      updatedSignatures[rest.id] = GARMIN_REST_CANCELLED_SIGNATURE;
-      storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
-      saveSyncedWeekWorkoutSignatures(updatedSignatures);
-      cancelledCount++;
+      const sourceDate = entry?.workoutDate || signatureDate(signatures[rest.id]) || date;
+      if (sourceDate < today) { errors.push(`Repos du ${date} : ancienne séance passée, vérifier Garmin manuellement.`); continue; }
+      const cancellation = await cancelWorkoutOnGarmin(sourceDate, workoutId);
+      assertOwner();
+      if (!cancellation.success) { errors.push(`Repos du ${date} non répercuté sur Garmin : ${cancellation.error || 'annulation non confirmée'}`); continue; }
+      ids[rest.id] = workoutId; signatures[rest.id] = GARMIN_REST_CANCELLED_SIGNATURE;
+      cancelledCount++; persist();
     }
 
-    for (const entry of cloudRegistry || []) {
-      if (!/^[1-9]\d{0,19}$/.test(entry.workoutId)) continue;
-      const matchingWorkout = weekWorkouts.find(workout =>
-        isTrailOrRunning(workout.sportType, workout.title) &&
-        toLocalDateKey(workout.startDate) === entry.workoutDate
-      );
-      if (!matchingWorkout) continue;
-      const eventId = matchingWorkout.id;
-      if (reviewedExchangeIds.has(eventId)) continue;
-      const localId = updatedWorkoutIds[eventId];
-      if (localId && localId !== entry.workoutId) {
-        manualReviewErrors.push(`Identifiants Garmin divergents pour ${eventId} : vérification manuelle nécessaire.`);
-        conflictingEventIds.add(eventId);
+    for (const event of workouts) {
+      const targetDate = toLocalDateKey(event.startDate);
+      if (blocked.has(event.id)) continue;
+      if (completed(event) || targetDate < today) {
+        if (changedIds.has(event.id)) errors.push(`Séance ${targetDate} enregistrée dans l’application ; activité réalisée ou date passée, vérifier Garmin manuellement.`);
         continue;
       }
-      updatedWorkoutIds[eventId] = entry.workoutId;
-      if (!existingSignatures[eventId]) updatedSignatures[eventId] = entry.signature;
-    }
-
-    for (const workout of weekWorkouts) {
-      const date = toLocalDateKey(workout.startDate);
-      if (reviewedExchangeIds.has(workout.id)) continue;
-      if (isTrailOrRunning(workout.sportType, workout.title) && (runningByDate.get(date) || 0) > 1) {
-        manualReviewErrors.push(`Plusieurs séances de course prévues le ${date} : synchronisation Garmin suspendue pour ce jour.`);
-        continue;
+      if (isRun(event) && events.filter(candidate => isPublishableWorkout(candidate) && isRun(candidate) &&
+        toLocalDateKey(candidate.startDate) === targetDate).length > 1) {
+        errors.push(`Plusieurs séances de course prévues le ${targetDate} : synchronisation Garmin suspendue pour ce jour.`);
+        blocked.add(event.id); continue;
       }
-      // A scheduled time passing is not proof that the athlete started the
-      // workout. Same-day changes remain eligible unless an activity exists.
-      if (completedEventIds.has(workout.id) || workout.metadata?.isCompleted ||
-        date < toLocalDateKey(referenceDate)) {
-        continue;
+      const sig = desiredSignatures.get(event.id)!;
+      const targetEntry = isRun(event) ? byDate(targetDate) : undefined;
+      // Only a server-confirmed exact version can heal a lost response. A sole
+      // foreign QMT workout on this day is not evidence of matching content.
+      if (targetEntry?.signature === sig && validId(targetEntry.workoutId)) {
+        ids[event.id] = targetEntry.workoutId; signatures[event.id] = sig;
+        persist();
       }
-      const sig = computeWorkoutSyncSignature(workout, options?.athleteProfile);
-      const storedSig = updatedSignatures[workout.id];
-      const recoverableLegacyConflict = storedSig?.startsWith(
-        'replacement-review::Une séance de course [QMT]'
-      );
-      if (conflictingEventIds.has(workout.id)) continue;
-      if (storedSig?.startsWith('replacement-review::') && !recoverableLegacyConflict) {
-        const hasExactStoredId = /^[1-9]\d{0,19}$/.test(updatedWorkoutIds[workout.id] || '');
-        if (!options?.retryManualReview || !hasExactStoredId) {
-          manualReviewErrors.push(storedSig.slice('replacement-review::'.length));
-          continue;
-        }
+      const entry = isRun(event) ? (pairMembers.has(event.id) ? targetEntry : byEvent(event) || targetEntry) : undefined;
+      if (entry && entry.eventId !== event.id && !pairMembers.has(event.id) &&
+        !entry.eventId.startsWith('garmin-date:') && entry.signature !== sig) {
+        errors.push(`Identifiants Garmin divergents pour ${event.id} : la date cible appartient à une autre séance.`);
+        blocked.add(event.id); continue;
       }
-      // Old records prove that a workout was already scheduled but contain no
-      // Garmin workout ID. Re-creating it automatically would make a duplicate.
-      if (storedSig && (options?.force || storedSig !== sig) &&
-        !/^[1-9]\d{0,19}$/.test(updatedWorkoutIds[workout.id] || '') &&
-        !recoverableLegacyConflict) {
-        legacyStaleCount++;
-        continue;
+      const localId = ids[event.id];
+      const storedSig = signatures[event.id];
+      const legacyConflict = storedSig?.startsWith('replacement-review::Une séance de course [QMT]');
+      if (entry && localId && localId !== entry.workoutId && !pairMembers.has(event.id)) {
+        errors.push(`Identifiants Garmin divergents pour ${event.id} : vérification manuelle nécessaire.`);
+        blocked.add(event.id); continue;
       }
-      if (options?.force || storedSig !== sig) {
-        toPush.push(workout);
+      if (pairMembers.has(event.id) && entry && localId && localId !== entry.workoutId && storedSig === sig) {
+        errors.push(`Identifiants Garmin divergents pour ${event.id} : la version locale n’est pas confirmée par le registre.`);
+        blocked.add(event.id); continue;
       }
-    }
-
-    const legacyWarning = [
-      legacyStaleCount > 0
-        ? `${legacyStaleCount} séance(s) Garmin déjà programmée(s) n'ont pas d'identifiant exact enregistré. Mise à jour automatique suspendue pour éviter les doublons.`
-        : undefined,
-      ...manualReviewErrors
-    ].filter(Boolean).join(' | ') || undefined;
-
-    storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
-    saveSyncedWeekWorkoutSignatures(updatedSignatures);
-    if (cloudRegistry && options?.userId) {
-      for (const workout of weekWorkouts) {
-        // Swap members never go through single-row upserts: the pair is
-        // persisted atomically after the push (or healed without pushing).
-        // Writing one swapped row here would collide with the row still
-        // holding the old date/ID and poison the whole sync result.
-        if (!isTrailOrRunning(workout.sportType, workout.title) || conflictingEventIds.has(workout.id) ||
-          swapMemberIds.has(workout.id)) continue;
-        const workoutId = updatedWorkoutIds[workout.id];
-        const signature = updatedSignatures[workout.id];
-        const date = toLocalDateKey(workout.startDate);
-        if (!/^[1-9]\d{0,19}$/.test(workoutId || '') ||
-          signature !== computeWorkoutSyncSignature(workout, options?.athleteProfile) ||
-          cloudRegistry.some(entry => entry.eventId === workout.id && entry.workoutId === workoutId &&
-            entry.workoutDate === date && entry.signature === signature)) continue;
-        if (!await registryClient!.saveGarminRunRegistryEntry(options.userId, {
-          eventId: workout.id, workoutDate: date, workoutId, signature
-        })) {
-          cloudWarnings.push(`Identifiant Garmin du ${date} non sauvegardé dans le cloud.`);
-        }
+      const replaceId = entry?.workoutId || localId;
+      const sourceDate = entry?.workoutDate || signatureDate(storedSig) || event.metadata?.originalDate || targetDate;
+      if (entry && !storedSig) signatures[event.id] = entry.signature;
+      if (entry && validId(entry.workoutId)) ids[event.id] = entry.workoutId;
+      if (signatures[event.id] === sig && !options?.force) continue;
+      if (storedSig?.startsWith('replacement-review::') && !legacyConflict &&
+        (!options?.retryManualReview || !validId(replaceId))) {
+        errors.push(storedSig.slice('replacement-review::'.length)); continue;
       }
-    }
-
-    if (toPush.length === 0) {
-      const res: AutoSyncResult = {
-        success: legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0,
-        pushedCount: 0,
-        totalWeekWorkouts: weekWorkouts.length,
-        alreadyUpToDate: cancelledCount === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0,
-        results: [],
-        reason: legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0 ? 'SUCCESS' : 'ERROR',
-        error: [legacyWarning, ...cloudWarnings].filter(Boolean).join(' | ') || undefined,
-        lastSyncTimestamp: new Date().toISOString()
-      };
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('garmin_auto_sync_status', { detail: res }));
+      if (signatures[event.id] && !validId(replaceId) && !legacyConflict) {
+        errors.push(`Séance Garmin ${event.id} sans identifiant exact enregistré. Mise à jour suspendue pour éviter les doublons.`); continue;
       }
-      return res;
-    }
-
-    const results: WorkoutPushResult[] = [];
-    let pushedCount = 0;
-    let authRequired = false;
-    // Replace targets that vanished from Garmin: the server reports the exact
-    // IDs it still sees scheduled. When both members of a swap report exactly
-    // one foreign session each, Garmin already applied the exchange (e.g. an
-    // earlier run succeeded but its cloud write was lost) and the IDs are
-    // adopted instead of pushing duplicates.
-    const replaceMissingReports = new Map<string, { date: string; ids: string[]; error: string }>();
-
-    for (const workout of toPush) {
-      if (!sameLocalOwner()) throw new Error('Le compte a changé pendant la synchronisation Garmin.');
-      const dateStr = toLocalDateKey(workout.startDate);
-      const pushRes = await pushWorkoutToGarmin(
-        workout, dateStr, 'FORERUNNER_55', options?.athleteProfile, updatedWorkoutIds[workout.id]
-      );
-      if (pushRes.errorCode === 'GARMIN_REPLACE_MISSING' && swapMemberIds.has(workout.id) && !authRequired &&
-        sameLocalOwner()) {
-        replaceMissingReports.set(workout.id, {
-          date: pushRes.scheduledDate || dateStr,
-          ids: pushRes.scheduledWorkoutIds || [],
-          error: pushRes.error || 'Séance exacte introuvable sur Garmin.'
-        });
-        continue;
+      if (replaceId && sourceDate < today) {
+        errors.push(`Ancienne séance Garmin du ${sourceDate} passée : déplacement suspendu pour vérification manuelle.`); continue;
       }
-      results.push(pushRes);
-      if (pushRes.errorCode === 'GARMIN_AUTH_REQUIRED') authRequired = true;
-
-      if (!sameLocalOwner()) {
-        if (pushRes.success && pushRes.workoutId && options?.userId &&
-          isTrailOrRunning(workout.sportType, workout.title) && !swapMemberIds.has(workout.id)) {
-          await registryClient!.saveGarminRunRegistryEntry(options.userId, {
-            eventId: workout.id,
-            workoutDate: dateStr,
-            workoutId: pushRes.workoutId,
-            signature: computeWorkoutSyncSignature(workout, options?.athleteProfile)
-          });
-        }
-        throw new Error('Le compte a changé pendant la synchronisation Garmin.');
-      }
-
-      if (pushRes.success && pushRes.workoutId && /^[1-9]\d{0,19}$/.test(pushRes.workoutId)) {
+      assertOwner();
+      const pushed = await pushWorkoutToGarmin(event, targetDate, 'FORERUNNER_55', options?.athleteProfile,
+        replaceId, replaceId ? sourceDate : undefined, sig);
+      results.push(pushed);
+      // Account switches must not copy an old account's IDs into new storage.
+      assertOwner();
+      if (pushed.errorCode === 'GARMIN_AUTH_REQUIRED') { authRequired = true; break; }
+      if (pushed.success && validId(pushed.workoutId)) {
         pushedCount++;
-        updatedSignatures[workout.id] = computeWorkoutSyncSignature(workout, options?.athleteProfile);
-        updatedWorkoutIds[workout.id] = pushRes.workoutId;
-        // Persist the exact new ID immediately. A later workout failure must
-        // not lose an earlier confirmed replacement from this batch.
-        storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
-        saveSyncedWeekWorkoutSignatures(updatedSignatures);
-        if (options?.userId && isTrailOrRunning(workout.sportType, workout.title) &&
-          !swapMemberIds.has(workout.id) &&
-          !await registryClient!.saveGarminRunRegistryEntry(options.userId, {
-            eventId: workout.id,
-            workoutDate: dateStr,
-            workoutId: pushRes.workoutId,
-            signature: updatedSignatures[workout.id]
-          })) {
-          cloudWarnings.push(`Identifiant Garmin créé le ${dateStr} mais non sauvegardé dans le cloud ; vérifier depuis cet appareil.`);
-        }
-      } else if (pushRes.success) {
-        // Scheduling succeeded but there is no usable ID. A retry could
-        // duplicate the workout, so require manual review first.
-        pushRes.success = false;
-        pushRes.error = 'Garmin a confirmé la séance sans fournir son identifiant exact. Vérification manuelle nécessaire avant une nouvelle tentative.';
-        updatedSignatures[workout.id] = `replacement-review::${pushRes.error}`;
-      } else if (pushRes.error?.startsWith('Remplacement Garmin incomplet') ||
-        pushRes.error?.startsWith('Remplacement Garmin à vérifier') ||
-        pushRes.error?.startsWith('Programmation Garmin à vérifier') ||
-        pushRes.error?.startsWith('Une séance de course [QMT]') ||
-        pushRes.error?.includes('Vérification manuelle nécessaire') ||
-        pushRes.error?.includes('Manual review required')) {
-        // Both IDs may still exist. Never retry automatically in this state.
-        updatedSignatures[workout.id] = `replacement-review::${pushRes.error}`;
-      }
-      if (authRequired) break;
-    }
-
-    // Adopt Garmin truth for swaps Garmin already applied: both members
-    // report their replace target gone with exactly one foreign QMT session
-    // scheduled on their date. Persist locally and in the cloud atomically;
-    // leftovers fall back to manual review without ever pushing duplicates.
-    for (const candidate of swapCandidates) {
-      const reportW = replaceMissingReports.get(candidate.workout.id);
-      const reportP = replaceMissingReports.get(candidate.partner.id);
-      if (!reportW || !reportP) continue;
-      const dateW = toLocalDateKey(candidate.workout.startDate);
-      const dateP = toLocalDateKey(candidate.partner.startDate);
-      const [idW] = reportW.ids;
-      const [idP] = reportP.ids;
-      const swappable =
-        reportW.ids.length === 1 && reportP.ids.length === 1 &&
-        /^[1-9]\d{0,19}$/.test(idW || '') && /^[1-9]\d{0,19}$/.test(idP || '') && idW !== idP &&
-        !completedEventIds.has(candidate.workout.id) && !completedEventIds.has(candidate.partner.id) &&
-        !candidate.workout.metadata?.isCompleted && !candidate.partner.metadata?.isCompleted &&
-        !reviewedExchangeIds.has(candidate.workout.id) &&
-        dateW >= toLocalDateKey(referenceDate) && dateP >= toLocalDateKey(referenceDate);
-      if (!swappable) continue;
-      replaceMissingReports.delete(candidate.workout.id);
-      replaceMissingReports.delete(candidate.partner.id);
-      const freshW = computeWorkoutSyncSignature(candidate.workout, options?.athleteProfile);
-      const freshP = computeWorkoutSyncSignature(candidate.partner, options?.athleteProfile);
-      let cloudOk = true;
-      if (options?.userId && cloudRegistry) {
-        cloudOk = await registryClient!.exchangeGarminRunRegistryEntries(options.userId, {
-          eventId: candidate.workout.id, workoutDate: dateW, workoutId: idW, signature: freshW
-        }, {
-          eventId: candidate.partner.id, workoutDate: dateP, workoutId: idP, signature: freshP
-        });
-      }
-      if (!cloudOk) {
-        results.push({ success: false, error: reportW.error });
-        results.push({ success: false, error: reportP.error });
-        manualReviewErrors.push(`Échange ${candidate.originalDate} ↔ ${candidate.targetDate} : Identifiants Garmin divergents entre l'appareil et le cloud ; vérifiez Garmin manuellement puis réessayez.`);
-        continue;
-      }
-      updatedWorkoutIds[candidate.workout.id] = idW;
-      updatedWorkoutIds[candidate.partner.id] = idP;
-      updatedSignatures[candidate.workout.id] = freshW;
-      updatedSignatures[candidate.partner.id] = freshP;
-      storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
-      saveSyncedWeekWorkoutSignatures(updatedSignatures);
-      pushedCount += 2;
-      results.push({
-        success: true,
-        workoutId: idW,
-        scheduledDate: dateW,
-        message: `Échange ${candidate.originalDate} ↔ ${candidate.targetDate} déjà programmé sur Garmin ; registre réconcilié sans doublon.`
-      });
-      results.push({
-        success: true,
-        workoutId: idP,
-        scheduledDate: dateP,
-        message: `Échange ${candidate.originalDate} ↔ ${candidate.targetDate} déjà programmé sur Garmin ; registre réconcilié sans doublon.`
-      });
-    }
-    for (const [eventId, report] of replaceMissingReports) {
-      results.push({ success: false, error: report.error });
-      updatedSignatures[eventId] = `replacement-review::${report.error}`;
-    }
-
-    // Swap members pushed successfully are persisted atomically: two
-    // sequential upserts would collide on the unique date/ID constraints.
-    if (options?.userId && cloudRegistry) {
-      for (const pair of exchangePairs) {
-        const dateW = toLocalDateKey(pair.workout.startDate);
-        const dateP = toLocalDateKey(pair.partner.startDate);
-        const idW = updatedWorkoutIds[pair.workout.id];
-        const idP = updatedWorkoutIds[pair.partner.id];
-        const sigW = updatedSignatures[pair.workout.id];
-        const sigP = updatedSignatures[pair.partner.id];
-        if (!/^[1-9]\d{0,19}$/.test(idW || '') || !/^[1-9]\d{0,19}$/.test(idP || '')) continue;
-        if (sigW !== computeWorkoutSyncSignature(pair.workout, options?.athleteProfile) ||
-          sigP !== computeWorkoutSyncSignature(pair.partner, options?.athleteProfile)) continue;
-        if (!await registryClient!.exchangeGarminRunRegistryEntries(options.userId, {
-          eventId: pair.workout.id, workoutDate: dateW, workoutId: idW, signature: sigW
-        }, {
-          eventId: pair.partner.id, workoutDate: dateP, workoutId: idP, signature: sigP
-        })) {
-          cloudWarnings.push(`Échange ${pair.originalDate} ↔ ${pair.targetDate} : Identifiants Garmin créés mais cloud non réconcilié ; vérifiez Garmin manuellement puis réessayez.`);
-        }
+        ids[event.id] = pushed.workoutId; signatures[event.id] = sig;
+        persist();
+        if (entry) { entry.workoutId = pushed.workoutId; entry.signature = sig; }
+        // The server commits the exact run ID and signature before reporting
+        // success. A second browser write could race another device's move.
+      } else if (pushed.success) {
+        pushed.success = false;
+        pushed.error = 'Garmin a confirmé la séance sans identifiant exact. Vérification manuelle nécessaire.';
+        signatures[event.id] = `replacement-review::${pushed.error}`; persist();
+      } else if (pushed.errorCode === 'GARMIN_REPLACE_MISSING' ||
+        /Remplacement Garmin (incomplet|à vérifier)|Programmation Garmin à vérifier|Vérification manuelle nécessaire|Manual review required/.test(pushed.error || '')) {
+        signatures[event.id] = `replacement-review::${pushed.error}`; persist();
       }
     }
 
-    storageSet(GARMIN_SYNCED_WORKOUT_IDS_KEY, updatedWorkoutIds);
-    saveSyncedWeekWorkoutSignatures(updatedSignatures);
-
-    const failedResults = results.filter(result => !result.success);
-    const res: AutoSyncResult = {
-      success: failedResults.length === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0,
-      pushedCount,
-      totalWeekWorkouts: weekWorkouts.length,
-      alreadyUpToDate: false,
-      results,
-      reason: authRequired ? 'NO_CREDENTIALS' :
-        failedResults.length === 0 && legacyStaleCount === 0 && manualReviewErrors.length === 0 && cloudWarnings.length === 0 ? 'SUCCESS' : 'ERROR',
-      error: [legacyWarning, ...cloudWarnings, ...failedResults.map(result => result.error || 'Échec Garmin inconnu')]
-        .filter(Boolean).join(' | ') || undefined,
-      lastSyncTimestamp: new Date().toISOString()
-    };
-
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('garmin_auto_sync_status', { detail: res }));
+    for (const [first, second] of pairs) {
+      if (blocked.has(first.id) || blocked.has(second.id)) continue;
+      const sigA = desiredSignatures.get(first.id)!;
+      const sigB = desiredSignatures.get(second.id)!;
+      if (signatures[first.id] !== sigA || signatures[second.id] !== sigB ||
+        !validId(ids[first.id]) || !validId(ids[second.id])) continue;
+      if (!await registryClient!.exchangeGarminRunRegistryEntries(options!.userId!, {
+        eventId: first.id, workoutDate: toLocalDateKey(first.startDate), workoutId: ids[first.id], signature: sigA
+      }, {
+        eventId: second.id, workoutDate: toLocalDateKey(second.startDate), workoutId: ids[second.id], signature: sigB
+      })) errors.push('Échange programmé sur Garmin mais registre non réconcilié. Réessayez pour confirmer les deux séances.');
     }
-
-    return res;
-  } catch (err: any) {
-    const errorRes: AutoSyncResult = {
-      success: false,
-      pushedCount: 0,
-      totalWeekWorkouts: weekWorkouts.length,
-      alreadyUpToDate: false,
-      results: [],
-      reason: 'ERROR',
-      error: err?.message || 'Erreur lors de la synchronisation automatique Garmin.'
-    };
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('garmin_auto_sync_status', { detail: errorRes }));
-    }
-    return errorRes;
+    persist();
+  } catch (error) {
+    errors.push(error instanceof Error ? error.message : 'Erreur lors de la synchronisation Garmin.');
   }
+  return finish();
 }
 
 export function syncCurrentWeekWorkoutsToGarmin(

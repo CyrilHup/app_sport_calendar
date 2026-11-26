@@ -1,6 +1,6 @@
 import { MAX_FULL_SYNC_ACTIVITIES } from './garminPagination.js';
 
-export type GarminAction = 'sync' | 'push-workout' | 'cancel-workout' | 'get-wellness' | 'get-activity-feedback';
+export type GarminAction = 'connection-status' | 'sync' | 'push-workout' | 'cancel-workout' | 'get-wellness' | 'get-activity-feedback';
 export type GarminSyncMode = 'full' | 'incremental';
 
 export interface ValidatedGarminRequest {
@@ -20,6 +20,9 @@ export interface ValidatedGarminRequest {
     targetWatch?: string;
     description?: string;
     replaceWorkoutId?: string;
+    replaceWorkoutDate?: string;
+    eventId?: string;
+    syncSignature?: string;
   };
   cancellation?: { scheduledDate: string; workoutId: string };
 }
@@ -30,7 +33,8 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
   }
   const body = input as Record<string, unknown>;
   const action = body.action ?? 'sync';
-  if (action !== 'sync' && action !== 'push-workout' && action !== 'cancel-workout' && action !== 'get-wellness' && action !== 'get-activity-feedback') {
+  if (action !== 'connection-status' && action !== 'sync' && action !== 'push-workout' &&
+    action !== 'cancel-workout' && action !== 'get-wellness' && action !== 'get-activity-feedback') {
     throw new Error('Action Garmin non reconnue.');
   }
   const syncMode = body.syncMode ?? body.mode ?? 'incremental';
@@ -101,6 +105,17 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
     (typeof data.replaceWorkoutId !== 'string' || !/^[1-9]\d{0,19}$/.test(data.replaceWorkoutId))) {
     throw new Error('Identifiant de séance Garmin à remplacer invalide.');
   }
+  if (data.replaceWorkoutDate !== undefined &&
+    (typeof data.replaceWorkoutDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(data.replaceWorkoutDate) ||
+      typeof data.replaceWorkoutId !== 'string')) {
+    throw new Error('Date de la séance Garmin à remplacer invalide.');
+  }
+  if ((data.eventId === undefined) !== (data.syncSignature === undefined) ||
+    (data.eventId !== undefined &&
+      (typeof data.eventId !== 'string' || !data.eventId.trim() || data.eventId.length > 200 ||
+        typeof data.syncSignature !== 'string' || !data.syncSignature || data.syncSignature.length > 16_000))) {
+    throw new Error('Identité de séance Garmin invalide.');
+  }
   return {
     email,
     password,
@@ -116,7 +131,10 @@ export function validateGarminRequest(input: unknown): ValidatedGarminRequest {
       steps: data.steps as Array<Record<string, unknown>>,
       targetWatch: typeof data.targetWatch === 'string' ? data.targetWatch : undefined,
       description: typeof data.description === 'string' ? data.description.slice(0, 2000) : undefined,
-      replaceWorkoutId: data.replaceWorkoutId as string | undefined
+      replaceWorkoutId: data.replaceWorkoutId as string | undefined,
+      replaceWorkoutDate: data.replaceWorkoutDate as string | undefined,
+      eventId: data.eventId as string | undefined,
+      syncSignature: data.syncSignature as string | undefined
     }
   };
 }

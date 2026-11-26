@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 interface GarminRunLease {
   /** Call immediately before sending createWorkout so a lost response keeps the date locked. */
   markCreateStarted: () => void;
-  confirm: (newWorkoutId: string) => Promise<void>;
+  confirm: (newWorkoutId: string, eventId?: string, signature?: string) => Promise<void>;
   release: () => Promise<void>;
 }
 
@@ -94,13 +94,14 @@ async function hasCancelledRunTombstone(
 
 /**
  * A Postgres row claim serializes Garmin creation across tabs and devices.
- * Both the target date and the exact prior ID are claimed atomically. A
+ * Both dates and the exact prior ID are claimed atomically. A
  * production request without a working claim must never create a workout.
  */
 export async function claimGarminRunLease(
   req: { headers?: Record<string, string | string[] | undefined> },
   workoutDate: string,
-  replaceWorkoutId?: string
+  replaceWorkoutId?: string,
+  replaceWorkoutDate: string = workoutDate
 ): Promise<GarminRunLease> {
   const token = bearerToken(req);
   if (!token && !process.env.VERCEL && process.env.NODE_ENV !== 'production') {
@@ -119,12 +120,13 @@ export async function claimGarminRunLease(
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json'
   };
-  const response = await fetch(`${rpcBase}/claim_garmin_run_sync`, {
+  const response = await fetch(`${rpcBase}/claim_garmin_run_sync_v2`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       p_lock_date: workoutDate,
       p_replace_workout_id: replaceWorkoutId ?? null,
+      p_replace_workout_date: replaceWorkoutDate,
       p_claim_id: claimId
     }),
     signal: AbortSignal.timeout(8_000)
@@ -141,14 +143,17 @@ export async function claimGarminRunLease(
   let confirmed = false;
   return {
     markCreateStarted: () => { createMayHaveSucceeded = true; },
-    confirm: async newWorkoutId => {
-      const confirmedResponse = await fetch(`${rpcBase}/confirm_garmin_run_sync`, {
+    confirm: async (newWorkoutId, eventId, signature) => {
+      const confirmedResponse = await fetch(`${rpcBase}/confirm_garmin_run_sync_v2`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
           p_lock_date: workoutDate,
           p_previous_workout_id: replaceWorkoutId ?? null,
+          p_replace_workout_date: replaceWorkoutDate,
           p_new_workout_id: newWorkoutId,
+          p_event_id: eventId ?? `garmin-date:${workoutDate}`,
+          p_signature: signature ?? 'pending-server-confirmation',
           p_claim_id: claimId
         }),
         signal: AbortSignal.timeout(8_000)

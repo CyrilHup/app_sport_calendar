@@ -1,47 +1,32 @@
-import React from 'react';
-import { Activity, BarChart3, Calendar, TrendingUp } from 'lucide-react';
+import { Activity, BarChart3, Calendar, Compass } from 'lucide-react';
 
-export type MainAppTab = 'calendar' | 'compare' | 'periodization' | 'stats';
+export const appTabs = {
+  calendar: { label: 'Planning', Icon: Calendar },
+  compare: { label: 'Séances', Icon: Activity },
+  stats: { label: 'Progression', Icon: BarChart3 },
+  periodization: { label: 'Plan', Icon: Compass }
+};
 
-interface MobileNavProps {
-  currentTab: MainAppTab;
-  onChangeTab: (tab: MainAppTab) => void;
+export type AppTab = keyof typeof appTabs;
+
+interface NavigationProps {
+  currentTab: AppTab;
+  onChangeTab: (tab: AppTab) => void;
 }
 
-export const MobileNav: React.FC<MobileNavProps> = ({ currentTab, onChangeTab }) => {
-  return (
-    <nav className="mobile-bottom-nav">
-      <button
-        className={`mobile-nav-item ${currentTab === 'calendar' ? 'active' : ''}`}
-        onClick={() => onChangeTab('calendar')}
-      >
-        <Calendar size={18} />
-        <span>Planning</span>
+export function NavLinks({ currentTab, onChangeTab }: NavigationProps) {
+  return (Object.keys(appTabs) as AppTab[]).map(tab => {
+    const { label, Icon } = appTabs[tab];
+    return (
+      <button key={tab} type="button" className="app-nav-link" onClick={() => onChangeTab(tab)}
+        aria-current={tab === currentTab ? 'page' : undefined}>
+        <Icon size={18} strokeWidth={1.5} aria-hidden="true" />
+        <span>{label}</span>
       </button>
+    );
+  });
+}
 
-      <button
-        className={`mobile-nav-item ${currentTab === 'compare' ? 'active' : ''}`}
-        onClick={() => onChangeTab('compare')}
-      >
-        <Activity size={18} />
-        <span>Télémétrie</span>
-      </button>
-
-      <button
-        className={`mobile-nav-item ${currentTab === 'stats' ? 'active' : ''}`}
-        onClick={() => onChangeTab('stats')}
-      >
-        <BarChart3 size={18} />
-        <span>Stats</span>
-      </button>
-
-      <button
-        className={`mobile-nav-item ${currentTab === 'periodization' ? 'active' : ''}`}
-        onClick={() => onChangeTab('periodization')}
-      >
-        <TrendingUp size={18} />
-        <span>Plan QMT</span>
-      </button>
-    </nav>
-  );
-};
+export function MobileNav(props: NavigationProps) {
+  return <nav className="mobile-bottom-nav" aria-label="Navigation principale"><NavLinks {...props} /></nav>;
+}

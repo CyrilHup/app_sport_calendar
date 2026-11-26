@@ -1,123 +1,35 @@
 # Data flow and ownership
 
-The application has an academic iCal feed, Garmin Connect, GPX imports, and
-Supabase storage. A calendar refresh is coordinated by `src/services/asyncCoordinator.ts`
-and `src/App.tsx`; simultaneous refresh triggers coalesce into one active run and
-one latest rerun. Garmin workout pushes have their own latest-request coordinator
-in `src/services/garminAutoSyncService.ts`. Automatic foreground/visibility
-triggers are registered through `autoRefreshTriggers.ts`; late Capacitor listener
-registration is cleaned up after unmount and periodic refresh pauses while hidden.
-
 ## Calendar
 
-1. `api/ets-ical.ts` fetches the configured or authenticated user's iCal URL.
-   `src/server/icalFeedClient.ts` validates the URL and redirects.
-2. `src/services/icsParser.ts` parses courses and builds the base academic/training
-   calendar using an immutable `AppConfig` snapshot from
-   `src/services/periodizationEngine.ts`. Each refresh acquires Garmin/wellness
-   inputs before building that snapshot, so calendar generation and workout push
-   consume the same fresh physiological values without a React-triggered rerun.
-3. `src/services/calendarPipeline.ts` applies postponements and adaptive changes
-   to the base calendar. Both the visible calendar and Garmin push requests use
-   this projection; derived events are not stored as a second mutable React state.
-4. Snapshot downloads serialize the same canonical event collection currently
-   displayed in the UI. Direct Google synchronization consumes that collection
-   through the App-level calendar action boundary as well.
-5. Grid/day and list renderers consume the same `calendarDayViewModel.ts`
-   projection for category filtering, postponed placeholders, catch-ups, unified
-   sport groups, empty state, and event counts.
+`calendarBuilder.ts` generates training sessions from dates, an immutable configuration and Garmin history. `calendarPipeline.ts` applies postponements and adaptive overrides. Both the screen and Garmin synchronization consume this same effective calendar.
 
-## Activities and comparisons
+`App.tsx` owns persistence. Postponement and adaptive helpers are pure transformations. Undoing a reciprocal swap removes both overrides. Moving a session across weeks removes adaptations belonging to its original week.
 
-1. Garmin and GPX records merge through `src/services/activityRepository.ts`.
-   `activityId` is the identity key; later non-empty fields win, while
-   earlier-only metrics survive partial responses. Legacy third-party elevation
-   corrections are reduced to their original Garmin values when available.
-   GPX imports require
-   ordered timestamps on every valid trackpoint, so reimport never invents a
-   new activity date. Source order is explicit
-   at each boundary (local → cloud during login, cached → live Garmin refresh).
-2. `garminActivities` in `App.tsx` is the UI's canonical activity collection.
-   Components receive that collection and use `daySelectors.ts` for day views.
-3. Workout comparisons and transformed schedules are derived from the canonical
-   inputs. Local/cloud settings use per-domain update timestamps to decide which
-   copy wins, including when the winning value is empty.
-   Cloud mutations are serialized and checked for explicit `false` results as
-   well as exceptions. Failed required writes remain local, show a retry banner,
-   and retry from the latest in-memory snapshot; wellness cloud storage remains
-   optional when its table is unavailable.
-4. Pure physiological calculations accept activities and athlete parameters.
-   `getStoredAthleteProfile()` is the storage-facing Garmin adapter. The plan
-   and Garmin workout builder share Karvonen zone boundaries from
-   `heartRateZones.ts`; the app feeds the plan its latest resting-HR baseline.
-   Comparisons, weekly telemetry, day cards, and workout details receive the
-   same athlete parameters instead of independently choosing a default FCmax.
-5. Wellness records from Garmin, local storage, and Supabase merge by their
-   `syncedAt` timestamp per day. Missing fields in a newer partial response are
-   filled from the older record instead of erasing measurements.
-6. Training-load windows and automatic activity-matching policy live in
-   `trainingModelConfig.ts`. Calculations and UI labels consume the same named
-   values rather than duplicating durations or numeric rejection sentinels.
-   ACWR boundaries, cold-start classification, and gauge geometry also use
-   that policy. The ratio describes recorded running/trail Km-Effort; changes
-   to future workouts cannot retroactively change today's measured ratio or
-   establish individual injury risk.
+Session edits request synchronization directly, without downloading Garmin history or rebuilding the entire calendar. Pending event IDs retain a generation number so an edit made during an in-flight request is sent afterward. Account changes invalidate pending work. The screen distinguishes local save, Garmin confirmation and failure, with a retry action.
 
-## Boundaries and operational notes
+Full refreshes coalesce through `asyncCoordinator.ts`. Visibility and mobile resume triggers use `autoRefreshTriggers.ts` and pause periodic refreshes while hidden.
 
-- Garmin passwords are session-only. The server caches user-scoped OAuth tokens
-  for at most 24 hours in owner-readable files. It never automatically deletes
-  older Garmin workouts by fuzzy title matching during a push.
-- Confirmed workout pushes store the exact Garmin workout ID. If the workout
-  definition changes, the server verifies that ID and its app prefix, schedules
-  the replacement, then deletes only that previous ID. If deletion fails it
-  rolls back the new workout; ambiguous failures stop automatic retries for
-  manual review. Older sync records without an ID are left untouched.
-- The former manual duplicate-purge button and title-similarity deletion
-  endpoint were removed. Duplicate prevention belongs to the ID-based sync
-  path, not a separate destructive cleanup path.
-- Garmin activity synchronization no longer sends workouts from a potentially
-  stale calendar in the account tab. The central refresh rebuilds the plan first,
-  then passes the same athlete profile used for the UI preview into workout push.
-- Garmin-derived max-HR validation, recorded-peak bounds, trail/flat thresholds,
-  fallback pace, HR-reserve fractions and pace margins live in
-  `garminTrainingPolicy.ts`. The browser and Garmin API use the same validation
-  contract; explicit user profile bounds remain owned by `AppConfig`.
-- Refresh, calendar actions, and workout details now request pushes through one
-  App-level entry point. It reads the current base calendar and overrides before
-  calling the queued Garmin sync service; views no longer submit their own
-  potentially stale event arrays.
-- A full Garmin history sync requests bounded batches of up to two 100-activity
-  pages per server call. The client follows `nextOffset`, persists each successful
-  page, and reports an error instead of silently treating a timed-out page as
-  complete history. A 5,000-activity safety limit is reported as incomplete,
-  never as a successful full sync.
-- The Garmin activity normalizer accepts only records with a stable activity ID
-  and parseable start time. It reports skipped malformed records as an incomplete
-  sync instead of inventing random IDs or today's date.
-- Optional sleep, resting-heart-rate, HRV, and readiness calls are isolated in
-  `src/server/garminWellness.ts`. Each signal times out independently, so an
-  unavailable wellness endpoint cannot fail the required activity page.
-- `ICAL_FEED_URL` is a server-only variable; do not use a `VITE_` prefix for a URL
-  containing a private calendar token.
-- The former public calendar subscription endpoint was removed: it rebuilt a
-  global server calendar that could diverge from the user's profile and expose a
-  private academic feed. The supported paths are explicit snapshot download and
-  authenticated Google synchronization from the canonical visible events.
-- Supabase settings migration is in `supabase_schema.sql`. The API and browser
-  code have separate TypeScript checks via `npm run typecheck`.
+## Garmin workouts
 
-## Remaining work
+`garminAutoSyncService.ts` sends current-week sessions, explicit edits and previously published future sessions. This includes moves across a week boundary without publishing the whole future plan. Completed sessions are protected.
 
-- Local activity, wellness, and override storage is intentionally shared on one
-  device because this is a personal-use app, not a multi-account product.
-- `CalendarView.tsx`, `StatsDashboard.tsx`, and several other views are still
-  large and need feature-level decomposition with integration tests. The Garmin
-  API handler is being decomposed into tested request, pagination, activity,
-  wellness, and replacement adapters.
-- Garmin Connect's installed client library has create/delete/schedule operations
-  but no supported update operation. Legacy scheduled workouts without an exact
-  stored Garmin ID still need manual handling; they are never guessed by title.
-- The QMT training prescription, simulator, and several physiological thresholds
-  remain race/athlete-specific. They must be separated from reusable scheduling
-  logic before claiming the app is configurable for arbitrary races or athletes.
+The account registry records event ID, date, exact Garmin ID and the complete workout signature. The server claims source and target dates before changing a run. It verifies the saved ID on the source date, schedules and reads back the replacement, removes only the exact previous ID, then confirms the new ID and signature in Supabase. An ambiguous create result keeps its lease until expiry.
+
+For swaps, each occupied date receives its replacement first. A single database transaction then exchanges the two event owners, checking both exact IDs and signatures. A lost client response can be recovered from those server-confirmed signatures. There is no non-atomic delete/insert fallback and no title-based adoption of an unknown workout.
+
+The source-date protocol requires `20260929211025_garmin_move_source_replacement.sql`. Migration deployment and live Garmin verification are separate from local test validation. Supabase row-level security scopes registry and lease access to the authenticated account.
+
+## Recorded data
+
+`activityRepository.ts` merges Garmin and GPX records by activity ID, retaining defined metrics from partial responses. `garminActivities` is the canonical collection in the app. Comparisons and statistics are derived from it.
+
+Local and cloud settings use per-domain timestamps, including empty values. Cloud writes are serialized; failures remain local and show a retry message. Device data is scoped to its account through `localAccountScope.ts`. Wellness records merge by date and synchronization timestamp without discarding missing fields from partial responses.
+
+The plan and Garmin workout builder share heart-rate boundaries from `heartRateZones.ts`. Training-load windows live in `trainingModelConfig.ts`; these estimates describe recorded training rather than establish an individual injury diagnosis.
+
+## Integrations
+
+Garmin Connect, GPX imports and Supabase are the supported data paths. iCal feeds, calendar exports and Google Calendar synchronization have been removed. Google sign-in remains an authentication option.
+
+Garmin passwords remain session-only. The server caches account-scoped OAuth tokens for at most 24 hours. Legacy workouts without an exact stored ID require manual review in Garmin Connect.

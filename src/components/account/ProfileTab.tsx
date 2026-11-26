@@ -98,55 +98,30 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="account-stack">
       {/* Account Status / Login */}
       {user ? (
-        <div
-          style={{
-            background: 'rgba(16, 185, 129, 0.08)',
-            border: '1px solid rgba(16, 185, 129, 0.25)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '12px 14px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: '50%',
-                background: '#10b981',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontWeight: 800,
-                fontSize: '0.85rem',
-                overflow: 'hidden'
-              }}
-            >
+        <div className="account-card account-row account-row--wrap">
+          <div className="account-leading">
+            <div className="account-avatar">
               {user && (user.user_metadata?.avatar_url || user.user_metadata?.picture || profile?.avatarUrl) ? (
                 <img
                   src={user.user_metadata?.avatar_url || user.user_metadata?.picture || profile?.avatarUrl}
                   alt={profile?.displayName || 'Avatar'}
                   referrerPolicy="no-referrer"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  className="account-avatar-image"
                   onError={e => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
                 />
               ) : (
                 profile?.displayName ? profile.displayName[0].toUpperCase() : 'A'
               )}
             </div>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '0.86rem', color: '#fff' }}>
+            <div className="account-copy">
+              <div className="account-title">
                 {profile?.displayName || user.email}
               </div>
-              <div style={{ fontSize: '0.72rem', color: '#34d399', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <CheckCircle2 size={12} /> Compte Google synchronisé ({user.email})
+              <div className="account-description account-inline-status">
+                <CheckCircle2 size={12} /> Compte synchronisé · {user.email}
               </div>
             </div>
           </div>
@@ -155,7 +130,6 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
             type="button"
             className="btn-secondary"
             onClick={() => signOut()}
-            style={{ fontSize: '0.74rem', padding: '5px 10px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
           >
             <LogOut size={12} />
             <span>Déconnexion</span>
@@ -163,23 +137,11 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
         </div>
       ) : (
         /* Sign-In Card */
-        <div
-          style={{
-            background: 'rgba(66, 133, 244, 0.08)',
-            border: '1px solid rgba(66, 133, 244, 0.25)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '16px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            textAlign: 'center',
-            gap: 10
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
+        <div className="account-card account-card--stack account-login-card">
+          <h3 className="account-title">
             Connexion Google
           </h3>
-          <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--text-secondary)', maxWidth: 400 }}>
+          <p className="account-description account-login-description">
             Synchronisez vos données sur tous vos appareils
           </p>
 
@@ -191,29 +153,18 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
               const res = await signInWithGoogle();
               if (res?.error) setAuthErrorMsg(res.error);
             }}
-            style={{
-              padding: '8px 18px',
-              fontSize: '0.82rem',
-              fontWeight: 700,
-              background: '#4285F4',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 'var(--radius-xs)',
-              cursor: 'pointer',
-              marginTop: 4
-            }}
           >
             <span>Continuer avec Google</span>
           </button>
 
           {authErrorMsg && (
-            <div style={{ color: '#f87171', fontSize: '0.74rem', background: 'rgba(239, 68, 68, 0.1)', padding: '5px 10px', borderRadius: 4 }}>
+            <div className="account-feedback account-feedback--error" role="alert">
               {authErrorMsg}
             </div>
           )}
 
           {authSuccessMsg && (
-            <div style={{ color: '#10b981', fontSize: '0.74rem', background: 'rgba(16, 185, 129, 0.1)', padding: '5px 10px', borderRadius: 4 }}>
+            <div className="account-feedback account-feedback--success" role="status">
               {authSuccessMsg}
             </div>
           )}
@@ -222,55 +173,54 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
           <button
             type="button"
             onClick={() => setShowEmailForm(!showEmailForm)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '0.72rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4
-            }}
+            className="account-link-button"
+            aria-expanded={showEmailForm}
+            aria-controls={showEmailForm ? 'account-email-form' : undefined}
           >
             <span>Ou connexion par courriel</span>
             {showEmailForm ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           </button>
 
           {showEmailForm && (
-            <form onSubmit={handleAuthSubmit} style={{ width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+            <form id="account-email-form" onSubmit={handleAuthSubmit} className="account-form account-login-form">
               {isSignUp && (
-                <input
-                  type="text"
-                  placeholder="Nom ou prénom"
-                  value={authDisplayName}
-                  onChange={e => setAuthDisplayName(e.target.value)}
-                  style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
-                />
+                <div className="account-field">
+                  <label htmlFor="account-signup-name">Nom ou prénom</label>
+                  <input
+                    id="account-signup-name"
+                    type="text"
+                    value={authDisplayName}
+                    onChange={e => setAuthDisplayName(e.target.value)}
+                  />
+                </div>
               )}
-              <input
-                type="email"
-                required
-                placeholder="Courriel"
-                value={authEmail}
-                onChange={e => setAuthEmail(e.target.value)}
-                style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
-              />
-              <input
-                type="password"
-                required
-                placeholder="Mot de passe"
-                value={authPassword}
-                onChange={e => setAuthPassword(e.target.value)}
-                style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
-              />
-              <button type="submit" className="btn-secondary" disabled={authSubmitting} style={{ justifyContent: 'center', padding: '7px' }}>
-                {authSubmitting ? 'Chargement...' : isSignUp ? "S'inscrire" : 'Se connecter'}
+              <div className="account-field">
+                <label htmlFor="account-signin-email">Courriel</label>
+                <input
+                  id="account-signin-email"
+                  type="email"
+                  required
+                  value={authEmail}
+                  onChange={e => setAuthEmail(e.target.value)}
+                />
+              </div>
+              <div className="account-field">
+                <label htmlFor="account-signin-password">Mot de passe</label>
+                <input
+                  id="account-signin-password"
+                  type="password"
+                  required
+                  value={authPassword}
+                  onChange={e => setAuthPassword(e.target.value)}
+                />
+              </div>
+              <button type="submit" className="btn-primary account-form-submit" disabled={authSubmitting}>
+                {authSubmitting ? 'Chargement…' : isSignUp ? "S'inscrire" : 'Se connecter'}
               </button>
               <button
                 type="button"
                 onClick={() => setIsSignUp(!isSignUp)}
-                style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.72rem', cursor: 'pointer' }}
+                className="account-link-button"
               >
                 {isSignUp ? 'Déjà un compte ? Se connecter' : "Pas encore de compte ? S'inscrire"}
               </button>
@@ -280,76 +230,75 @@ export const ProfileTab: React.FC<ProfileTabProps> = ({ onRefreshAll }) => {
       )}
 
       {/* Profile Details Form */}
-      <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-        <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+      <form onSubmit={handleSaveProfile} className="account-card account-card--stack account-form">
+        <div className="account-field">
+          <label htmlFor="account-profile-name">
             Nom d'athlète
           </label>
           <input
+            id="account-profile-name"
             type="text"
             value={profName}
             onChange={e => setProfName(e.target.value)}
             placeholder="Votre prénom ou pseudo"
-            style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.8rem' }}
           />
         </div>
 
         {/* FC Max */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255, 255, 255, 0.02)', border: '1px solid var(--border-color)', padding: '10px 14px', borderRadius: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Heart size={15} color="var(--accent-red)" />
+        <div className="account-row account-fc-max">
+          <div className="account-leading">
+            <Heart size={16} />
             <div>
-              <div style={{ fontSize: '0.78rem', color: '#fff', fontWeight: 600 }}>
+              <div className="account-title">
                 Fréquence Cardiaque Maximale (FCmax)
               </div>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+              <div className="account-description">
                 Détectée automatiquement via vos activités Garmin
               </div>
             </div>
           </div>
-          <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--accent-red)' }}>
+          <span className="account-fc-max-value">
             {profFcMax} bpm
           </span>
         </div>
 
-        <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+        <div className="account-field">
+          <label htmlFor="account-home-address">
             Adresse Domicile
           </label>
           <input
+            id="account-home-address"
             type="text"
             value={profHome}
             onChange={e => setProfHome(e.target.value)}
             placeholder="Ex : Rue Sherbrooke, Montréal..."
-            style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.8rem' }}
           />
         </div>
 
-        <div>
-          <label style={{ display: 'block', fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+        <div className="account-field">
+          <label htmlFor="account-campus-address">
             Adresse Campus ÉTS
           </label>
           <input
+            id="account-campus-address"
             type="text"
             value={profCampus}
             onChange={e => setProfCampus(e.target.value)}
             placeholder="1100 Rue Notre-Dame Ouest, Montréal..."
-            style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.8rem' }}
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+        <div className="account-action-row">
           <button
             type="submit"
             className="btn-primary"
             disabled={profileSaving}
-            style={{ padding: '8px 16px', fontSize: '0.8rem' }}
           >
             <Save size={13} />
             <span>{profileSaving ? 'Enregistrement...' : 'Enregistrer le profil'}</span>
           </button>
           {profileSuccessMsg && (
-            <span style={{ fontSize: '0.74rem', color: '#34d399', fontWeight: 600 }}>
+            <span className="account-feedback account-feedback--success" role="status">
               {profileSuccessMsg}
             </span>
           )}

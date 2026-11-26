@@ -452,6 +452,20 @@ async function getGarminApiHeaders(): Promise<Record<string, string>> {
   };
 }
 
+export async function hasGarminPersonalApi(): Promise<boolean> {
+  try {
+    const response = await fetch(getApiUrl('/api/garmin-sync'), {
+      method: 'POST',
+      headers: await getGarminApiHeaders(),
+      body: JSON.stringify({ action: 'connection-status' }),
+      signal: AbortSignal.timeout(10_000)
+    });
+    return response.ok && (await response.json()).personalApi === true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Normalizes an activity's type based on its metadata and name.
  * E.g., climbing/bouldering/grimp activities logged as 'OTHER' or generic are mapped to 'CLIMBING'.
@@ -532,12 +546,13 @@ async function performGarminActivitySync(
   credentials?: GarminCredentials,
   options?: {
     mode?: GarminActivitySyncMode;
+    personalApi?: boolean;
   }
 ): Promise<GarminActivitySyncResult> {
   const startingLocalOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
   let combinedActivities = loadStoredGarminActivities();
   try {
-    const credsToUse = (credentials?.email && credentials?.password)
+    const credsToUse = options?.personalApi ? undefined : (credentials?.email && credentials?.password)
       ? credentials
       : (loadGarminCredentials() || await loadGarminCredentialsAsync() || credentials);
 
@@ -737,7 +752,7 @@ let garminActivitySyncTail: Promise<void> = Promise.resolve();
 /** All callers share one activity-cache writer, including manual full history. */
 export function syncWithGarminAPI(
   credentials?: GarminCredentials,
-  options?: { mode?: GarminActivitySyncMode }
+  options?: { mode?: GarminActivitySyncMode; personalApi?: boolean }
 ): Promise<GarminActivitySyncResult> {
   const requestedOwner = storageGetRaw(STORAGE_KEYS.ACCOUNT_DATA_OWNER);
   const result = garminActivitySyncTail.then(() => {
@@ -1200,7 +1215,9 @@ export async function pushWorkoutToGarmin(
   targetDateStr?: string,
   targetWatch: 'FORERUNNER_55' | 'STANDARD' = 'FORERUNNER_55',
   athleteProfile?: AthletePhysiologicalProfile,
-  replaceWorkoutId?: string
+  replaceWorkoutId?: string,
+  replaceWorkoutDate?: string,
+  syncSignature?: string
 ): Promise<WorkoutPushResult> {
   try {
     const creds = loadGarminCredentials() || (await loadGarminCredentialsAsync());
@@ -1213,7 +1230,8 @@ export async function pushWorkoutToGarmin(
         email: creds?.email,
         password: creds?.password,
         action: 'push-workout',
-        workout: { ...payload, replaceWorkoutId }
+        workout: { ...payload, replaceWorkoutId, replaceWorkoutDate,
+          ...(syncSignature ? { eventId: event.id, syncSignature } : {}) }
       })
     });
 

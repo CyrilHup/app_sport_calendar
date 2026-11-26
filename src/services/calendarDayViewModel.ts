@@ -2,10 +2,9 @@ import { CalendarEvent, DailySchedule } from '../types/calendar';
 import { ActivityComparison } from '../types/garmin';
 import { groupDaySportWorkouts, UnifiedDayWorkoutGroup } from './workoutAggregator';
 
-export type CalendarFilterCategory = 'all' | 'sport' | 'course' | 'mobility';
+export type CalendarFilterCategory = 'all' | 'sport' | 'mobility';
 
 export interface CalendarDayViewModel {
-  courseEvents: CalendarEvent[];
   mobilityEvent?: CalendarEvent;
   ghostEvents: CalendarEvent[];
   catchupExecutedElsewhere: CalendarEvent[];
@@ -21,7 +20,6 @@ export function buildCalendarDayViewModel(
   filter: CalendarFilterCategory,
   athlete?: { fcMax?: number; fcRest?: number }
 ): CalendarDayViewModel {
-  const courseEvents = day.events.filter(event => event.category === 'course');
   const mobilityEvent = day.events.find(event => event.category === 'mobility');
   const ghostEvents = day.events.filter(event =>
     event.category === 'sport' && Boolean(event.metadata?.isPostponedPlaceholder)
@@ -46,11 +44,9 @@ export function buildCalendarDayViewModel(
     (filter === 'all' || filter === 'sport'
       ? unifiedSportGroups.length + ghostEvents.length + catchupExecutedElsewhere.length
       : 0) +
-    (filter === 'all' || filter === 'course' ? courseEvents.length : 0) +
     ((filter === 'all' || filter === 'mobility') && mobilityEvent ? 1 : 0);
 
   return {
-    courseEvents,
     mobilityEvent,
     ghostEvents,
     catchupExecutedElsewhere,

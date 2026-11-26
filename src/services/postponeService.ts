@@ -339,7 +339,6 @@ export function postponeWorkout(
     reason: reason || 'Déplacée / Reportée par l\'athlète',
     createdAt: new Date().toISOString()
   };
-  savePostponeOverrides(updated);
   return updated;
 }
 
@@ -352,19 +351,25 @@ export function cancelPostponeWorkout(
 ): Record<string, WorkoutPostponeOverride> {
   const updated: Record<string, WorkoutPostponeOverride> = { ...currentOverrides };
 
-  // Chercher par clé directe ou par originalEventId
-  if (updated[originalEventId]) {
-    delete updated[originalEventId];
-  } else {
-    // Parfois l'id transmis est celui du ghost placeholder
-    const cleanId = originalEventId.replace('POSTPONED_GHOST_', '');
-    for (const key of Object.keys(updated)) {
-      if (key === cleanId || updated[key].originalEventId === originalEventId || updated[key].originalEventId === cleanId) {
-        delete updated[key];
-      }
-    }
-  }
+  // The UI may pass the ghost card ID instead of the underlying event ID.
+  const cleanId = originalEventId.replace('POSTPONED_GHOST_', '');
+  const selectedKey = updated[originalEventId]
+    ? originalEventId
+    : Object.keys(updated).find(key => key === cleanId ||
+      updated[key].originalEventId === originalEventId || updated[key].originalEventId === cleanId);
+  if (!selectedKey) return updated;
 
-  savePostponeOverrides(updated);
+  const selected = updated[selectedKey];
+  delete updated[selectedKey];
+
+  // A two-workout exchange is one calendar operation. Undoing either member
+  // must remove its reciprocal move too, or both sessions land on one day.
+  const reciprocal = Object.entries(updated).find(([key, candidate]) =>
+    key !== selectedKey &&
+    candidate.originalDate === selected.targetDate &&
+    candidate.targetDate === selected.originalDate
+  );
+  if (reciprocal) delete updated[reciprocal[0]];
+
   return updated;
 }

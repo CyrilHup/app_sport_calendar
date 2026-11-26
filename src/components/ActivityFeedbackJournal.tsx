@@ -19,8 +19,8 @@ export function ActivityFeedbackJournal({ activities, onSave }: {
   }, [activities, search]);
   const selected = activities.find(activity => activity.activityId === selectedId);
 
-  return <details className="glass-panel" style={{ padding: 16 }}>
-    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Journal du ressenti · toutes les activités</summary>
+  return <details>
+    <summary>Journal de ressenti</summary>
     <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginTop: 8 }}>
       Note aussi les séances de salle, de vélo ou non appariées au calendrier. Le RPE, la forme, la douleur et les notes sont privés.
     </p>

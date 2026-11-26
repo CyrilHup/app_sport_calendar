@@ -8,7 +8,7 @@ import {
 import { TrainingLoadStats } from './statsEngine';
 import { ReadinessEvaluation } from './readinessEngine';
 import { STORAGE_KEYS, storageGet, storageSet } from './storageService';
-import { toLocalDateKey } from './dateUtils';
+import { formatDateKey, getMondayOfWeek, parseLocalDate, toLocalDateKey } from './dateUtils';
 import { ACWR_POLICY, ADAPTIVE_WORKOUT_POLICY } from './trainingModelConfig';
 import { AdaptivePlanState, parseAdaptivePlanState, serializeAdaptivePlanState } from './adaptivePlanStore';
 
@@ -457,6 +457,31 @@ export function getPriorWeekPostponedEventIds(
       return activeDates.has(currentDate) && !activeDates.has(originalDate);
     })
     .map(event => event.id));
+}
+
+/** Remove a source-week adaptation as soon as its workout is moved across weeks. */
+export function reconcilePostponedAdaptiveOverrides(
+  events: CalendarEvent[],
+  existingOverrides: Record<string, AdaptiveWorkoutOverride>
+): { overrides: Record<string, AdaptiveWorkoutOverride>; removedEventIds: Set<string> } {
+  const overrides = { ...existingOverrides };
+  const removedEventIds = new Set<string>();
+  for (const event of events) {
+    if (event.category !== 'sport' || !event.metadata?.isPostponed || event.metadata.isPostponedPlaceholder) continue;
+    const originalDate = event.metadata.originalDate;
+    const currentDate = toLocalDateKey(event.startDate);
+    if (!originalDate || weekStartKey(originalDate) === weekStartKey(currentDate)) continue;
+
+    const override = overrides[event.id];
+    if (!override || weekStartKey(override.date) !== weekStartKey(originalDate)) continue;
+    delete overrides[event.id];
+    removedEventIds.add(event.id);
+  }
+  return { overrides, removedEventIds };
+}
+
+function weekStartKey(dateKey: string): string {
+  return formatDateKey(getMondayOfWeek(parseLocalDate(dateKey)));
 }
 
 /** A date-only generated ID is not enough to identify the same workout after a rebuild. */

@@ -1,4 +1,4 @@
-import { CalendarEvent, PeriodizationContext, SportType } from '../types/calendar';
+import { PeriodizationContext, SportType } from '../types/calendar';
 import { calculateHeartRateZones } from './heartRateZones';
 
 const getEnvVal = (key: string, fallback: string = ''): string => {
@@ -23,17 +23,11 @@ export interface AppConfig {
   ATHLETE_FC_REST: number;
   TARGET_HOME_RETURN_HOUR: number;
   TARGET_HOME_RETURN_MIN: number;
-  BUFFER_BEFORE_CLASS_MIN: number;
-  BUFFER_AFTER_CLASS_MIN: number;
-  BUFFER_BETWEEN_CLASS_AND_SPORT_MIN: number;
-  BUFFER_AFTER_CONFLICT_MIN: number;
   TRANSIT_TIMES: Readonly<{
     HOME_TO_ETS: number;
     ETS_TO_HOME: number;
     HOME_TO_MONT_ROYAL: number;
     MONT_ROYAL_TO_HOME: number;
-    ETS_TO_MONT_ROYAL: number;
-    MONT_ROYAL_TO_ETS: number;
     DEFAULT: number;
   }>;
 }
@@ -51,17 +45,11 @@ const DEFAULT_APP_CONFIG: AppConfig = {
   ATHLETE_FC_REST: getHeartRateEnv('VITE_ATHLETE_FC_REST', 48, 30, 120),
   TARGET_HOME_RETURN_HOUR: 13,
   TARGET_HOME_RETURN_MIN: 0,
-  BUFFER_BEFORE_CLASS_MIN: 10,
-  BUFFER_AFTER_CLASS_MIN: 10,
-  BUFFER_BETWEEN_CLASS_AND_SPORT_MIN: 10,
-  BUFFER_AFTER_CONFLICT_MIN: 20,
   TRANSIT_TIMES: {
     HOME_TO_ETS: 35,
     ETS_TO_HOME: 35,
     HOME_TO_MONT_ROYAL: 45,
     MONT_ROYAL_TO_HOME: 45,
-    ETS_TO_MONT_ROYAL: 25,
-    MONT_ROYAL_TO_ETS: 25,
     DEFAULT: 35
   }
 };
@@ -106,9 +94,6 @@ export const COLOR_MAP = {
   MOBILITY: { emoji: "🧘", colorHex: "#06d6a0", colorId: "3" },
   TRAVEL: { emoji: "🚌", colorHex: "#94a3b8", colorId: "8" },
   RACE_DAY: { emoji: "🏁", colorHex: "#e63946", colorId: "11" },
-  COURSE: { emoji: "🏛️", colorHex: "#3b82f6", colorId: "9" },
-  TP: { emoji: "🔬", colorHex: "#10b981", colorId: "2" },
-  EXAM: { emoji: "📝", colorHex: "#ef4444", colorId: "11" }
 };
 
 function localCalendarDayNumber(date: Date): number {
@@ -252,7 +237,6 @@ export interface WorkoutTemplate {
   duration: number; // minutes
   locName: string;
   address: string | null;
-  chainedAfterCourse: boolean;
   sportType: SportType;
   emoji: string;
   colorHex: string;
@@ -267,14 +251,8 @@ export interface WorkoutTemplate {
 
 export function getDailyWorkoutPlan(
   dayOfWeek: number, // 0=Monday, ..., 6=Sunday
-  hasChainedClass: boolean,
-  saturdayHasIntensiveClass: boolean,
   ctx: PeriodizationContext,
   date: Date,
-  options?: {
-    hasPresentialClass?: boolean;
-    hasOnlineClass?: boolean;
-  },
   config: Readonly<AppConfig> = GLOBAL_APP_CONFIG
 ): WorkoutTemplate {
   const GLOBAL_APP_CONFIG = config;
@@ -330,7 +308,6 @@ export function getDailyWorkoutPlan(
     duration: 0,
     locName: "Lieu au choix",
     address: null,
-    chainedAfterCourse: false,
     sportType: "MOBILITY",
     emoji: "🧘",
     colorHex: COLOR_MAP.MOBILITY.colorHex,
@@ -349,7 +326,6 @@ export function getDailyWorkoutPlan(
           duration: durationTuesday,
           locName: "ÉTS Gym (Treadmill D+)",
           address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
-          chainedAfterCourse: false,
           sportType: "TRAIL_INTENSE",
           emoji: COLOR_MAP.TRAIL_INTENSE.emoji,
           colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
@@ -366,7 +342,6 @@ export function getDailyWorkoutPlan(
         duration: durationTuesday,
         locName: "Mont Royal",
         address: GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
-        chainedAfterCourse: false,
         sportType: "TRAIL_INTENSE",
         emoji: COLOR_MAP.TRAIL_INTENSE.emoji,
         colorHex: COLOR_MAP.TRAIL_INTENSE.colorHex,
@@ -386,7 +361,6 @@ export function getDailyWorkoutPlan(
         duration: durationThursday,
         locName: "Neighborhood / Maisonneuve Park",
         address: GLOBAL_APP_CONFIG.HOME_ADDRESS,
-        chainedAfterCourse: false,
         sportType: "RUN_EASY",
         emoji: COLOR_MAP.RUN_EASY.emoji,
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
@@ -401,42 +375,11 @@ export function getDailyWorkoutPlan(
       return flexibleStrengthDay;
 
     case 5: // Saturday (Long Run D+)
-      if (saturdayHasIntensiveClass) {
-        if (hasChainedClass) {
-          return {
-            title: "Running: Active Recovery Treadmill (Direct ÉTS)",
-            duration: 35,
-            locName: "ÉTS Gym (Treadmill)",
-            address: GLOBAL_APP_CONFIG.ETS_ADDRESS,
-            chainedAfterCourse: true,
-            sportType: "RUN_EASY",
-            emoji: COLOR_MAP.RUN_EASY.emoji,
-            colorHex: COLOR_MAP.RUN_EASY.colorHex,
-            colorId: COLOR_MAP.RUN_EASY.colorId,
-            description: `• 30-35 min light flush on treadmill at ÉTS gym right after class (Zone 1 easy, HR < ${recoveryCeiling} bpm).`,
-            targetHeartRate: `< ${recoveryCeiling} bpm (Zone 1 recovery)`
-          };
-        }
-        return {
-          title: "Running: Active Recovery (Neighborhood / Maisonneuve)",
-          duration: 35,
-          locName: "Neighborhood / Maisonneuve Park",
-          address: GLOBAL_APP_CONFIG.HOME_ADDRESS,
-          chainedAfterCourse: false,
-          sportType: "RUN_EASY",
-          emoji: COLOR_MAP.RUN_EASY.emoji,
-          colorHex: COLOR_MAP.RUN_EASY.colorHex,
-          colorId: COLOR_MAP.RUN_EASY.colorId,
-          description: `• 30-35 min light recovery jog in conversational pace starting from home post-class (Zone 1 easy, HR < ${recoveryCeiling} bpm).`,
-          targetHeartRate: `< ${recoveryCeiling} bpm (Zone 1 recovery)`
-        };
-      }
       return {
         title: `${isWinter ? 'Sortie longue hivernale' : 'Trail: Rando-Course D+'} (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
         duration: durationSaturdayLong,
         locName: isWinter ? "Maisonneuve Park / Plowed Paths" : "Mont Royal",
         address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
-        chainedAfterCourse: false,
         sportType: "TRAIL_LONG",
         emoji: COLOR_MAP.TRAIL_LONG.emoji,
         colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
@@ -457,31 +400,12 @@ export function getDailyWorkoutPlan(
           duration: 0,
           locName: "Home",
           address: null,
-          chainedAfterCourse: false,
           sportType: "MOBILITY",
           emoji: "🛌",
           colorHex: "#64748b",
           colorId: "8",
           description: "Full rest in adaptation week 1. Hydration and recovery sleep.",
           targetHeartRate: "Rest"
-        };
-      }
-      if (saturdayHasIntensiveClass) {
-        return {
-          title: `${isWinter ? 'Sortie longue hivernale reportée' : 'Trail: Rando-Course D+ reportée'} (${Math.floor(durationSaturdayLong / 60)}h${(durationSaturdayLong % 60).toString().padStart(2, '0')})`,
-          duration: durationSaturdayLong,
-          locName: isWinter ? "Maisonneuve Park / Plowed Paths" : "Mont Royal",
-          address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
-          chainedAfterCourse: false,
-          sportType: "TRAIL_LONG",
-          emoji: COLOR_MAP.TRAIL_LONG.emoji,
-          colorHex: COLOR_MAP.TRAIL_LONG.colorHex,
-          colorId: COLOR_MAP.TRAIL_LONG.colorId,
-          description: `• Sortie longue décalée au dimanche suite aux cours intensifs du samedi.\n• ${isWinter ? 'Choisir un parcours déneigé, stable et facile.' : 'Marcher activement en montée et maîtriser les descentes.'}\n• Garder une aisance respiratoire et tester l'alimentation selon la tolérance.`,
-          targetHeartRate: "Zone 2 Rando-Course",
-          targetHeartRateRange: easyRange,
-          targetElevationM: isWinter ? 0 : targetElevationSaturday,
-          nutritionAdvice: "Tester progressivement glucides et hydratation selon les conditions"
         };
       }
       const optionalSunday = true;
@@ -491,7 +415,6 @@ export function getDailyWorkoutPlan(
         duration: durationSunday,
         locName: isWinter ? "Neighborhood" : "Mont Royal / Neighborhood",
         address: isWinter ? GLOBAL_APP_CONFIG.HOME_ADDRESS : GLOBAL_APP_CONFIG.MOUNT_ROYAL_ADDRESS,
-        chainedAfterCourse: false,
         sportType: "RUN_EASY",
         emoji: COLOR_MAP.RUN_EASY.emoji,
         colorHex: COLOR_MAP.RUN_EASY.colorHex,
@@ -509,7 +432,6 @@ export function getDailyWorkoutPlan(
         duration: 0,
         locName: "Home",
         address: null,
-        chainedAfterCourse: false,
         sportType: "MOBILITY",
         emoji: "🛌",
         colorHex: "#64748b",

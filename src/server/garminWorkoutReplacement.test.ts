@@ -15,6 +15,45 @@ import {
 } from './garminWorkoutReplacement';
 
 describe('exact Garmin workout replacement', () => {
+  it('moves across months by verifying the source ID and removing it only after target readback', async () => {
+    const schedule = new Map([['123', '2026-09-30']]);
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockImplementation(async (year: number, month: number) => ({
+        calendarItems: [...schedule].filter(([, date]) => date.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`))
+          .map(([workoutId, date]) => ({ date, workoutId }))
+      })),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId, workoutName: '[QMT] Easy run', sportType: { sportTypeKey: 'running' }
+      })),
+      scheduleWorkout: vi.fn().mockImplementation(async ({ workoutId }, date: string) => { schedule.set(String(workoutId), date); }),
+      deleteWorkout: vi.fn().mockImplementation(async ({ workoutId }) => {
+        expect(schedule.get('456')).toBe('2026-10-01');
+        schedule.delete(String(workoutId));
+      })
+    };
+    await expect(findScheduledQmtWorkoutReplacementIds(client, '2026-10-01', 'RUNNING', '123', '2026-09-30'))
+      .resolves.toEqual(['123']);
+    await scheduleAndReplacePreviousWorkouts(client, '456', '2026-10-01', ['123'], ['running'], '2026-09-30');
+    expect(schedule).toEqual(new Map([['456', '2026-10-01']]));
+    expect(client.deleteWorkout).toHaveBeenCalledWith({ workoutId: '123' });
+    expect(client.getMonthCalendarEvents).toHaveBeenCalledWith(2026, 8);
+    expect(client.getMonthCalendarEvents).toHaveBeenCalledWith(2026, 9);
+  });
+
+  it('refuses a move onto a different app workout without deleting either ID', async () => {
+    const client = {
+      getMonthCalendarEvents: vi.fn().mockResolvedValue({ calendarItems: [
+        { date: '2026-09-30', workoutId: '123' }, { date: '2026-10-01', workoutId: '789' }
+      ] }),
+      getWorkoutDetail: vi.fn().mockImplementation(async ({ workoutId }) => ({
+        workoutId, workoutName: '[QMT] Easy run', sportType: { sportTypeKey: 'running' }
+      })),
+      deleteWorkout: vi.fn()
+    };
+    await expect(findScheduledQmtWorkoutReplacementIds(client, '2026-10-01', 'RUNNING', '123', '2026-09-30'))
+      .rejects.toThrow('éviter de remplacer la mauvaise séance');
+    expect(client.deleteWorkout).not.toHaveBeenCalled();
+  });
   it('cancels only the exact scheduled QMT run, not another workout or activity', async () => {
     let scheduled = true;
     const client = {
@@ -502,7 +541,7 @@ describe('exact replacement IDs for every Garmin workout type', () => {
     };
 
     await expect(findScheduledQmtWorkoutReplacementIds(client, scheduledDate, 'STRENGTH', '123'))
-      .rejects.toThrow('D’autres séances [QMT] (456)');
+      .rejects.toThrow('Une séance [QMT] (456)');
     expect(client.deleteWorkout).not.toHaveBeenCalled();
   });
 
@@ -548,7 +587,7 @@ describe('exact replacement IDs for every Garmin workout type', () => {
 
     await expect(findScheduledQmtWorkoutReplacementIds(
       client, scheduledDate, 'RUNNING', '123'
-    )).rejects.toThrow('D’autres séances [QMT] (456, 789)');
+    )).rejects.toThrow('Une séance [QMT] (456, 789)');
     expect(client.deleteWorkout).not.toHaveBeenCalled();
   });
 

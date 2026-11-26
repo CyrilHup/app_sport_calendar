@@ -2,12 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { mergeGarminActivities } from './activityRepository';
 import { getCalendarBuildWindow } from './calendarWindow';
 import { selectDayActivityContext } from './daySelectors';
-import { generateICSContent } from './icsSerializer';
 import { getLocalSyncTimestamp, setLocalSyncTimestamp, shouldAdoptCloudValue } from './syncMetadata';
 import { CalendarEvent } from '../types/calendar';
 import { ActivityComparison, GarminActivity } from '../types/garmin';
 import { createAppConfig, getPeriodizationContext, GLOBAL_APP_CONFIG } from './periodizationEngine';
-import { buildCompleteCalendar } from './icsParser';
+import { buildTrainingCalendar } from './calendarBuilder';
 
 const store: Record<string, string> = {};
 (globalThis as any).localStorage = {
@@ -139,14 +138,6 @@ describe('canonical data pipeline helpers', () => {
     expect(shouldAdoptCloudValue('2026-09-15T09:59:59.000Z', getLocalSyncTimestamp('manualPairs'))).toBe(false);
   });
 
-  it('serializes deterministic RFC 5545 output with escaped text', () => {
-    const content = generateICSContent([event()], new Date('2026-09-15T09:00:00.000Z'));
-    expect(content).toContain('DTSTAMP:20260915T090000Z');
-    expect(content).toContain('SUMMARY:Run\\, easy\\; steady');
-    expect(content).toContain('DESCRIPTION:Line 1\\nLine 2');
-    expect(content.endsWith('END:VCALENDAR')).toBe(true);
-  });
-
   it('keeps profile-specific plan settings isolated from the immutable defaults', () => {
     const custom = createAppConfig({
       campusAddress: 'Campus de test',
@@ -156,7 +147,7 @@ describe('canonical data pipeline helpers', () => {
     const date = new Date('2027-05-01T12:00:00');
     const customContext = getPeriodizationContext(date, custom);
     const defaultContext = getPeriodizationContext(date);
-    const built = buildCompleteCalendar([], date, 1, custom);
+    const built = buildTrainingCalendar(date, 1, custom);
 
     expect(custom.RACE_NAME).toBe('Course de test');
     expect(GLOBAL_APP_CONFIG.RACE_NAME).not.toBe('Course de test');

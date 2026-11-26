@@ -38,6 +38,22 @@ describe('validateGarminRequest', () => {
     expect(() => validateGarminRequest({ action: 'clean-duplicates' })).toThrow('Action Garmin');
   });
 
+  it('requires an exact ID for a source date and a complete event identity', () => {
+    const workout = {
+      title: 'Moved run', scheduledDate: '2026-10-01', sportType: 'RUNNING',
+      steps: [{ stepType: 'INTERVAL', durationSeconds: 1800 }],
+      replaceWorkoutId: '123', replaceWorkoutDate: '2026-09-30',
+      eventId: 'sport-2026-09-30', syncSignature: 'version::complete-definition'
+    };
+    expect(validateGarminRequest({ action: 'push-workout', workout }).workout).toMatchObject(workout);
+    expect(() => validateGarminRequest({ action: 'push-workout', workout: {
+      ...workout, replaceWorkoutId: undefined
+    } })).toThrow('Date');
+    expect(() => validateGarminRequest({ action: 'push-workout', workout: {
+      ...workout, syncSignature: undefined
+    } })).toThrow('Identité');
+  });
+
   it('requires an exact date and numeric ID for cancelling a planned workout', () => {
     expect(validateGarminRequest({ action: 'cancel-workout', cancellation: {
       scheduledDate: '2026-09-24', workoutId: '123'

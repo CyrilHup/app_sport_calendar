@@ -3,9 +3,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { GarminActivity, GarminSyncState, GarminWorkoutTargetMode } from '../../types/garmin';
 import {
   clearGarminCredentials,
+  hasGarminPersonalApi,
   loadGarminCredentials,
   loadGarminCredentialsAsync,
   parseGPXString,
+  saveGarminCredentials,
   getGarminWorkoutTargetMode,
   setGarminWorkoutTargetMode
 } from '../../services/garminService';
@@ -74,6 +76,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   const [garminSyncMsg, setGarminSyncMsg] = useState<{ text: string; isError: boolean } | null>(null);
   const [isGarminProcessing, setIsGarminProcessing] = useState(false);
   const [showGarminCredsEdit, setShowGarminCredsEdit] = useState(!storedGarminCreds?.password);
+  const [personalApi, setPersonalApi] = useState(false);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => isGarminAutoSyncEnabled());
   const [targetMode, setTargetMode] = useState<GarminWorkoutTargetMode>(() => getGarminWorkoutTargetMode());
   const [showSupabaseEmailForm, setShowSupabaseEmailForm] = useState(false);
@@ -89,6 +92,17 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       setGarminEmail(user.user_metadata.garmin_email);
     }
   }, [user]);
+
+  useEffect(() => {
+    let active = true;
+    void hasGarminPersonalApi().then(available => {
+      if (active) {
+        setPersonalApi(available);
+        if (available) setShowGarminCredsEdit(false);
+      }
+    });
+    return () => { active = false; };
+  }, [user?.id]);
 
   useEffect(() => {
     loadGarminCredentialsAsync().then(creds => {
@@ -160,7 +174,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     });
 
     try {
-      const creds = (garminEmail && garminPassword)
+      const creds = personalApi ? undefined : (garminEmail && garminPassword)
         ? { email: garminEmail, password: garminPassword }
         : (await loadGarminCredentialsAsync() || undefined);
       const result = await onRequestGarminSync(mode, creds);
@@ -173,12 +187,12 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       }
 
       if (result.success) {
-        if (garminEmail && garminPassword && user) {
+        if (!personalApi && garminEmail && garminPassword && user) {
           await saveCloudGarminCredentials(garminEmail);
         }
 
         setGarminSyncMsg({
-          text: `✅ ${result.count} activité(s) dans votre historique${mode === 'full' ? ' complet' : ''} !${result.athleteMaxHr ? ` (FCmax : ${result.athleteMaxHr} bpm)` : ''}`,
+          text: `${result.count} activités enregistrées dans l’application`,
           isError: false
         });
       } else {
@@ -199,6 +213,21 @@ export const GarminTab: React.FC<GarminTabProps> = ({
 
   };
 
+  const handleGarminCredentialsSubmit = async (event: React.FormEvent) => {
+    if (!personalApi) {
+      await handleGarminAPISync(event);
+      return;
+    }
+    event.preventDefault();
+    if (!garminEmail.trim() || !garminPassword) return;
+    saveGarminCredentials({ email: garminEmail.trim(), password: garminPassword });
+    setShowGarminCredsEdit(false);
+    setGarminSyncMsg({
+      text: 'Identifiants conservés pour cette session. La connexion sera vérifiée au prochain envoi vers la montre.',
+      isError: false
+    });
+  };
+
   const handleGarminDisconnect = () => {
     clearGarminCredentials();
     if (user) {
@@ -206,7 +235,11 @@ export const GarminTab: React.FC<GarminTabProps> = ({
     }
     setGarminEmail('');
     setGarminPassword('');
-    setShowGarminCredsEdit(true);
+    setShowGarminCredsEdit(!personalApi);
+    if (personalApi) {
+      setGarminSyncMsg({ text: 'Identifiants de publication oubliés sur cet appareil.', isError: false });
+      return;
+    }
     onUpdateGarminState({
       ...garminState,
       connected: false,
@@ -255,124 +288,94 @@ export const GarminTab: React.FC<GarminTabProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="account-stack">
       {garminSyncMsg && (
-        <div
-          style={{
-            padding: '10px 14px',
-            borderRadius: 'var(--radius-xs)',
-            background: garminSyncMsg.isError ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
-            border: garminSyncMsg.isError ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
-            fontSize: '0.8rem',
-            color: garminSyncMsg.isError ? '#f87171' : '#34d399'
-          }}
-        >
+        <div className={`account-feedback ${garminSyncMsg.isError ? 'account-feedback--error' : 'account-feedback--success'}`} role={garminSyncMsg.isError ? 'alert' : 'status'}>
           {garminSyncMsg.text}
         </div>
       )}
 
       {/* Account Connection Card */}
-      <div
-        style={{
-          background: 'rgba(0, 119, 200, 0.08)',
-          border: '1px solid rgba(0, 119, 200, 0.25)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Activity size={18} color="#38bdf8" />
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>
-                  {garminState.connected ? 'Garmin Connect Lié' : 'Connexion Garmin Connect'}
-                </span>
-                {garminState.connected && (
-                  <span
-                    style={{
-                      fontSize: '0.68rem',
-                      background: 'rgba(16, 185, 129, 0.15)',
-                      color: '#34d399',
-                      padding: '2px 7px',
-                      borderRadius: 9999,
-                      fontWeight: 700
-                    }}
-                  >
-                    {garminState.activitiesCount || 0} activités
-                  </span>
-                )}
+      <div className="account-card account-card--stack">
+        <div className="account-row account-row--wrap">
+          <div className="account-leading">
+            <Activity size={18} />
+            <div className="account-copy">
+              <div className="account-title">
+                {personalApi ? 'Garmin Connect · API personnelle' : 'Connexion Garmin Connect'}
               </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                {garminEmail || garminState.accountEmail || 'Non configuré'}
+              <div className="account-description">
+                {personalApi
+                  ? 'Import des activités et du bien-être'
+                  : (garminEmail || garminState.accountEmail || 'Non configuré')}
+                {garminState.connected && ` · ${garminState.activitiesCount || 0} activités importées`}
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {!showGarminCredsEdit && (storedGarminCreds?.email || cloudGarminEmail) && (
+          <div className="account-actions">
+            {!showGarminCredsEdit && (personalApi || storedGarminCreds?.email || cloudGarminEmail) && (
               <button
                 type="button"
                 onClick={() => setShowGarminCredsEdit(true)}
                 className="btn-secondary"
-                style={{ fontSize: '0.74rem', padding: '5px 10px' }}
               >
-                Modifier
+                {personalApi ? 'Connexion pour la montre' : 'Modifier'}
               </button>
             )}
-            {garminState.connected && (
+            {(personalApi ? Boolean(storedGarminCreds?.email) : garminState.connected) && (
               <button
                 type="button"
                 onClick={handleGarminDisconnect}
                 className="btn-secondary"
-                style={{ fontSize: '0.74rem', padding: '5px 10px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
               >
-                Dissocier
+                {personalApi ? 'Oublier les identifiants' : 'Dissocier'}
               </button>
             )}
           </div>
         </div>
 
         {/* Credentials Form (if editing or not connected) */}
-        {(!storedGarminCreds?.email || showGarminCredsEdit) && (
-          <form onSubmit={handleGarminAPISync} style={{ display: 'flex', flexDirection: 'column', gap: 10, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+        {(showGarminCredsEdit || (!personalApi && !storedGarminCreds?.email)) && (
+          <form onSubmit={handleGarminCredentialsSubmit} className="account-form account-form--separated">
+            {personalApi && (
+              <p className="account-description">
+                L’envoi des séances planifiées vers la montre utilise cette connexion séparée.
+              </p>
+            )}
+            <div className="account-form-grid">
+              <div className="account-field">
+                <label htmlFor="garmin-account-email">
                   Courriel Garmin Connect
                 </label>
                 <input
-                  type="text"
+                  id="garmin-account-email"
+                  type="email"
                   value={garminEmail}
                   onChange={e => setGarminEmail(e.target.value)}
                   placeholder="votre-email@garmin.com"
-                  style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.8rem' }}
                 />
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+              <div className="account-field">
+                <label htmlFor="garmin-account-password">
                   Mot de passe
                 </label>
                 <input
+                  id="garmin-account-password"
                   type="password"
                   value={garminPassword}
                   onChange={e => setGarminPassword(e.target.value)}
                   placeholder="••••••••"
-                  style={{ width: '100%', padding: '8px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.8rem' }}
                 />
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              {storedGarminCreds?.email && (
+            <div className="account-action-row account-action-row--end">
+              {(personalApi || storedGarminCreds?.email) && (
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => setShowGarminCredsEdit(false)}
-                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
                 >
                   Annuler
                 </button>
@@ -381,34 +384,25 @@ export const GarminTab: React.FC<GarminTabProps> = ({
                 type="submit"
                 className="btn-primary"
                 disabled={isGarminProcessing}
-                style={{ fontSize: '0.75rem', padding: '6px 14px' }}
               >
-                Enregistrer & Tester
+                {personalApi ? 'Enregistrer pour la session' : 'Enregistrer et tester'}
               </button>
             </div>
           </form>
         )}
 
         {/* Sync Actions: Incremental (Fast) & Full History */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+        <div className="account-form account-garmin-actions">
           <button
             type="button"
             onClick={() => handleGarminAPISync(undefined, 'incremental')}
             className="btn-primary"
             disabled={isGarminProcessing}
-            style={{
-              justifyContent: 'center',
-              padding: '10px 14px',
-              fontSize: '0.82rem',
-              background: '#0077c8',
-              borderColor: '#0077c8',
-              fontWeight: 700
-            }}
             title="Synchronise uniquement les dernières séances récentes et les éventuelles modifications"
           >
             <RefreshCw size={14} className={isGarminProcessing ? 'spin-animation' : ''} />
             <span>
-              {isGarminProcessing ? 'Synchronisation en cours...' : '⚡ Synchronisation Rapide (Incrémentielle)'}
+              {isGarminProcessing ? 'Synchronisation en cours…' : 'Importer les activités récentes'}
             </span>
           </button>
 
@@ -417,47 +411,26 @@ export const GarminTab: React.FC<GarminTabProps> = ({
             onClick={() => handleGarminAPISync(undefined, 'full')}
             className="btn-secondary"
             disabled={isGarminProcessing}
-            style={{
-              justifyContent: 'center',
-              padding: '8px 12px',
-              fontSize: '0.76rem',
-              borderColor: 'rgba(56, 189, 248, 0.35)',
-              color: '#38bdf8',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6
-            }}
-            title="Télécharge l'intégralité de vos activités Garmin depuis l'achat de la montre et les sauvegarde sur votre cloud Supabase"
+            title="Importe les activités disponibles via Garmin Connect"
           >
             <Activity size={14} />
             <span>
-              🌐 Synchronisation Complète (Tout l'historique de la montre)
+              Importer l’historique Garmin
             </span>
           </button>
         </div>
       </div>
 
       {/* Supabase account used for cloud sync */}
-      <div
-        style={{
-          background: 'rgba(139, 92, 246, 0.08)',
-          border: '1px solid rgba(139, 92, 246, 0.28)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10
-        }}
-      >
+      <div className="account-card account-card--stack">
         {user ? (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CheckCircle2 size={18} color="#a78bfa" />
+            <div className="account-row account-row--wrap">
+              <div className="account-leading">
+                <CheckCircle2 size={18} />
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>Compte Supabase connecté</div>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>{user.email || 'Compte authentifié'}</div>
+                  <div className="account-title">Compte cloud connecté</div>
+                  <div className="account-description">{user.email || 'Compte authentifié'}</div>
                 </div>
               </div>
               <button
@@ -465,23 +438,22 @@ export const GarminTab: React.FC<GarminTabProps> = ({
                 className="btn-secondary"
                 onClick={() => void handleSupabaseSignOut()}
                 disabled={isSupabaseAuthProcessing}
-                style={{ fontSize: '0.72rem', padding: '5px 9px', color: '#f87171', borderColor: 'rgba(239, 68, 68, 0.3)' }}
               >
                 <LogOut size={12} />
                 Déconnexion
               </button>
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+            <div className="account-description">
               Ce compte permet la synchronisation cloud de vos activités et réglages.
             </div>
           </>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <LogIn size={18} color="#a78bfa" />
+            <div className="account-leading">
+              <LogIn size={18} />
               <div>
-                <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#fff' }}>Connexion Supabase requise</div>
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                <div className="account-title">Connexion cloud requise</div>
+                <div className="account-description">
                   Connectez-vous pour utiliser la synchronisation cloud.
                 </div>
               </div>
@@ -492,7 +464,6 @@ export const GarminTab: React.FC<GarminTabProps> = ({
               className="btn-primary"
               onClick={() => void handleSupabaseGoogleSignIn()}
               disabled={!isConfigured || isSupabaseAuthProcessing}
-              style={{ justifyContent: 'center', padding: '8px 12px', fontSize: '0.78rem', background: '#4285F4', borderColor: '#4285F4' }}
             >
               <span>{isSupabaseAuthProcessing ? 'Connexion…' : 'Continuer avec Google'}</span>
             </button>
@@ -504,52 +475,49 @@ export const GarminTab: React.FC<GarminTabProps> = ({
                 setSupabaseAuthMsg(null);
               }}
               aria-expanded={showSupabaseEmailForm}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '0.72rem',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 4
-              }}
+              aria-controls={showSupabaseEmailForm ? 'supabase-email-form' : undefined}
+              className="account-link-button account-link-button--center"
             >
               <span>Ou utiliser courriel et mot de passe</span>
               {showSupabaseEmailForm ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
             </button>
 
             {showSupabaseEmailForm && (
-              <form onSubmit={handleSupabaseAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 8, borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 10 }}>
+              <form id="supabase-email-form" onSubmit={handleSupabaseAuthSubmit} className="account-form account-form--separated">
                 {supabaseSignUpMode && (
-                  <input
-                    type="text"
-                    placeholder="Nom ou prénom"
-                    value={supabaseDisplayName}
-                    onChange={e => setSupabaseDisplayName(e.target.value)}
-                    required
-                    style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
-                  />
+                  <div className="account-field">
+                    <label htmlFor="supabase-signup-name">Nom ou prénom</label>
+                    <input
+                      id="supabase-signup-name"
+                      type="text"
+                      value={supabaseDisplayName}
+                      onChange={e => setSupabaseDisplayName(e.target.value)}
+                      required
+                    />
+                  </div>
                 )}
-                <input
-                  type="email"
-                  required
-                  placeholder="Courriel"
-                  value={supabaseEmail}
-                  onChange={e => setSupabaseEmail(e.target.value)}
-                  style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
-                />
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  placeholder="Mot de passe"
-                  value={supabasePassword}
-                  onChange={e => setSupabasePassword(e.target.value)}
-                  style={{ padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', borderRadius: 4, color: '#fff', fontSize: '0.78rem' }}
-                />
-                <button type="submit" className="btn-secondary" disabled={!isConfigured || isSupabaseAuthProcessing} style={{ justifyContent: 'center', padding: '7px' }}>
+                <div className="account-field">
+                  <label htmlFor="supabase-account-email">Courriel</label>
+                  <input
+                    id="supabase-account-email"
+                    type="email"
+                    required
+                    value={supabaseEmail}
+                    onChange={e => setSupabaseEmail(e.target.value)}
+                  />
+                </div>
+                <div className="account-field">
+                  <label htmlFor="supabase-account-password">Mot de passe</label>
+                  <input
+                    id="supabase-account-password"
+                    type="password"
+                    required
+                    minLength={6}
+                    value={supabasePassword}
+                    onChange={e => setSupabasePassword(e.target.value)}
+                  />
+                </div>
+                <button type="submit" className="btn-primary account-form-submit" disabled={!isConfigured || isSupabaseAuthProcessing}>
                   {isSupabaseAuthProcessing ? 'Chargement…' : supabaseSignUpMode ? "S'inscrire" : 'Se connecter'}
                 </button>
                 <button
@@ -558,7 +526,7 @@ export const GarminTab: React.FC<GarminTabProps> = ({
                     setSupabaseSignUpMode(previous => !previous);
                     setSupabaseAuthMsg(null);
                   }}
-                  style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.72rem', cursor: 'pointer' }}
+                  className="account-link-button"
                 >
                   {supabaseSignUpMode ? 'Déjà un compte ? Se connecter' : "Pas encore de compte ? S'inscrire"}
                 </button>
@@ -566,21 +534,12 @@ export const GarminTab: React.FC<GarminTabProps> = ({
             )}
 
             {!isConfigured && (
-              <div style={{ color: '#fbbf24', fontSize: '0.7rem' }}>
+              <div className="account-feedback">
                 Supabase n’est pas configuré dans les variables publiques de l’application.
               </div>
             )}
             {supabaseAuthMsg && (
-              <div
-                role="status"
-                style={{
-                  color: supabaseAuthMsg.isError ? '#f87171' : '#34d399',
-                  background: supabaseAuthMsg.isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                  padding: '6px 9px',
-                  borderRadius: 4,
-                  fontSize: '0.72rem'
-                }}
-              >
+              <div className={`account-feedback ${supabaseAuthMsg.isError ? 'account-feedback--error' : 'account-feedback--success'}`} role={supabaseAuthMsg.isError ? 'alert' : 'status'}>
                 {supabaseAuthMsg.text}
               </div>
             )}
@@ -589,39 +548,28 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       </div>
 
       {/* Synchronisation Automatique de la Semaine (Toggle Row) */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '12px 14px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Watch size={18} color="#38bdf8" />
+      <div className="account-card account-row account-sync-toggle">
+        <div className="account-leading">
+          <Watch size={18} />
           <div>
-            <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff' }}>
+            <div className="account-title">
               Synchronisation automatique de la semaine
             </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+            <div className="account-description">
               Met à jour automatiquement les séances sur votre montre (Forerunner 55)
             </div>
             {autoSyncEnabled && !storedGarminCreds?.password && (
-              <div style={{ fontSize: '0.72rem', color: '#fbbf24', marginTop: 6 }}>
-                Les activités déjà importées restent visibles. Si la session Garmin du serveur a expiré,
-                renseignez vos identifiants ci-dessus pour reprendre l’envoi des séances.
+              <div className="account-description">
+                Si la session Garmin du serveur a expiré, renseignez les identifiants de publication pour reprendre l’envoi.
               </div>
             )}
           </div>
         </div>
 
-        <label className="settings-toggle-switch">
+        <label className="settings-toggle-switch" aria-label="Synchronisation automatique des séances Garmin">
           <input
             type="checkbox"
+            aria-label="Synchronisation automatique des séances Garmin"
             checked={autoSyncEnabled}
             onChange={e => {
               const val = e.target.checked;
@@ -634,102 +582,65 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       </div>
 
       {/* Mode de Guidage des Cibles */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Gauge size={16} color="#10b981" />
-          <div style={{ fontWeight: 700, fontSize: '0.84rem', color: '#fff' }}>
+      <div className="account-card account-card--stack">
+        <div className="account-leading">
+          <Gauge size={16} />
+          <div className="account-title">
             Mode de guidage des cibles sur la montre
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8 }}>
+        <div className="account-choice-grid">
           <button
             type="button"
+            className="account-choice"
+            aria-pressed={targetMode === 'SMART_PACE_AND_TRAIL_FREE'}
             onClick={() => {
               setTargetMode('SMART_PACE_AND_TRAIL_FREE');
               setGarminWorkoutTargetMode('SMART_PACE_AND_TRAIL_FREE');
             }}
-            style={{
-              padding: '10px',
-              borderRadius: 6,
-              textAlign: 'left',
-              cursor: 'pointer',
-              border: targetMode === 'SMART_PACE_AND_TRAIL_FREE' ? '1.5px solid #10b981' : '1px solid var(--border-color)',
-              background: targetMode === 'SMART_PACE_AND_TRAIL_FREE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-              color: '#fff'
-            }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-              <span style={{ fontWeight: 700, fontSize: '0.78rem', color: targetMode === 'SMART_PACE_AND_TRAIL_FREE' ? '#34d399' : '#fff' }}>
-                ⚡ Allure intelligente
-              </span>
-              {targetMode === 'SMART_PACE_AND_TRAIL_FREE' && <CheckCircle2 size={13} color="#34d399" />}
+            <div className="account-choice-title">
+              <span>Allure intelligente</span>
+              {targetMode === 'SMART_PACE_AND_TRAIL_FREE' && <CheckCircle2 size={14} />}
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+            <div className="account-choice-description">
               Allure sur le plat & libre en trail
             </div>
           </button>
 
           <button
             type="button"
+            className="account-choice"
+            aria-pressed={targetMode === 'ALL_FREE'}
             onClick={() => {
               setTargetMode('ALL_FREE');
               setGarminWorkoutTargetMode('ALL_FREE');
             }}
-            style={{
-              padding: '10px',
-              borderRadius: 6,
-              textAlign: 'left',
-              cursor: 'pointer',
-              border: targetMode === 'ALL_FREE' ? '1.5px solid #38bdf8' : '1px solid var(--border-color)',
-              background: targetMode === 'ALL_FREE' ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-              color: '#fff'
-            }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-              <span style={{ fontWeight: 700, fontSize: '0.78rem', color: targetMode === 'ALL_FREE' ? '#38bdf8' : '#fff' }}>
-                🕊️ 100% Libre
-              </span>
-              {targetMode === 'ALL_FREE' && <CheckCircle2 size={13} color="#38bdf8" />}
+            <div className="account-choice-title">
+              <span>100 % libre</span>
+              {targetMode === 'ALL_FREE' && <CheckCircle2 size={14} />}
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+            <div className="account-choice-description">
               Guidage temps sans alerte d'allure
             </div>
           </button>
 
           <button
             type="button"
+            className="account-choice"
+            aria-pressed={targetMode === 'HR_ONLY'}
             onClick={() => {
               setTargetMode('HR_ONLY');
               setGarminWorkoutTargetMode('HR_ONLY');
             }}
-            style={{
-              padding: '10px',
-              borderRadius: 6,
-              textAlign: 'left',
-              cursor: 'pointer',
-              border: targetMode === 'HR_ONLY' ? '1.5px solid #f43f5e' : '1px solid var(--border-color)',
-              background: targetMode === 'HR_ONLY' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(255, 255, 255, 0.02)',
-              color: '#fff'
-            }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-              <span style={{ fontWeight: 700, fontSize: '0.78rem', color: targetMode === 'HR_ONLY' ? '#f43f5e' : '#fff' }}>
-                💓 Cardio classique
-              </span>
-              {targetMode === 'HR_ONLY' && <CheckCircle2 size={13} color="#f43f5e" />}
+            <div className="account-choice-title">
+              <span>Cardio classique</span>
+              {targetMode === 'HR_ONLY' && <CheckCircle2 size={14} />}
             </div>
-            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+            <div className="account-choice-description">
               Guidage par zones cardiaques
             </div>
           </button>
@@ -737,40 +648,20 @@ export const GarminTab: React.FC<GarminTabProps> = ({
       </div>
 
       {/* Import manuel d’activité GPX */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-sm)',
-          padding: '12px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+      <div className="account-card account-card--stack">
+        <div className="account-row account-row--wrap">
           <div>
-            <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-primary)' }}>
+            <div className="account-title">
               Import manuel d'activité
             </div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+            <div className="account-description">
               Importer un fichier .gpx ponctuel
             </div>
           </div>
-          <label
-            className="btn-secondary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              fontSize: '0.74rem'
-            }}
-          >
-            <FileUp size={13} color="var(--primary)" />
+          <label className="btn-secondary account-file-button">
+            <FileUp size={14} />
             <span>Sélectionner GPX</span>
-            <input type="file" accept=".gpx" onChange={handleGPXUpload} style={{ display: 'none' }} />
+            <input type="file" accept=".gpx" onChange={handleGPXUpload} />
           </label>
         </div>
       </div>

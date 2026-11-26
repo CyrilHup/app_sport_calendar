@@ -122,6 +122,36 @@ describe('Workout Postpone Service', () => {
     expect(result.allEvents).toHaveLength(2);
   });
 
+  it('undoing either member of an exchange restores both workouts', () => {
+    const sundayWorkout: CalendarEvent = {
+      ...saturdayWorkout,
+      id: 'SPORT_WORKOUT_2026-09-06',
+      title: 'Footing facile',
+      startDate: '2026-09-06T09:00:00.000Z',
+      endDate: '2026-09-06T10:15:00.000Z'
+    };
+    const baseSunday = { ...sundaySchedule, events: [sundayWorkout], sportSession: sundayWorkout };
+    let overrides = postponeWorkout({}, saturdayWorkout.id, saturdaySchedule.date, baseSunday.date,
+      undefined, undefined, saturdayWorkout);
+    overrides = postponeWorkout(overrides, sundayWorkout.id, baseSunday.date, saturdaySchedule.date,
+      undefined, undefined, sundayWorkout);
+
+    const restoredOverrides = cancelPostponeWorkout(overrides, saturdayWorkout.id);
+    const restored = applyPostponements(
+      [saturdaySchedule, baseSunday],
+      [saturdayWorkout, sundayWorkout],
+      restoredOverrides
+    );
+
+    expect(restoredOverrides).toEqual({});
+    expect(restored.schedules[0].sportSession?.id).toBe(saturdayWorkout.id);
+    expect(restored.schedules[1].sportSession?.id).toBe(sundayWorkout.id);
+    expect(restored.allEvents.map(event => event.startDate)).toEqual([
+      saturdayWorkout.startDate,
+      sundayWorkout.startDate
+    ]);
+  });
+
   it('restores the original workout when postponement is cancelled', () => {
     const baseSchedules = [saturdaySchedule, sundaySchedule];
     const baseEvents = [saturdayWorkout];

@@ -1,1536 +1,448 @@
-import React, { useState, useRef } from 'react';
-import { CalendarEvent } from '../types/calendar';
-import { ActivityComparison, ActivityFeedback, GarminActivity } from '../types/garmin';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
+import { ChevronLeft, ChevronRight, Clock, Footprints, Mountain, CalendarDays } from 'lucide-react';
+import type { CalendarEvent } from '../types/calendar';
+import type { ActivityComparison, ActivityFeedback, GarminActivity, GarminWellnessData } from '../types/garmin';
 import { ActivityFeedbackJournal } from './ActivityFeedbackJournal';
-import { weeklySessionRpeTrend } from '../services/activityFeedback';
 import {
-  computeFullStatsReport,
-  formatMinutes,
-  FitnessDayPoint,
-  WeeklyTrendPoint,
-  TimeRangeScope
-} from '../services/statsEngine';
-import { StatsMetricModal, StatsMetricTopic } from './StatsMetricModal';
-import { StatsEvolutionModal, EvolutionMetricType } from './StatsEvolutionModal';
-import { AcwrGauge } from './AcwrGauge';
-import { getLatestWellnessData, loadWellnessHistory } from '../services/readinessEngine';
-import { computeDynamicAthleteBasePace } from '../services/garminService';
-import { AppConfig, GLOBAL_APP_CONFIG } from '../services/periodizationEngine';
-import { TRAINING_LOAD_WINDOWS } from '../services/trainingModelConfig';
-import {
-  Activity,
-  Award,
-  BarChart3,
-  Calendar,
-  Clock,
-  Dumbbell,
-  Flame,
-  Footprints,
-  Gauge,
-  Heart,
-  HelpCircle,
-  Layers,
-  Mountain,
-  Scale,
-  Shield,
-  ShieldAlert,
-  ShieldCheck,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
-  Zap
-} from 'lucide-react';
+  activityMetrics, activitySport, activitySports, buildActivityWeeks, buildPlanWeeks,
+  buildTrainingReview, describeDateRange, formatTrainingDuration as duration, groupActivitiesByDay, measuredTotal, sumActivityMetrics
+} from '../services/activityProgress';
+import type { ActivityMetric, ActivitySport, PlanWeek } from '../services/activityProgress';
+import { addDays, formatDateKey, getGarminLocalDateKey, getMondayOfWeek, parseLocalDate } from '../services/dateUtils';
+import { getSyncedWeekWorkoutSignatures } from '../services/garminAutoSyncService';
+import './StatsDashboard.css';
 
 interface StatsDashboardProps {
   garminActivities: GarminActivity[];
   comparisons: ActivityComparison[];
   allEvents: CalendarEvent[];
-  referenceDate?: Date;
-  config?: Readonly<AppConfig>;
+  referenceDate: Date;
+  wellness?: GarminWellnessData;
   onSaveActivityFeedback?: (activityId: string, feedback: ActivityFeedback) => void;
 }
 
-export const StatsDashboard: React.FC<StatsDashboardProps> = ({
-  garminActivities,
-  comparisons,
-  allEvents,
-  referenceDate = new Date(),
-  config = GLOBAL_APP_CONFIG,
-  onSaveActivityFeedback
-}) => {
-  // Timeline scope selector: 'plan' (default 1er sept.), '4w' (28j glissants), 'all' (historique complet)
-  const [scope, setScope] = useState<TimeRangeScope>('plan');
-  const [hoveredWeekKey, setHoveredWeekKey] = useState<string | null>(null);
-  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const [hoveredFitnessDay, setHoveredFitnessDay] = useState<FitnessDayPoint | null>(null);
-  const [infoTopic, setInfoTopic] = useState<StatsMetricTopic>(null);
-  const [evolutionMetric, setEvolutionMetric] = useState<EvolutionMetricType | null>(null);
-  const weeklyChartCardRef = useRef<HTMLDivElement>(null);
+const shortDate = new Intl.DateTimeFormat('fr-CA', { day: 'numeric', month: 'short' });
+const fullDate = new Intl.DateTimeFormat('fr-CA', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const monthLabel = new Intl.DateTimeFormat('fr-CA', { month: 'short' });
+const decimal = new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 1 });
+const integer = new Intl.NumberFormat('fr-CA', { maximumFractionDigits: 0 });
+const dayLabels = ['Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.', 'Dim.'];
+const metricThresholds = {
+  minutes: { day: [30, 60, 120], week: [60, 180, 360] },
+  distance: { day: [3, 8, 16], week: [10, 25, 50] },
+  elevation: { day: [100, 300, 600], week: [200, 750, 1500] },
+  sessions: { day: [2, 3, 4], week: [2, 4, 6] }
+};
 
-  const athleteFcMax = config.ATHLETE_FC_MAX;
-  const raceName = config.RACE_NAME;
-  const planStartLabel = new Date(`${config.SPORT_START_DATE}T00:00:00`)
-    .toLocaleDateString('fr-CA', { day: 'numeric', month: 'short', year: 'numeric' });
-  const latestWellness = getLatestWellnessData();
-  const baselineRhr = config.ATHLETE_FC_REST;
-  const restingHrValue = latestWellness?.restingHeartRate || baselineRhr;
-  const dynamicBasePace = computeDynamicAthleteBasePace(garminActivities);
-  const wellnessHistory = loadWellnessHistory();
-  const subjectiveTrend = weeklySessionRpeTrend(garminActivities, referenceDate);
-  const subjectiveTrendMax = Math.max(1, ...subjectiveTrend.map(week => week.totalLoad));
+function formatMetric(metric: ActivityMetric, value: number): string {
+  switch (metric) {
+    case 'minutes': return duration(value);
+    case 'distance': return `${decimal.format(value)} km`;
+    case 'elevation': return `${integer.format(value)} m`;
+    case 'sessions': return `${value} séance${value === 1 ? '' : 's'}`;
+  }
+}
 
-  // Computes report for selected timeline scope.
-  // Physiological history is independent from the selected display timeline.
-  const report = computeFullStatsReport(
-    garminActivities,
-    comparisons,
-    allEvents,
-    scope,
-    referenceDate,
-    true,
-    { fcMax: athleteFcMax, fcRest: baselineRhr }
-  );
+function calendarMeasurement(activities: GarminActivity[], metric: ActivityMetric) {
+  if (metric === 'distance' || metric === 'elevation') {
+    return measuredTotal(activities, metric === 'distance' ? 'distanceKm' : 'elevationGainM');
+  }
+  return { total: sumActivityMetrics(activities)[metric], measured: activities.length };
+}
 
-  const { global, running, strength, heartRate, heartRateZones, trainingLoad, trailSpecific } = report;
+function getPlanTotals(week: PlanWeek) {
+  const targets = week.planned.flatMap(event => event.metadata?.targetElevationM ?? []);
+  return {
+    plannedMinutes: week.planned.reduce((total, event) => total + event.durationMinutes, 0),
+    plannedElevation: targets.length ? targets.reduce((total, value) => total + value, 0) : undefined,
+    recorded: sumActivityMetrics(week.recorded),
+    elevation: measuredTotal(week.recorded, 'elevationGainM')
+  };
+}
 
-  // Max minutes in a week for relative bar chart heights
-  const maxWeeklyMinutes = Math.max(...global.weeklyTrend.map(w => w.totalMinutes), 360);
+function PlanProgress({ garminActivities, allEvents, comparisons, referenceDate }: StatsDashboardProps) {
+  const [offset, setOffset] = useState(0);
+  const [selectedStart, setSelectedStart] = useState<string>();
+  const [chartMetric, setChartMetric] = useState<'minutes' | 'elevation'>('minutes');
+  const weeks = useMemo(() => buildPlanWeeks(garminActivities, allEvents, comparisons, referenceDate, offset,
+    getSyncedWeekWorkoutSignatures()), [garminActivities, allEvents, comparisons, referenceDate, offset]);
+  const week = weeks.find(candidate => candidate.start === selectedStart) ?? weeks[weeks.length - 1];
+  const totals = weeks.map(getPlanTotals);
+  const chartValues = totals.map(total => chartMetric === 'minutes'
+    ? [total.plannedMinutes, total.recorded.minutes] as const
+    : [total.plannedElevation, total.elevation.total] as const);
+  const chartMax = Math.max(1, ...chartValues.flatMap(values => values.map(value => value ?? 0)));
+  const { plannedMinutes, plannedElevation, recorded, elevation } = totals[weeks.indexOf(week)];
+  const currentWeek = offset === 0 && week === weeks[weeks.length - 1];
+  const hasPrevious = allEvents.some(event => event.category === 'sport' &&
+    formatDateKey(new Date(event.startDate)) < weeks[0].start) ||
+    garminActivities.some(activity => activitySport(activity) === 'running' && getGarminLocalDateKey(activity) < weeks[0].start);
 
   return (
-    <div className="stats-dashboard-container" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-      {onSaveActivityFeedback && <ActivityFeedbackJournal activities={garminActivities} onSave={onSaveActivityFeedback} />}
-      {subjectiveTrend.some(week => week.ratedSessions > 0) && (
-        <section className="subjective-trend-card" aria-label="Évolution du ressenti sur quatre semaines">
-          <div>
-            <h2>Ressenti sur quatre semaines</h2>
-            <p>Charge ressentie = durée × RPE. Compare seulement les semaines suffisamment notées.</p>
-          </div>
-          <div className="subjective-trend-rows">
-            {subjectiveTrend.map((week, index) => (
-              <div className="subjective-trend-row" key={index}>
-                <span>{week.start.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })} – {week.end.toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}</span>
-                <div className="subjective-trend-track"><div style={{ width: `${week.totalLoad / subjectiveTrendMax * 100}%` }} /></div>
-                <strong>{week.totalLoad} unités <small>· {week.ratedSessions}/{week.recordedSessions} notées</small></strong>
-              </div>
-            ))}
-          </div>
-          <small>Ce total seul ne mesure ni la forme ni le risque de blessure.</small>
-        </section>
-      )}
-      {/* 1. Header Épuré avec Sélecteur de Timeline (Plan QMT / 4 semaines / Tout) */}
-      <div
-        style={{
-          background: 'linear-gradient(135deg, rgba(20, 27, 47, 0.95), rgba(14, 20, 36, 0.98))',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '16px 22px',
-          display: 'flex',
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '14px'
-        }}
-      >
+    <section className="surface-panel progress-panel progress-plan" aria-labelledby="progress-plan-heading">
+      <div className="progress-section-head">
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-            <span
-              style={{
-                background: 'var(--primary-subtle)',
-                color: 'var(--primary)',
-                padding: '4px 8px',
-                borderRadius: 'var(--radius-sm)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                fontSize: '0.74rem',
-                fontWeight: 800
-              }}
-            >
-              <BarChart3 size={13} /> TÉLÉMÉTRIE D'ENTRAÎNEMENT & FORME
-            </span>
-            <span
-              style={{
-                background: scope === 'week'
-                  ? 'rgba(255, 87, 34, 0.14)'
-                  : (scope === 'plan'
-                    ? 'rgba(16, 185, 129, 0.14)'
-                    : (scope === '4w' ? 'rgba(56, 189, 248, 0.14)' : 'rgba(255, 255, 255, 0.08)')),
-                color: scope === 'week'
-                  ? 'var(--primary)'
-                  : (scope === 'plan'
-                    ? 'var(--accent-green)'
-                    : (scope === '4w' ? 'var(--accent-cyan)' : 'var(--text-secondary)')),
-                padding: '2px 9px',
-                borderRadius: '9999px',
-                fontSize: '0.72rem',
-                fontWeight: 700
-              }}
-            >
-              {scope === 'week'
-                ? '📅 Microcycle actif (Cette semaine)'
-                : (scope === 'plan'
-                  ? `🎯 Plan ${raceName} actif (depuis le ${planStartLabel})`
-                  : (scope === '4w' ? '📅 4 dernières semaines glissantes' : '🌐 Tout l\'historique'))}
-            </span>
-          </div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-            Tableau de Bord & Santé Athlétique
-          </h2>
-          <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            {scope === 'week'
-              ? `Sur la semaine en cours : ${global.totalSessionsCount} sortie${global.totalSessionsCount > 1 ? 's' : ''} de course réalisée${global.totalSessionsCount > 1 ? 's' : ''} (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
-              : (scope === 'plan'
-                ? `Sur le plan ${raceName} : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
-                : (scope === '4w'
-                  ? `Sur les 28 derniers jours : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`
-                  : `Cumul historique complet : ${global.totalSessionsCount} sorties de course réalisées (${formatMinutes(global.totalDurationMinutes)})${global.indicativeStrengthCount > 0 ? ` [ + ${global.indicativeStrengthCount} renforts indicatifs (${formatMinutes(global.indicativeStrengthMinutes)}) ]` : ''}`))}
-          </p>
+          <h2 id="progress-plan-heading">Course et trail · prévu / réalisé</h2>
+          <p>{describeDateRange(week.start, week.end)}{currentWeek && ' · semaine en cours'}</p>
         </div>
-
-        {/* Sélecteur de Timeline épuré (Cette semaine / Plan / 4 semaines / Tout) */}
-        <div
-          style={{
-            display: 'inline-flex',
-            background: 'rgba(255, 255, 255, 0.04)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '6px',
-            padding: '3px',
-            gap: '2px'
-          }}
-        >
-          <button
-            onClick={() => setScope('week')}
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.76rem',
-              fontWeight: 700,
-              borderRadius: '4px',
-              border: 'none',
-              cursor: 'pointer',
-              background: scope === 'week' ? 'var(--primary)' : 'transparent',
-              color: scope === 'week' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.15s ease'
-            }}
-            title="Focalisé sur le microcycle de la semaine en cours (Lundi à Dimanche)"
-          >
-            📅 Cette sem.
-          </button>
-          <button
-            onClick={() => setScope('plan')}
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.76rem',
-              fontWeight: 700,
-              borderRadius: '4px',
-              border: 'none',
-              cursor: 'pointer',
-              background: scope === 'plan' ? 'var(--primary)' : 'transparent',
-              color: scope === 'plan' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.15s ease'
-            }}
-            title={`Focalisé sur la préparation démarrée le ${planStartLabel}`}
-          >
-            🎯 Plan {raceName}
-          </button>
-          <button
-            onClick={() => setScope('4w')}
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.76rem',
-              fontWeight: 700,
-              borderRadius: '4px',
-              border: 'none',
-              cursor: 'pointer',
-              background: scope === '4w' ? 'var(--primary)' : 'transparent',
-              color: scope === '4w' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.15s ease'
-            }}
-            title="Cycle d'entraînement récent sur les 28 derniers jours"
-          >
-            📅 4 sem.
-          </button>
-          <button
-            onClick={() => setScope('all')}
-            style={{
-              padding: '6px 12px',
-              fontSize: '0.76rem',
-              fontWeight: 700,
-              borderRadius: '4px',
-              border: 'none',
-              cursor: 'pointer',
-              background: scope === 'all' ? 'var(--primary)' : 'transparent',
-              color: scope === 'all' ? '#ffffff' : 'var(--text-secondary)',
-              transition: 'all 0.15s ease'
-            }}
-            title="Historique complet des données Garmin Connect"
-          >
-            🌐 Tout l'historique
-          </button>
+        <div className="progress-chart-controls">
+          <div className="progress-legend" aria-label="Légende">
+            <span><i className="progress-plan-key" /> Prévu</span>
+            <span><i className="progress-actual-key" /> Réalisé</span>
+          </div>
+          <div className="progress-pager" aria-label="Période du suivi du plan">
+            <button type="button" aria-label="Huit semaines précédentes" disabled={!hasPrevious}
+              onClick={() => setOffset(offset + 8)}><ChevronLeft size={18} /></button>
+            <button type="button" aria-label="Huit semaines suivantes" disabled={offset === 0}
+              onClick={() => setOffset(offset - 8)}><ChevronRight size={18} /></button>
+          </div>
         </div>
       </div>
-
-      {/* 2. Le Quatuor d'Indicateurs Maîtres (Cartes Fusionnées Haute Visibilité) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-          gap: '14px'
-        }}
-      >
-        {/* CARTE 1: Volume Course & Trail (Plan d'Entraînement) */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('volume')}
-          style={{ borderLeft: '3px solid var(--primary)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-          title="Cliquer pour voir la courbe d'évolution du volume de course"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">Volume Course & Trail</span>
-              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)', fontWeight: 700 }}>
-                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? `Plan ${raceName}` : (scope === '4w' ? '4 sem.' : 'Historique'))}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(255, 87, 34, 0.15)', color: 'var(--primary)' }}>
-                <Clock size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--text-primary)' }}>
-            {formatMinutes(global.totalDurationMinutes)}
-          </div>
-
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
-              {global.totalSessionsCount} sorties de course
-            </span>
-            <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-              Moy. {formatMinutes(global.weeklyAverageMinutes)}/sem
-            </span>
-          </div>
-
-          {/* Pastille Renforcement Indicatif */}
-          {global.indicativeStrengthMinutes > 0 && (
-            <div
-              style={{
-                marginTop: '10px',
-                padding: '4px 8px',
-                borderRadius: '6px',
-                background: 'rgba(168, 85, 247, 0.10)',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                fontSize: '0.72rem',
-                color: '#c084fc'
-              }}
-              title="Séances de renforcement enregistrées à titre indicatif (exclues du plan de course)"
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
-                <span>💪</span> Renfort indicatif :
-              </span>
-              <span style={{ fontWeight: 700 }}>
-                {formatMinutes(global.indicativeStrengthMinutes)} ({global.indicativeStrengthCount} séance{global.indicativeStrengthCount > 1 ? 's' : ''})
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* CARTE 2: Course à Pied & Spécificité Montagne */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('running')}
-          style={{ borderLeft: '3px solid var(--accent-cyan)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-          title="Cliquer pour voir la courbe d'évolution course à pied et sentiers"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">Course à Pied & Sentiers</span>
-              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)', fontWeight: 700 }}>
-                {scope === 'week' ? 'Cette sem.' : (scope === 'plan' ? `Plan ${raceName}` : (scope === '4w' ? '4 sem.' : 'Historique'))}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-cyan)' }}>
-                <Footprints size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--primary)' }}>
-            {running.totalDistanceKm.toFixed(1)} km
-          </div>
-
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              {global.sportBreakdown.running.count} sorties • Allure {running.avgPaceMinKm}
-            </span>
-            {running.avgCadenceSpm > 0 && (
-              <span style={{ fontSize: '0.74rem', color: 'var(--accent-cyan)', fontWeight: 700 }}>
-                {running.avgCadenceSpm} spm
-              </span>
-            )}
-          </div>
-
-          {/* Fusion D+ / D- / Densité */}
-          <div
-            style={{
-              marginTop: '8px',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              fontSize: '0.72rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '3px'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>
-                +{running.totalElevationGainM.toLocaleString('fr-CA')} m D+
-              </span>
-              <span style={{ color: 'var(--text-muted)' }}>
-                -{running.totalElevationLossM.toLocaleString('fr-CA')} m D-
-              </span>
-              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
-                {running.elevationDensityMPerKm} m/km
-              </span>
-            </div>
-            {running.longestRun && (
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>
-                Max : <strong>{running.longestRun.distanceKm} km</strong> ({running.longestRun.name})
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* CARTE 3: Forme Physiologique, Charge & Santé (Banister + Cardio) */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('banister')}
-          style={{ borderLeft: '3px solid var(--accent-purple)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-          title="Cliquer pour voir la courbe d'évolution CTL / ATL / TSB"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">Forme & Charge (Banister)</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); setInfoTopic('banister'); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '1px',
-                  display: 'inline-flex',
-                  alignItems: 'center'
-                }}
-                title="Comprendre le modèle Banister (CTL / ATL / TSB)"
-              >
-                <HelpCircle size={14} />
+      <div className="progress-view-switch progress-chart-mode" role="group" aria-label="Mesure du graphique">
+        <button type="button" aria-pressed={chartMetric === 'minutes'} onClick={() => setChartMetric('minutes')}>Temps</button>
+        <button type="button" aria-pressed={chartMetric === 'elevation'} onClick={() => setChartMetric('elevation')}>Dénivelé +</button>
+      </div>
+      <div className="progress-plan-body">
+        <div className="progress-chart" role="group" aria-label={`${activityMetrics[chartMetric]} de course sur huit semaines`}>
+          {weeks.map((item, index) => {
+            const [target, actual] = chartValues[index];
+            const { elevation } = totals[index];
+            const coverage = chartMetric === 'elevation' && elevation.measured > 0 && elevation.measured < item.recorded.length
+              ? ` · ${elevation.measured}/${item.recorded.length} sorties mesurées` : '';
+            const label = `${describeDateRange(item.start, item.end)} · prévu ${target === undefined ? 'sans cible' : formatMetric(chartMetric, target)}, réalisé ${actual === undefined ? 'sans mesure' : formatMetric(chartMetric, actual)}${coverage}`;
+            return (
+              <button key={item.start} type="button" className="progress-chart-week" aria-pressed={item === week}
+                aria-label={label} title={label} onClick={() => setSelectedStart(item.start)}>
+                <span className="progress-chart-bars" aria-hidden="true">
+                  <i className="progress-plan-key" hidden={!target} style={{ height: `${(target ?? 0) / chartMax * 100}%` }} />
+                  <i className="progress-actual-key" hidden={!actual} style={{ height: `${(actual ?? 0) / chartMax * 100}%` }} />
+                </span>
+                <span>{shortDate.format(parseLocalDate(item.start))}</span>
               </button>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--accent-purple)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
-                <Gauge size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--accent-purple)', fontSize: '1.25rem' }}>
-            CTL {trainingLoad.currentCtl} <span style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontWeight: 500 }}>• ATL {trainingLoad.currentAtl}</span>
-          </div>
-
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              TSB : <strong>{trainingLoad.currentTsb > 0 ? `+${trainingLoad.currentTsb}` : trainingLoad.currentTsb}</strong> ({trainingLoad.formLabel})
-            </span>
-            <span
-              onClick={(e) => { e.stopPropagation(); setInfoTopic('acwr'); }}
-              style={{
-                fontSize: '0.72rem',
-                padding: '2px 7px',
-                borderRadius: '9999px',
-                background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'rgba(56, 189, 248, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)')),
-                color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')),
-                fontWeight: 700,
-                cursor: 'pointer'
-              }}
-              title="Cliquer pour voir l'explication du ratio ACWR"
-            >
-              ACWR {trainingLoad.acwrRatio} ({trainingLoad.acwrStatusLabel})
-            </span>
-          </div>
-
-          {/* Fusion Cardio & Conseil Prévention */}
-          <div
-            style={{
-              marginTop: '8px',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              fontSize: '0.72rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '3px'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span
-                onClick={(e) => { e.stopPropagation(); setEvolutionMetric('avg_hr'); }}
-                style={{ color: 'var(--accent-red)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                title="Cliquer pour voir la courbe de FC moyenne"
-              >
-                FC moy. {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm 📈
-              </span>
-              <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>
-                {running.intensityDistribution.zone2Pct}% en Zone 2
-              </span>
-            </div>
-            {trainingLoad.acwrActionAdvice && (
-              <div style={{ color: 'var(--text-secondary)', fontSize: '0.7rem' }}>
-                {trainingLoad.acwrActionAdvice}
-              </div>
-            )}
-          </div>
+            );
+          })}
         </div>
-
-        {/* CARTE 4: Profil Cardiaque & Efficacité Aérobie (AEI) */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('aei')}
-          style={{ borderLeft: '3px solid var(--accent-green)', cursor: 'pointer', transition: 'transform 0.15s, box-shadow 0.15s' }}
-          title="Cliquer pour voir la courbe d'efficacité aérobie AEI"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">Efficacité Aérobie (AEI)</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); setInfoTopic('aei'); }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '1px',
-                  display: 'inline-flex',
-                  alignItems: 'center'
-                }}
-                title="Comprendre l'Indice d'Efficacité Aérobie (AEI)"
-              >
-                <HelpCircle size={14} />
-              </button>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--accent-green)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)' }}>
-                <Heart size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--accent-green)' }}>
-            {heartRate.aerobicEfficiencyIndex ? `${heartRate.aerobicEfficiencyIndex} m/bpm` : 'En calibration'}
-          </div>
-
-          <div className="kpi-sub-row">
-            <span
-              onClick={(e) => { e.stopPropagation(); setEvolutionMetric('avg_hr'); }}
-              style={{ color: 'var(--text-secondary)', cursor: 'pointer' }}
-              title="Cliquer pour voir la courbe de FC moyenne"
-            >
-              FC moy : {heartRate.overallPeriodAvgHr || heartRate.currentAvgHeartRate || '--'} bpm 📈
-            </span>
-            <span
-              style={{
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: 'var(--accent-green)',
-                padding: '2px 7px',
-                borderRadius: '9999px',
-                fontSize: '0.72rem',
-                fontWeight: 700
-              }}
-            >
-              {running.intensityDistribution.zone2Pct}% en Zone 2
-            </span>
-          </div>
-
-          {/* Analyse Économie Cardiaque */}
-          <div
-            style={{
-              marginTop: '8px',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              fontSize: '0.72rem',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <span style={{ color: heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0 ? 'var(--accent-green)' : 'var(--text-secondary)', fontWeight: 600 }}>
-              {heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0
-                ? `Économie : -${Math.abs(heartRate.heartRateDeltaBpm)} bpm`
-                : 'Rythme cardiaque régulier'}
-            </span>
-            <span style={{ color: 'var(--text-muted)' }}>
-              Cible Z2 &lt; {heartRateZones.zone2[1]} bpm
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2b. Repères Physiologiques Athlétiques (Informations informatives en lecture seule) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-          gap: '14px'
-        }}
-      >
-        {/* CARTE PHYSIO 1: FC MAX */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('fc_max')}
-          style={{
-            borderLeft: '3px solid var(--accent-amber)',
-            cursor: 'pointer',
-            transition: 'transform 0.15s, box-shadow 0.15s',
-            background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.04), rgba(17, 24, 39, 0.95))'
-          }}
-          title="Cliquer pour voir l'historique des pics de fréquence cardiaque maximale"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">FC Max Athlète</span>
-              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-amber)', fontWeight: 700 }}>
-                Info calibrée
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--accent-amber)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--accent-amber)' }}>
-                <Zap size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--accent-amber)' }}>
-            {athleteFcMax} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>bpm</span>
-          </div>
-
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              Plafond d'effort • Borne Z5
-            </span>
-            <span style={{ fontSize: '0.74rem', color: 'var(--accent-green)', fontWeight: 600 }}>
-              Cible Z2 &lt; {heartRateZones.zone2[1]} bpm
-            </span>
-          </div>
-
-          <div
-            style={{
-              marginTop: '8px',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <span>Donnée informative non modifiable</span>
-            <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>📈 Voir les pics</span>
-          </div>
-        </div>
-
-        {/* CARTE PHYSIO 2: FC REPOS */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('resting_hr')}
-          style={{
-            borderLeft: '3px solid var(--accent-purple)',
-            cursor: 'pointer',
-            transition: 'transform 0.15s, box-shadow 0.15s',
-            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.04), rgba(17, 24, 39, 0.95))'
-          }}
-          title="Cliquer pour voir l'évolution de la FC au repos jour par jour"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">FC Repos</span>
-              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)', fontWeight: 700 }}>
-                Garmin Wellness
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--accent-purple)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: 'var(--accent-purple)' }}>
-                <Heart size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--accent-purple)' }}>
-            {restingHrValue} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>bpm</span>
-          </div>
-
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              Moyenne basale : {baselineRhr} bpm
-            </span>
-            <span style={{ fontSize: '0.74rem', color: latestWellness?.hrv?.status === 'BALANCED' ? 'var(--accent-green)' : 'var(--text-muted)', fontWeight: 600 }}>
-              {latestWellness?.hrv?.lastNightAvg ? `VRC ${latestWellness.hrv.lastNightAvg} ms` : 'Fraîcheur autonome'}
-            </span>
-          </div>
-
-          <div
-            style={{
-              marginTop: '8px',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <span>Donnée informative au réveil</span>
-            <span style={{ color: 'var(--accent-purple)', fontWeight: 600 }}>📈 Voir l'historique</span>
-          </div>
-        </div>
-
-        {/* CARTE PHYSIO 3: ALLURE ENDURANCE */}
-        <div
-          className="stats-kpi-card"
-          onClick={() => setEvolutionMetric('endurance_pace')}
-          style={{
-            borderLeft: '3px solid var(--accent-green)',
-            cursor: 'pointer',
-            transition: 'transform 0.15s, box-shadow 0.15s',
-            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.04), rgba(17, 24, 39, 0.95))'
-          }}
-          title="Cliquer pour voir l'évolution de l'allure en endurance fondamentale (Zone 2)"
-        >
-          <div className="kpi-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span className="kpi-title">Allure Endurance Z2</span>
-              <span style={{ fontSize: '0.68rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)', fontWeight: 700 }}>
-                Aérobie Fondamentale
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.68rem', color: 'var(--accent-green)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                <TrendingUp size={12} /> Évolution
-              </span>
-              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-green)' }}>
-                <Footprints size={16} />
-              </div>
-            </div>
-          </div>
-
-          <div className="kpi-main-value" style={{ color: 'var(--accent-green)' }}>
-            {dynamicBasePace} <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)' }}>/km</span>
-          </div>
-
-          <div className="kpi-sub-row">
-            <span style={{ color: 'var(--text-secondary)' }}>
-              Aisance respiratoire stricte
-            </span>
-            <span style={{ fontSize: '0.74rem', color: 'var(--accent-green)', fontWeight: 600 }}>
-              Filière lipidique QMT
-            </span>
-          </div>
-
-          <div
-            style={{
-              marginTop: '8px',
-              background: 'rgba(255,255,255,0.03)',
-              padding: '6px 8px',
-              borderRadius: '4px',
-              fontSize: '0.72rem',
-              color: 'var(--text-muted)',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <span>Donnée informative calculée</span>
-            <span style={{ color: 'var(--accent-green)', fontWeight: 600 }}>📈 Voir la progression</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Section Volume Hebdomadaire & Régularité */}
-      <div
-        ref={weeklyChartCardRef}
-        style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '18px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px',
-          position: 'relative'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <dl className="progress-plan-values" aria-live="polite">
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <BarChart3 size={17} color="var(--primary)" />
-              Volume Hebdomadaire Course & Trail
-            </h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
-              {global.activeWeeksCount} semaines actives • Moyenne de {(global.totalSessionsCount / Math.max(1, global.activeWeeksCount)).toFixed(1)} sorties de course / sem
-            </p>
+            <dt>Temps de course</dt>
+            <dd>{duration(recorded.minutes)} <span>/ {plannedMinutes ? duration(plannedMinutes) : '—'}</span></dd>
           </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '0.74rem' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--primary)' }} />
-              Course / Trail (Volume plan)
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'rgba(168, 85, 247, 0.55)' }} />
-              Renfort (Indicatif)
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: 10, height: 10, borderRadius: 2, background: 'var(--accent-cyan)' }} />
-              Cross-training
-            </span>
+          <div>
+            <dt>Dénivelé +</dt>
+            <dd>{elevation.total === undefined ? '—' : formatMetric('elevation', elevation.total)}
+              {' '}<span>/ {plannedElevation === undefined ? '—' : formatMetric('elevation', plannedElevation)}</span>
+              {elevation.measured > 0 && elevation.measured < recorded.sessions &&
+                <small className="progress-coverage">{elevation.measured}/{recorded.sessions} sorties mesurées</small>}
+            </dd>
           </div>
-        </div>
-
-        {global.weeklyTrend.length === 0 ? (
-          <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-            Aucune séance enregistrée pour cette période.
+          <div>
+            <dt>Séances prévues liées</dt>
+            <dd>{week.planned.length ? <>{week.matched.size} <span>/ {week.planned.length}</span></> : '—'}</dd>
           </div>
-        ) : (
-          <div
-            onScroll={() => {
-              setHoveredWeekKey(null);
-              setTooltipPos(null);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'flex-end',
-              gap: '12px',
-              height: '180px',
-              paddingTop: '20px',
-              borderBottom: '1px solid var(--border-color)',
-              overflowX: 'auto',
-              paddingBottom: '6px'
-            }}
-          >
-            {global.weeklyTrend.map(w => {
-              const runHeight = (w.runningMinutes / maxWeeklyMinutes) * 140;
-              const strengthHeight = (w.strengthMinutes / maxWeeklyMinutes) * 140;
-              const otherHeight = (w.otherMinutes / maxWeeklyMinutes) * 140;
-              const isHovered = hoveredWeekKey === w.weekKey;
-
-              const handleHover = (e: React.MouseEvent<HTMLDivElement>) => {
-                setHoveredWeekKey(w.weekKey);
-                if (weeklyChartCardRef.current) {
-                  const cardRect = weeklyChartCardRef.current.getBoundingClientRect();
-                  const barRect = e.currentTarget.getBoundingClientRect();
-                  const rawX = barRect.left + barRect.width / 2 - cardRect.left;
-                  const clampedX = Math.max(120, Math.min(cardRect.width - 120, rawX));
-                  const rawY = barRect.top - cardRect.top - 8;
-                  setTooltipPos({ x: clampedX, y: rawY });
-                }
-              };
-
+        </dl>
+      </div>
+      <p className="progress-note">La semaine en cours compare les cibles jusqu’à aujourd’hui. Le réalisé inclut les sorties libres.</p>
+      {week.planned.length > 0 && (
+        <details className="progress-disclosure">
+          <summary>Voir les séances prévues</summary>
+          <ul className="progress-session-list">
+            {week.planned.map(event => {
+              const comparison = week.matched.get(event.id);
+              const actual = comparison?.actualActivity;
+              const plannedDay = formatDateKey(new Date(event.startDate));
+              const heartRateRange = event.metadata?.targetHeartRateRange;
               return (
-                <div
-                  key={w.weekKey}
-                  onMouseEnter={handleHover}
-                  onMouseMove={handleHover}
-                  onMouseLeave={() => {
-                    setHoveredWeekKey(null);
-                    setTooltipPos(null);
-                  }}
-                  style={{
-                    flex: '1 1 55px',
-                    minWidth: '55px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: '6px',
-                    position: 'relative',
-                    padding: '4px',
-                    borderRadius: '6px',
-                    background: isHovered ? 'rgba(255, 87, 34, 0.08)' : 'transparent',
-                    transition: 'all 0.15s ease',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {/* Stacked Bar */}
-                  <div
-                    style={{
-                      width: '28px',
-                      display: 'flex',
-                      flexDirection: 'column-reverse',
-                      borderRadius: '4px 4px 0 0',
-                      overflow: 'hidden',
-                      background: 'rgba(255,255,255,0.03)',
-                      transition: 'transform 0.2s',
-                      transform: isHovered ? 'scale(1.06)' : 'none',
-                      boxShadow: isHovered ? '0 0 10px rgba(255, 87, 34, 0.4)' : 'none'
-                    }}
-                  >
-                    <div style={{ height: `${runHeight}px`, background: 'var(--primary)' }} />
-                    <div style={{ height: `${strengthHeight}px`, background: 'rgba(168, 85, 247, 0.45)', borderTop: strengthHeight > 0 ? '1px dashed #a78bfa' : 'none' }} />
-                    <div style={{ height: `${otherHeight}px`, background: 'var(--accent-cyan)' }} />
-                  </div>
-
-                  {/* Label */}
-                  <span
-                    style={{
-                      fontSize: '0.68rem',
-                      color: isHovered ? 'var(--text-primary)' : 'var(--text-muted)',
-                      fontWeight: isHovered ? 700 : 500,
-                      textAlign: 'center',
-                      lineHeight: 1.1
-                    }}
-                  >
-                    {w.weekLabel.replace('Sem. ', '')}
+                <li key={event.id}>
+                  <span><strong>{event.title.replace(/^[^\p{L}\p{N}]+/u, '')}</strong>
+                    <small>{shortDate.format(parseLocalDate(plannedDay))}
+                      {comparison?.isPostponedCatchup && comparison.executedDate &&
+                        ` · réalisée le ${shortDate.format(parseLocalDate(comparison.executedDate))}`}
+                    </small>
+                    <small>{week.published.has(event.id) ? 'Cible publiée sur Garmin' : 'Cible du plan actuel'}</small>
                   </span>
-                </div>
+                  <span className="progress-session-values">
+                    <span>{actual ? `${duration(actual.durationMinutes)} / ${duration(event.durationMinutes)}` :
+                      `${duration(event.durationMinutes)} prévues · aucune sortie liée`}</span>
+                    {heartRateRange && <small>FC moy. {actual?.avgHeartRate ?? '—'} · cible {heartRateRange.join('–')} bpm</small>}
+                    {event.metadata?.targetElevationM != null && <small>D+ {actual?.elevationGainM ?? '—'} / {event.metadata.targetElevationM} m</small>}
+                  </span>
+                </li>
               );
             })}
-          </div>
-        )}
+          </ul>
+        </details>
+      )}
+    </section>
+  );
+}
 
-        {/* Infobulle flottante au niveau de la carte (non découpée par le conteneur scrollable) */}
-        {(() => {
-          const hoveredWeek = global.weeklyTrend.find(w => w.weekKey === hoveredWeekKey);
-          if (!hoveredWeek || !tooltipPos) return null;
-          return (
-            <div
-              style={{
-                position: 'absolute',
-                left: `${tooltipPos.x}px`,
-                top: `${tooltipPos.y}px`,
-                transform: 'translate(-50%, -100%)',
-                background: 'rgba(14, 20, 36, 0.98)',
-                border: '1px solid rgba(255, 87, 34, 0.5)',
-                borderRadius: 'var(--radius-sm, 6px)',
-                padding: '8px 12px',
-                fontSize: '0.73rem',
-                color: 'var(--text-primary)',
-                whiteSpace: 'nowrap',
-                zIndex: 40,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.65)',
-                pointerEvents: 'none',
-                backdropFilter: 'blur(8px)',
-                lineHeight: 1.45
-              }}
-            >
-              <div style={{ fontWeight: 800, color: '#ffffff', marginBottom: '3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>📅 {hoveredWeek.weekLabel}</span>
-                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                  ({hoveredWeek.sessionCount} sortie{hoveredWeek.sessionCount > 1 ? 's' : ''} de course)
-                </span>
-              </div>
-              <div style={{ fontWeight: 700, color: 'var(--primary)', marginBottom: '3px' }}>
-                🏃 Course : {formatMinutes(hoveredWeek.totalMinutes)}
-              </div>
-              <div style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
-                📏 {hoveredWeek.distanceKm.toFixed(1)} km • +{hoveredWeek.elevationGainM}m D+
-              </div>
-              {hoveredWeek.strengthMinutes > 0 && (
-                <div style={{ color: '#c084fc', fontWeight: 600, marginTop: '2px' }}>
-                  💪 {hoveredWeek.strengthMinutes} min renfort indicatif
-                </div>
-              )}
-              {hoveredWeek.otherMinutes > 0 && (
-                <div style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>
-                  ⚡ {hoveredWeek.otherMinutes} min de cross-training
-                </div>
-              )}
-              {hoveredWeek.avgHeartRate && (
-                <div style={{ color: 'var(--accent-red)', fontWeight: 600 }}>
-                  ❤️ FC moy : {hoveredWeek.avgHeartRate} bpm
-                </div>
-              )}
-            </div>
-          );
-        })()}
+function ActivityCalendar({ activities, referenceDate }: { activities: GarminActivity[]; referenceDate: Date }) {
+  const [sport, setSport] = useState<ActivitySport>('all');
+  const [metric, setMetric] = useState<ActivityMetric>('minutes');
+  const [view, setView] = useState<'day' | 'week'>('day');
+  const [count, setCount] = useState(12);
+  const [offset, setOffset] = useState(0);
+  const [activeDate, setActiveDate] = useState<string>();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const today = formatDateKey(referenceDate);
+  const currentMonday = formatDateKey(getMondayOfWeek(referenceDate));
+  const weeks = useMemo(() => buildActivityWeeks(parseLocalDate(today), count, offset), [today, count, offset]);
+  const byDay = useMemo(() => groupActivitiesByDay(
+    activities.filter(activity => sport === 'all' || activitySport(activity) === sport)
+  ), [activities, sport]);
+  const dates = weeks.flat().filter(day => day <= today);
+  const allVisible = dates.flatMap(day => byDay.get(day) ?? []);
+  const start = dates[0];
+  const end = dates[dates.length - 1];
+  const latestRecordedDate = dates.reduce((last, day) => byDay.has(day) ? day : last, '');
+  const candidate = activeDate && activeDate >= start && activeDate <= end ? activeDate : (latestRecordedDate || end);
+  const selected = view === 'day' ? candidate : formatDateKey(getMondayOfWeek(parseLocalDate(candidate)));
+  const mostRecent = weeks[weeks.length - 1][0];
+  const earliestActivity = [...byDay.keys()].reduce((earliest, day) => day < earliest ? day : earliest, today);
+  const canGoBack = earliestActivity < start;
+  const cutoffs = metricThresholds[metric][view];
 
-        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          <strong style={{ color: 'var(--text-primary)' }}>Régularité & Progression : </strong>
-          {global.progressionComparisonText}
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollLeft = scrollRef.current.scrollWidth;
+  }, [start, view]);
+
+  const details = (view === 'day' ? byDay.get(selected) ?? [] : Array.from({ length: 7 }, (_, index) =>
+    formatDateKey(addDays(parseLocalDate(selected), index)))
+    .filter(day => day <= today).flatMap(day => byDay.get(day) ?? []))
+    .slice().sort((a, b) => b.startTimeLocal.localeCompare(a.startTimeLocal));
+  const selectedMetric = calendarMeasurement(details, metric);
+
+  const moveFocus = (event: KeyboardEvent<HTMLButtonElement>, day: string) => {
+    const moves: Record<string, number> = view === 'day'
+      ? { ArrowLeft: -7, ArrowRight: 7, ArrowUp: -1, ArrowDown: 1 }
+      : { ArrowLeft: -7, ArrowRight: 7 };
+    if (!(event.key in moves)) return;
+    event.preventDefault();
+    const next = formatDateKey(addDays(parseLocalDate(day), moves[event.key]));
+    const button = scrollRef.current?.querySelector<HTMLButtonElement>(`button[data-day="${next}"]`);
+    if (button) {
+      setActiveDate(next);
+      button.focus();
+    }
+  };
+
+  function cell(day: string, cellEnd = day) {
+    if (day > today) return <span className="progress-cell progress-cell-future" key={day} />;
+    const entries = view === 'day' ? byDay.get(day) ?? [] :
+      Array.from({ length: 7 }, (_, index) => formatDateKey(addDays(parseLocalDate(day), index)))
+        .filter(date => date <= today).flatMap(date => byDay.get(date) ?? []);
+    const measurement = calendarMeasurement(entries, metric);
+    const value = measurement.total ?? 0;
+    const missing = entries.length > 0 && measurement.total === undefined;
+    const level = value > 0 ? 1 + cutoffs.filter(cutoff => value >= cutoff).length : 0;
+    const heading = view === 'day' ? fullDate.format(parseLocalDate(day)) : describeDateRange(day, cellEnd);
+    const coverage = measurement.measured < entries.length ? ` · ${measurement.measured}/${entries.length} activités mesurées` : '';
+    const label = `${heading} · ${missing ? 'sans mesure' : formatMetric(metric, value)}${coverage}`;
+    return (
+      <button type="button" className="progress-cell" key={day} data-level={level} data-day={day} data-missing={missing || undefined}
+        tabIndex={day === selected ? 0 : -1} aria-pressed={day === selected} aria-label={label}
+        title={label} onClick={() => setActiveDate(day)} onKeyDown={event => moveFocus(event, day)} />
+    );
+  }
+
+  return (
+    <section className="surface-panel progress-panel progress-activity" aria-labelledby="progress-activity-heading">
+      <div className="progress-section-head">
+        <div>
+          <h2 id="progress-activity-heading">Calendrier d’activité</h2>
+          <p>{describeDateRange(start, end)} · {offset === 0 ? 'période actuelle' : 'historique'}</p>
+        </div>
+        <div className="progress-pager" aria-label="Période du calendrier">
+          <button type="button" title="Période précédente" aria-label="Période précédente" disabled={!canGoBack}
+            onClick={() => { setOffset(offset + count); setActiveDate(undefined); }}><ChevronLeft size={18} /></button>
+          <button type="button" title="Période suivante" aria-label="Période suivante" disabled={offset === 0}
+            onClick={() => { setOffset(Math.max(0, offset - count)); setActiveDate(undefined); }}><ChevronRight size={18} /></button>
         </div>
       </div>
-
-      {/* 4. Charge physiologique et ratio mécanique ACWR */}
-      <div
-        style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '18px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '16px'
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShieldAlert size={17} color="var(--primary)" />
-                Ratio de charge mécanique ACWR (Km-Effort)
-              </h3>
-              <button
-                onClick={() => setInfoTopic('acwr')}
-                style={{
-                  background: 'rgba(245, 158, 11, 0.12)',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                  color: '#f59e0b',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <HelpCircle size={13} /> Comprendre le calcul
-              </button>
-            </div>
-            <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-              Ratio entre {trainingLoad.acuteLoad7d} Km-Effort de course sur 7 jours et une moyenne hebdomadaire de {trainingLoad.chronicLoad28dWeeklyAvg} Km-Effort sur 28 jours. Ce ratio ne mesure pas directement votre tolérance ni votre risque de blessure.
-            </p>
-          </div>
-
-          <span
-            onClick={() => setInfoTopic('acwr')}
-            style={{
-              fontSize: '0.8rem',
-              fontWeight: 800,
-              padding: '4px 12px',
-              borderRadius: '9999px',
-              background: trainingLoad.acwrStatus === 'OPTIMAL' ? 'rgba(16, 185, 129, 0.15)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'rgba(56, 189, 248, 0.15)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)')),
-              color: trainingLoad.acwrStatus === 'OPTIMAL' ? 'var(--accent-green)' : (trainingLoad.acwrStatus === 'CALIBRATING' ? 'var(--accent-cyan)' : (trainingLoad.acwrStatus === 'DANGER_HIGH_RISK' ? 'var(--accent-red)' : 'var(--accent-amber)')),
-              cursor: 'pointer'
-            }}
-            title="Cliquer pour voir l'explication"
-          >
-            Ratio ACWR : {trainingLoad.acwrRatio} • {trainingLoad.acwrStatusLabel || trainingLoad.acwrStatus}
-          </span>
+      <div className="progress-kpis">
+        {([
+          ['minutes', Clock], ['distance', Footprints], ['elevation', Mountain], ['sessions', CalendarDays]
+        ] as const).map(([key, Icon]) => {
+          const { total, measured } = calendarMeasurement(allVisible, key);
+          const value = total !== undefined && (allVisible.length || key === 'sessions') ? formatMetric(key, total) : '—';
+          return <div key={key}>
+            <span><Icon aria-hidden="true" size={16} strokeWidth={1.5} /> {activityMetrics[key]}</span>
+            <strong>{value}</strong>
+            {measured > 0 && measured < allVisible.length &&
+              <small className="progress-coverage">{measured}/{allVisible.length} activités mesurées</small>}
+          </div>;
+        })}
+      </div>
+      <div className="progress-filter-row">
+        <label>Sport<select value={sport} onChange={event => setSport(event.target.value as ActivitySport)}>
+          {Object.entries(activitySports).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select></label>
+        <label>Mesure<select value={metric} onChange={event => setMetric(event.target.value as ActivityMetric)}>
+          {Object.entries(activityMetrics).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select></label>
+        <label>Période<select value={count} onChange={event => {
+          setCount(Number(event.target.value)); setOffset(0); setActiveDate(undefined);
+        }}>
+          <option value={12}>12 semaines</option><option value={26}>26 semaines</option><option value={52}>52 semaines</option>
+        </select></label>
+        <div className="progress-view-switch" role="group" aria-label="Regrouper les activités">
+          <button type="button" aria-pressed={view === 'day'} onClick={() => setView('day')}>Jours</button>
+          <button type="button" aria-pressed={view === 'week'} onClick={() => setView('week')}>Semaines</button>
         </div>
-
-        {/* Distinction Charge Course vs Calisthénie sans impact */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', background: 'rgba(255,255,255,0.025)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontSize: '0.76rem' }}>
-          <span style={{ color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-            <Activity size={14} /> <strong>Charge de course (7j) :</strong> {trainingLoad.acuteLoad7d} Km-Effort estimés
-          </span>
-          <span style={{ color: 'var(--border-color)' }}>|</span>
-          <span style={{ color: '#a78bfa', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-            <Dumbbell size={14} /> <strong>Calisthénie / Renfo (7j) :</strong> {trainingLoad.calisthenicsAcuteLoad7d} unités de charge estimée ({trainingLoad.calisthenicsSessionsCount7d} séance{trainingLoad.calisthenicsSessionsCount7d > 1 ? 's' : ''})
-          </span>
-          <span style={{ color: 'var(--accent-green)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-            <ShieldCheck size={14} /> Sollicitation différente de la course ; adapter aussi selon la fatigue et les douleurs.
-          </span>
-        </div>
-
-        <AcwrGauge ratio={trainingLoad.acwrRatio} />
-
-        {/* Diagnostic & Conseil d'action direct */}
-        <div style={{ background: 'var(--bg-main)', padding: '12px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <div>
-            <strong style={{ color: 'var(--text-primary)' }}>Lecture de la charge :</strong> {trainingLoad.acwrLabel}
-          </div>
-          {trainingLoad.acwrActionAdvice && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-green)', fontWeight: 600, fontSize: '0.78rem' }}>
-              <span>💡</span>
-              <span>{trainingLoad.acwrActionAdvice}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Graphique SVG Modèle Banister (Courbes CTL / ATL / TSB & Barres TRIMP) */}
-        <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '16px', marginTop: '4px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                <h4 style={{ fontSize: '0.94rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <TrendingUp size={16} color="var(--accent-blue)" />
-                  Tendance de charge estimée (CTL / ATL / TSB)
-                </h4>
-                <button
-                  onClick={() => setInfoTopic('banister')}
-                  style={{
-                    background: 'rgba(168, 85, 247, 0.12)',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
-                    color: '#a855f7',
-                    fontSize: '0.72rem',
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  <HelpCircle size={13} /> Comprendre le modèle
-                </button>
-              </div>
-              <p style={{ margin: '2px 0 0 0', fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
-                Historique modélisé sur {TRAINING_LOAD_WINDOWS.physiologicalHistoryDays} jours : Fitness chronique (CTL {TRAINING_LOAD_WINDOWS.chronicFitnessDays}j), Fatigue aiguë (ATL {TRAINING_LOAD_WINDOWS.acuteFatigueDays}j) et Forme (TSB).
-              </p>
-            </div>
-
-            {/* Légende du graphique */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.72rem', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ width: '12px', height: '3px', background: 'var(--accent-blue)', display: 'inline-block', borderRadius: '2px' }} />
-                <span>CTL (Fitness 42j)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ width: '12px', height: '3px', background: 'var(--accent-amber)', display: 'inline-block', borderRadius: '2px' }} />
-                <span>ATL (Fatigue 7j)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ width: '12px', height: '3px', background: 'var(--accent-green)', display: 'inline-block', borderRadius: '2px' }} />
-                <span>TSB (Forme)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ width: '7px', height: '9px', background: 'rgba(148, 163, 184, 0.35)', display: 'inline-block', borderRadius: '1px' }} />
-                <span style={{ color: 'var(--text-muted)' }}>Charge Journalière</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Infobulle de survol du jour */}
-          {hoveredFitnessDay && (
-            <div
-              style={{
-                background: 'rgba(20, 28, 48, 0.96)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '8px 14px',
-                marginBottom: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '16px',
-                fontSize: '0.76rem',
-                flexWrap: 'wrap',
-                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.4)'
-              }}
-            >
-              <strong style={{ color: 'var(--text-primary)' }}>{hoveredFitnessDay.dateLabel} ({hoveredFitnessDay.date})</strong>
-              <span style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>CTL (Fitness) : <strong>{hoveredFitnessDay.ctl}</strong></span>
-              <span style={{ color: 'var(--accent-amber)', fontWeight: 600 }}>ATL (Fatigue) : <strong>{hoveredFitnessDay.atl}</strong></span>
-              <span style={{ color: hoveredFitnessDay.tsb >= 0 ? 'var(--accent-green)' : 'var(--accent-orange)', fontWeight: 700 }}>
-                TSB (Forme) : <strong>{hoveredFitnessDay.tsb > 0 ? `+${hoveredFitnessDay.tsb}` : hoveredFitnessDay.tsb}</strong>
-              </span>
-              <span style={{ color: 'var(--text-secondary)' }}>Charge jour : <strong>{hoveredFitnessDay.dailyLoad} TRIMP</strong></span>
-            </div>
-          )}
-
-          {/* SVG Canvas */}
-          {(() => {
-            const trend = trainingLoad.fitnessTrend || [];
-            if (trend.length === 0) {
-              return (
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '30px', textAlign: 'center' }}>
-                  Historique en cours d'accumulation pour tracer le graphique Banister.
-                </div>
-              );
-            }
-
-            const svgWidth = 760;
-            const svgHeight = 220;
-            const padL = 40;
-            const padR = 20;
-            const padT = 20;
-            const padB = 30;
-            const innerWidth = svgWidth - padL - padR;
-            const innerHeight = svgHeight - padT - padB;
-
-            const minTsb = Math.min(-20, ...trend.map(d => d.tsb));
-            const maxLoad = Math.max(30, ...trend.map(d => Math.max(d.ctl, d.atl, d.dailyLoad * 0.4)));
-            const minVal = Math.min(minTsb, 0);
-            const maxVal = Math.max(maxLoad, ...trend.map(d => d.tsb)) * 1.1;
-            const valRange = Math.max(1, maxVal - minVal);
-
-            const yFor = (v: number) => padT + innerHeight - ((v - minVal) / valRange) * innerHeight;
-            const xFor = (idx: number) => padL + (idx / Math.max(1, trend.length - 1)) * innerWidth;
-            const yZero = yFor(0);
-
-            const ctlPath = trend.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(d.ctl).toFixed(1)}`).join(' ');
-            const atlPath = trend.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(d.atl).toFixed(1)}`).join(' ');
-            const tsbPath = trend.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xFor(i).toFixed(1)} ${yFor(d.tsb).toFixed(1)}`).join(' ');
-
-            const maxDaily = Math.max(1, ...trend.map(d => d.dailyLoad));
-
+      </div>
+      <div className="progress-grid-scroll" ref={scrollRef}>
+        <div className="progress-grid" role="group" aria-label={view === 'day' ? 'Activités par jour' : 'Activités par semaine'}>
+          {view === 'day' && <div className="progress-grid-labels" aria-hidden="true">
+            <span />{dayLabels.map(label => <span key={label}>{label}</span>)}
+          </div>}
+          {weeks.map((week, index) => {
+            const month = parseLocalDate(week[0]).getMonth();
+            const showMonth = index === 0 || month !== parseLocalDate(weeks[index - 1][0]).getMonth();
             return (
-              <div style={{ width: '100%', overflowX: 'auto' }}>
-                <svg
-                  viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                  style={{ width: '100%', minWidth: '600px', height: 'auto', display: 'block' }}
-                >
-                  <line x1={padL} y1={padT} x2={svgWidth - padR} y2={padT} stroke="rgba(255,255,255,0.05)" />
-                  <line x1={padL} y1={yZero} x2={svgWidth - padR} y2={yZero} stroke="rgba(255,255,255,0.18)" strokeDasharray="4 4" />
-                  <line x1={padL} y1={padT + innerHeight} x2={svgWidth - padR} y2={padT + innerHeight} stroke="rgba(255,255,255,0.05)" />
-
-                  <text x={padL - 8} y={padT + 4} fill="var(--text-muted)" fontSize="10" textAnchor="end">
-                    {Math.round(maxVal)}
-                  </text>
-                  <text x={padL - 8} y={yZero + 4} fill="var(--text-muted)" fontSize="10" textAnchor="end">
-                    0
-                  </text>
-                  <text x={padL - 8} y={padT + innerHeight} fill="var(--text-muted)" fontSize="10" textAnchor="end">
-                    {Math.round(minVal)}
-                  </text>
-
-                  {/* Daily Load Bars */}
-                  {trend.map((d, i) => {
-                    const barH = (d.dailyLoad / maxDaily) * 45;
-                    return (
-                      <rect
-                        key={`load-${d.date}`}
-                        x={xFor(i) - 2}
-                        y={padT + innerHeight - barH}
-                        width={4}
-                        height={barH}
-                        fill="rgba(148, 163, 184, 0.22)"
-                        rx={1}
-                      />
-                    );
-                  })}
-
-                  <path d={ctlPath} fill="none" stroke="var(--accent-blue)" strokeWidth="2.5" />
-                  <path d={atlPath} fill="none" stroke="var(--accent-amber)" strokeWidth="2" />
-                  <path d={tsbPath} fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeDasharray="4 3" />
-
-                  {trend.map((d, i) => {
-                    if (i % Math.ceil(trend.length / 8) !== 0 && i !== trend.length - 1) return null;
-                    return (
-                      <text
-                        key={`x-${d.date}`}
-                        x={xFor(i)}
-                        y={svgHeight - 10}
-                        fill="var(--text-muted)"
-                        fontSize="9.5"
-                        textAnchor="middle"
-                      >
-                        {d.dateLabel}
-                      </text>
-                    );
-                  })}
-
-                  {/* High performance continuous mouse-tracking overlay across the full curve area */}
-                  <rect
-                    x={padL}
-                    y={padT}
-                    width={innerWidth}
-                    height={innerHeight}
-                    fill="transparent"
-                    style={{ cursor: 'crosshair' }}
-                    onMouseMove={(e) => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const mouseX = e.clientX - rect.left;
-                      const ratio = Math.max(0, Math.min(1, mouseX / rect.width));
-                      const nearestIdx = Math.round(ratio * (trend.length - 1));
-                      if (trend[nearestIdx]) {
-                        setHoveredFitnessDay(trend[nearestIdx]);
-                      }
-                    }}
-                    onMouseLeave={() => setHoveredFitnessDay(null)}
-                  />
-
-                  {hoveredFitnessDay && (() => {
-                    const idx = trend.findIndex(d => d.date === hoveredFitnessDay.date);
-                    if (idx === -1) return null;
-                    const x = xFor(idx);
-                    return (
-                      <g style={{ pointerEvents: 'none' }}>
-                        <line x1={x} y1={padT} x2={x} y2={padT + innerHeight} stroke="rgba(255,255,255,0.4)" strokeDasharray="3 3" />
-                        <circle cx={x} cy={yFor(hoveredFitnessDay.ctl)} r={4.5} fill="var(--accent-blue)" stroke="#fff" strokeWidth="1.5" />
-                        <circle cx={x} cy={yFor(hoveredFitnessDay.atl)} r={4.5} fill="var(--accent-amber)" stroke="#fff" strokeWidth="1.5" />
-                        <circle cx={x} cy={yFor(hoveredFitnessDay.tsb)} r={4.5} fill={hoveredFitnessDay.tsb >= 0 ? 'var(--accent-green)' : 'var(--accent-orange)'} stroke="#fff" strokeWidth="1.5" />
-                      </g>
-                    );
-                  })()}
-                </svg>
+              <div className="progress-grid-week" key={week[0]} data-current={week[0] === currentMonday}>
+                <span className="progress-month" aria-hidden="true">{showMonth && monthLabel.format(parseLocalDate(week[0]))}</span>
+                {view === 'day' ? week.map(day => cell(day)) : cell(week[0], week[0] === mostRecent && offset === 0 ? today : week[6])}
               </div>
             );
-          })()}
+          })}
         </div>
       </div>
-
-      {/* 5. Section Spécificité Trail Montagne & Résistance Musculaire (Fusionnée) */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-          gap: '14px'
-        }}
-      >
-        {/* Volet A : Blindage Excentrique D- & Renforcement */}
-        <div
-          style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-md)',
-            padding: '18px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShieldCheck size={18} color="var(--accent-green)" />
-            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>
-              Dénivelé Négatif D- & Armure Musculaire
-            </h4>
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--accent-cyan)' }}>
-                -{trailSpecific.totalElevationLossM.toLocaleString('fr-CA')} m D-
-              </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>Descente cumulée totale</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--accent-green)' }}>
-                {strength.quadArmorScore}/100
-              </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--accent-green)', fontWeight: 700 }}>
-                {strength.quadArmorRating}
-              </div>
-            </div>
-          </div>
-
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
-            Sur les <strong>3 370 m D-</strong> du QMT-80, la calisthénie et le renforcement des quadriceps préservent vos fibres musculaires et évitent la tétanie dès le km 50.
-          </p>
-
-          <div style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', fontSize: '0.74rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-            <span>🏋️ Total Force : <strong>{formatMinutes(strength.totalDurationMinutes)}</strong></span>
-            <span>📅 Fréquence : <strong>{strength.weeklyFrequency}/sem</strong></span>
-            <span>⚖️ Ratio Force/Course : <strong>{strength.strengthToRunRatioPct}%</strong></span>
-          </div>
-        </div>
-
-        {/* Volet B : Allure Pente & Vitesse Ascensionnelle (VAM) */}
-        <div
-          style={{
-            background: 'var(--bg-surface)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-md)',
-            padding: '18px 20px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '12px'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Mountain size={18} color="var(--accent-orange)" />
-            <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0 }}>
-              Pente, Vitesse Ascensionnelle & Allure GAP
-            </h4>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-            <div style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>VAM Moyenne en côte</div>
-              <strong style={{ fontSize: '1.15rem', color: 'var(--accent-amber)' }}>{trailSpecific.avgVamMPerHour} m/h</strong>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Max : {trailSpecific.maxVamMPerHour} m/h</div>
-            </div>
-            <div style={{ background: 'var(--bg-main)', padding: '10px 12px', borderRadius: 'var(--radius-sm)' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Allure Ajustée Pente (GAP)</div>
-              <strong style={{ fontSize: '1.15rem', color: 'var(--primary)' }}>{trailSpecific.gradeAdjustedPaceMinKm}</strong>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>Brute : {running.avgPaceMinKm}</div>
-            </div>
-          </div>
-
-          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px 12px', borderRadius: 'var(--radius-sm)', fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
-            <strong style={{ color: 'var(--accent-orange)' }}>Densité D+ : </strong>
-            {running.densityComparisonText}
-          </div>
+      <div className="progress-grid-footer">
+        <p>{allVisible.length ? formatMetric('sessions', allVisible.length) + ' sur la période' : 'Aucune activité pour cette sélection'}</p>
+        <div className="progress-legend progress-heat-legend" aria-label={`De zéro à ${formatMetric(metric, cutoffs[2])} ou plus`}>
+          <span>0</span>{[0, 1, 2, 3, 4].map(level => <i key={level} data-level={level} />)}
+          <span>{formatMetric(metric, cutoffs[2])} et +</span>
         </div>
       </div>
-
-      {/* 6. Section Profil Cardiaque & Efficacité Aérobie (Fusionnée) */}
-      <div
-        style={{
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-md)',
-          padding: '18px 20px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px'
-        }}
-      >
-        {/* Diagnostic Tendance Cardiaque */}
-        <div
-          style={{
-            background: heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0
-              ? 'linear-gradient(90deg, rgba(16, 185, 129, 0.15), rgba(56, 189, 248, 0.15))'
-              : 'linear-gradient(90deg, rgba(255, 87, 34, 0.12), rgba(245, 158, 11, 0.12))',
-            border: heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0
-              ? '1px solid rgba(16, 185, 129, 0.35)'
-              : '1px solid var(--border-color)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '12px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px'
-          }}
-        >
-          <div
-            style={{
-              width: '38px',
-              height: '38px',
-              borderRadius: '50%',
-              background: heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 87, 34, 0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}
-          >
-            {heartRate.heartRateDeltaBpm && heartRate.heartRateDeltaBpm < 0 ? (
-              <TrendingDown size={20} color="var(--accent-green)" />
-            ) : (
-              <Heart size={20} color="var(--primary)" />
-            )}
-          </div>
-          <div>
-            <h4 style={{ fontSize: '0.95rem', fontWeight: 800, margin: '0 0 2px 0' }}>
-              {heartRate.heartRateTrend === 'DECREASING'
-                ? 'Économie d\'énergie : Votre FC moyenne est en baisse à allure égale !'
-                : 'Fréquence cardiaque aérobie stable et bien calibrée.'}
-            </h4>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: 0 }}>
-              {heartRate.comparisonBaselineText}
-            </p>
-          </div>
+      <div className="progress-selection" aria-live="polite">
+        <div className="progress-section-head">
+          <h3>{view === 'day' ? fullDate.format(parseLocalDate(selected)) :
+            describeDateRange(selected, selected === currentMonday ? today : formatDateKey(addDays(parseLocalDate(selected), 6)))}</h3>
+          {details.length > 0 && <p>{selectedMetric.total === undefined ? 'Mesure indisponible' : formatMetric(metric, selectedMetric.total)}
+            {selectedMetric.measured > 0 && selectedMetric.measured < details.length &&
+              ` · ${selectedMetric.measured}/${details.length} activités mesurées`}</p>}
         </div>
+        {details.length ? (
+          <ul className="progress-session-list">
+            {details.map(activity => (
+              <li key={activity.activityId}>
+                <span><strong>{activitySport(activity) === 'cardio' && activity.activityName === 'Calisthénie / Renforcement'
+                  ? 'Cardio Garmin' : activity.activityName}</strong>
+                  <small>{view === 'week' && `${shortDate.format(parseLocalDate(getGarminLocalDateKey(activity)))} · `}
+                    {activitySports[activitySport(activity)]} · {activity.source === 'GARMIN_CONNECT' ? 'Garmin' : 'Import GPX'}</small>
+                </span>
+                <span>{duration(activity.durationMinutes)}
+                  {activity.distanceKm != null && ` · ${formatMetric('distance', activity.distanceKm)}`}
+                  {activity.elevationGainM != null && ` · +${formatMetric('elevation', activity.elevationGainM)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : <p>Aucune activité enregistrée</p>}
+      </div>
+    </section>
+  );
+}
 
-        {/* Répartition des 3 Zones Cardiaques */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
-          <div>
-            <h5 style={{ fontSize: '0.85rem', fontWeight: 700, margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
-              Répartition du Temps par Zone Cardiaque
-            </h5>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.76rem' }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ color: 'var(--accent-green)' }}>Zone 2 (Endurance Fondamentale &lt; {heartRateZones.zone2[1]} bpm)</span>
-                  <strong>{running.intensityDistribution.zone2Pct}% ({formatMinutes(running.intensityDistribution.zone2EnduranceMinutes)})</strong>
-                </div>
-                <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px' }}>
-                  <div style={{ width: `${running.intensityDistribution.zone2Pct}%`, height: '100%', background: 'var(--accent-green)', borderRadius: '9999px' }} />
-                </div>
-              </div>
+function TrainingReview({ garminActivities, comparisons, referenceDate }: StatsDashboardProps) {
+  const review = useMemo(() => buildTrainingReview(garminActivities, comparisons, referenceDate),
+    [garminActivities, comparisons, referenceDate]);
+  const { recent, previous } = review;
+  const comparable = review.spansPreviousPeriod && previous.runs > 0 && recent.runs > 0;
+  const volumeChange = recent.minutes - previous.minutes;
+  const metrics = [
+    { label: 'Temps de course', value: recent.runs ? duration(recent.minutes) : '—',
+      note: comparable ? (volumeChange === 0 ? 'Même durée que les 4 semaines précédentes' :
+        `${volumeChange > 0 ? '+' : '−'}${duration(Math.abs(volumeChange))} vs les 4 semaines précédentes`) : undefined },
+    { label: 'Distance', value: recent.distance.total === undefined ? '—' : formatMetric('distance', recent.distance.total),
+      note: recent.distance.measured > 0 && recent.distance.measured < recent.runs
+        ? `${recent.distance.measured}/${recent.runs} sorties mesurées` : undefined },
+    { label: 'Dénivelé +', value: recent.elevation.total === undefined ? '—' : formatMetric('elevation', recent.elevation.total),
+      note: recent.elevation.measured > 0 && recent.elevation.measured < recent.runs
+        ? `${recent.elevation.measured}/${recent.runs} sorties mesurées` : undefined }
+  ];
 
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ color: 'var(--accent-amber)' }}>Zone 3/4 (Tempo & Seuil {heartRateZones.zone2[1]}-{heartRateZones.zone5[0] - 1} bpm)</span>
-                  <strong>{running.intensityDistribution.zoneTempoThresholdPct}% ({formatMinutes(running.intensityDistribution.zoneTempoThresholdMinutes)})</strong>
-                </div>
-                <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px' }}>
-                  <div style={{ width: `${running.intensityDistribution.zoneTempoThresholdPct}%`, height: '100%', background: 'var(--accent-amber)', borderRadius: '9999px' }} />
-                </div>
-              </div>
-
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-                  <span style={{ color: 'var(--accent-red)' }}>Zone 5 (VO2 Max ≥ {heartRateZones.zone5[0]} bpm)</span>
-                  <strong>{running.intensityDistribution.zoneMaxPct}% ({formatMinutes(running.intensityDistribution.zoneMaxMinutes)})</strong>
-                </div>
-                <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '9999px' }}>
-                  <div style={{ width: `${running.intensityDistribution.zoneMaxPct}%`, height: '100%', background: 'var(--accent-red)', borderRadius: '9999px' }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ background: 'var(--bg-main)', padding: '14px 16px', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--accent-cyan)', fontWeight: 700, fontSize: '0.84rem' }}>
-                <Sparkles size={15} /> Indice d'Efficacité Aérobie (AEI) : {heartRate.aerobicEfficiencyIndex || 'En calibration'}
-              </div>
-              <button
-                onClick={() => setInfoTopic('aei')}
-                style={{
-                  background: 'rgba(56, 189, 248, 0.12)',
-                  border: '1px solid rgba(56, 189, 248, 0.3)',
-                  color: '#38bdf8',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                  padding: '2px 8px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                <HelpCircle size={13} /> Comprendre l'AEI
-              </button>
-            </div>
-            <p style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
-              L'AEI mesure la distance parcourue par battement cardiaque. Un AEI croissant démontre un cœur plus puissant et une meilleure capillarisation musculaire.
-            </p>
-          </div>
+  return (
+    <section className="surface-panel progress-panel progress-review" aria-labelledby="training-review-title">
+      <div className="progress-section-head">
+        <div>
+          <h2 id="training-review-title">Course et trail · 4 semaines complètes</h2>
+          <p>{describeDateRange(review.start, review.end)}</p>
         </div>
       </div>
+      <dl className="progress-review-totals">
+        {metrics.map(({ label, value, note }) => (
+          <div key={label}>
+            <dt>{label}</dt><dd>{value}{note && <small className="progress-coverage">{note}</small>}</dd>
+          </div>
+        ))}
+      </dl>
+      {!recent.runs && <p className="progress-note">Aucune sortie enregistrée sur ces quatre semaines.</p>}
+      <details className="progress-disclosure">
+        <summary>Détail par semaine et ressenti</summary>
+        <div className="progress-review-details">
+          <table className="progress-review-table">
+            <caption>Sorties enregistrées par semaine</caption>
+            <thead><tr><th scope="col">Semaine</th><th scope="col">Temps</th><th scope="col">Distance</th><th scope="col">D+</th></tr></thead>
+            <tbody>{review.weeks.map(week => (
+              <tr key={week.start}>
+                <th scope="row">{shortDate.format(parseLocalDate(week.start))}<small>{formatMetric('sessions', week.runs)}</small></th>
+                <td>{duration(week.minutes)}</td>
+                <td>{week.distance.total === undefined ? '—' : formatMetric('distance', week.distance.total)}
+                  {week.distance.measured > 0 && week.distance.measured < week.runs && <small>{week.distance.measured}/{week.runs} sorties</small>}</td>
+                <td>{week.elevation.total === undefined ? '—' : formatMetric('elevation', week.elevation.total)}
+                  {week.elevation.measured > 0 && week.elevation.measured < week.runs && <small>{week.elevation.measured}/{week.runs} sorties</small>}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+          <dl className="progress-review-context">
+            <div><dt>Plus longue en durée</dt><dd>{recent.longest ? <>
+              {duration(recent.longest.durationMinutes)}
+              {recent.longest.distanceKm != null && ` · ${formatMetric('distance', recent.longest.distanceKm)}`}
+              {recent.longest.elevationGainM != null && ` · +${formatMetric('elevation', recent.longest.elevationGainM)}`}
+              <small>{shortDate.format(parseLocalDate(getGarminLocalDateKey(recent.longest)))}</small>
+            </> : '—'}</dd></div>
+            <div><dt>Régularité</dt><dd>{recent.runs} sorties sur {recent.days} jours<small>{review.strength} activités de renforcement</small></dd></div>
+            <div><dt>Fréquence cardiaque moyenne</dt><dd>{review.hr === undefined ? '—' : `${integer.format(review.hr)} bpm`}
+              {review.hrCount > 0 && <small>Pondérée par la durée · {review.hrCount}/{recent.runs} sorties</small>}</dd></div>
+            <div><dt>Effort ressenti moyen</dt><dd>{review.rpe === undefined ? '—' : `${decimal.format(review.rpe)} / 10`}
+              {review.rpeCount > 0 && <small>{review.rpeCount}/{recent.runs} sorties notées</small>}</dd></div>
+          </dl>
+          {comparable && <p className="progress-note">
+            Période précédente · {describeDateRange(review.previousStart, review.previousEnd)} · {duration(previous.minutes)} de course
+          </p>}
+        </div>
+      </details>
+    </section>
+  );
+}
 
-      {/* Modale d'aide pédagogique sur les calculs (ACWR, Banister, AEI) */}
-      <StatsMetricModal
-        topic={infoTopic}
-        trainingLoad={trainingLoad}
-        heartRateZones={heartRateZones}
-        onClose={() => setInfoTopic(null)}
-      />
-
-      {/* Modale d'évolution interactive au clic sur n'importe quelle carte */}
-      {evolutionMetric && (
-        <StatsEvolutionModal
-          metric={evolutionMetric}
-          onClose={() => setEvolutionMetric(null)}
-          garminActivities={garminActivities}
-          wellnessHistory={wellnessHistory}
-          trainingLoad={trainingLoad}
-          athleteFcMax={athleteFcMax}
-          baselineRestingHr={baselineRhr}
-          initialScope={scope === 'week' ? 'week' : (scope === '4w' ? '4w' : (scope === 'all' ? 'all' : 'plan'))}
-        />
+export function StatsDashboard(props: StatsDashboardProps) {
+  const { garminActivities, referenceDate, wellness, onSaveActivityFeedback } = props;
+  const sleep = wellness?.sleep?.totalMinutes;
+  const restingHeartRate = wellness?.restingHeartRate;
+  const hrv = wellness?.hrv?.lastNightAvg;
+  return (
+    <div className="training-progress">
+      <PlanProgress {...props} />
+      <ActivityCalendar activities={garminActivities} referenceDate={referenceDate} />
+      <TrainingReview {...props} />
+      {wellness && (sleep || restingHeartRate || hrv) ? (
+        <details className="surface-panel progress-panel progress-disclosure progress-recovery">
+          <summary>Mesures Garmin · {shortDate.format(parseLocalDate(wellness.date))}</summary>
+          <dl className="progress-review-context">
+            {sleep ? <div><dt>Sommeil</dt><dd>{duration(sleep)}</dd></div> : null}
+            {restingHeartRate ? <div><dt>FC au repos</dt><dd>{integer.format(restingHeartRate)} bpm</dd></div> : null}
+            {hrv ? <div><dt>VFC nocturne</dt><dd>{integer.format(hrv)} ms</dd></div> : null}
+          </dl>
+        </details>
+      ) : null}
+      {onSaveActivityFeedback && garminActivities.length > 0 && (
+        <div className="surface-panel progress-panel progress-journal">
+          <ActivityFeedbackJournal activities={garminActivities} onSave={onSaveActivityFeedback} />
+        </div>
       )}
     </div>
   );
-};
+}

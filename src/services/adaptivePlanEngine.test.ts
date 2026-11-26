@@ -18,6 +18,7 @@ import {
   applyAdaptiveModifications,
   buildOverridesFromActions,
   getPriorWeekPostponedEventIds,
+  reconcilePostponedAdaptiveOverrides,
   isAutoAdaptEnabled,
   setAutoAdaptEnabled
 } from './adaptivePlanEngine';
@@ -99,6 +100,62 @@ describe('Adaptive Plan Engine', () => {
     const crossWeekIds = getPriorWeekPostponedEventIds([crossWeekMove], destinationWeek);
     const preservedStarted = buildOverridesFromActions([], { [source.id]: previous }, '2026-09-14', destinationWeek, new Set([source.id]), crossWeekIds);
     expect(preservedStarted[source.id]).toEqual(previous);
+  });
+
+  it('clears a source-week adaptation immediately when its workout moves across weeks', () => {
+    const source = mockWeeklySportEvents[1];
+    const moved = {
+      ...source,
+      startDate: '2026-09-14T17:00:00.000Z',
+      endDate: '2026-09-14T18:05:00.000Z',
+      metadata: { ...source.metadata, isPostponed: true, originalDate: '2026-09-08' }
+    };
+    const previous = {
+      eventId: source.id,
+      date: '2026-09-08',
+      originalTitle: source.title,
+      adaptedTitle: 'Séance réduite semaine précédente',
+      originalDurationMinutes: source.durationMinutes,
+      adaptedDurationMinutes: 30,
+      originalSportType: source.sportType,
+      adaptationReason: 'Charge élevée',
+      coachingCue: 'Rester facile',
+      createdAt: '2026-09-08T10:00:00.000Z'
+    };
+
+    const result = reconcilePostponedAdaptiveOverrides([moved], { [source.id]: previous });
+
+    expect(result.removedEventIds).toEqual(new Set([source.id]));
+    expect(result.overrides).toEqual({});
+    expect(applyAdaptiveModifications([], [moved], result.overrides).allEvents[0].durationMinutes)
+      .toBe(source.durationMinutes);
+  });
+
+  it('keeps the adaptation when a workout moves within its source week', () => {
+    const source = mockWeeklySportEvents[1];
+    const moved = {
+      ...source,
+      startDate: '2026-09-09T17:00:00.000Z',
+      endDate: '2026-09-09T18:05:00.000Z',
+      metadata: { ...source.metadata, isPostponed: true, originalDate: '2026-09-08' }
+    };
+    const previous = {
+      eventId: source.id,
+      date: '2026-09-08',
+      originalTitle: source.title,
+      adaptedTitle: 'Séance réduite',
+      originalDurationMinutes: source.durationMinutes,
+      adaptedDurationMinutes: 30,
+      originalSportType: source.sportType,
+      adaptationReason: 'Charge élevée',
+      coachingCue: 'Rester facile',
+      createdAt: '2026-09-08T10:00:00.000Z'
+    };
+
+    const result = reconcilePostponedAdaptiveOverrides([moved], { [source.id]: previous });
+
+    expect(result.removedEventIds).toEqual(new Set());
+    expect(result.overrides).toEqual({ [source.id]: previous });
   });
 
   it('does not attach a date-based override to a changed or already completed workout', () => {

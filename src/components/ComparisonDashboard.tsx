@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ActivityComparison, GarminActivity, GarminSyncState } from '../types/garmin';
+import './ComparisonDashboard.css';
+import { ActivityComparison, GarminActivity } from '../types/garmin';
 import { formatDateKey, toLocalDateKey, parseLocalDate, addDays } from '../services/dateUtils';
 import { calculateSessionTrimp } from '../services/statsEngine';
 import { formatGarminActivityName, isStrengthOrCalisthenics, isTrailOrRunning } from '../services/activityClassifier';
@@ -10,11 +11,9 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronDown,
-  ChevronUp,
   Clock,
   Compass,
   FileSpreadsheet,
-  Filter,
   Flame,
   Heart,
   LayoutGrid,
@@ -29,7 +28,6 @@ import {
 
 interface ComparisonDashboardProps {
   comparisons: ActivityComparison[];
-  garminState: GarminSyncState;
   onOpenGarminSync: () => void;
   availableGarminActivities?: GarminActivity[];
   manualPairs?: Record<string, string>;
@@ -44,7 +42,6 @@ type StatusFilterType = 'ALL' | 'COMPLIANT' | 'PARTIAL' | 'MISSED' | 'UNPLANNED'
 
 export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   comparisons,
-  garminState,
   onOpenGarminSync,
   availableGarminActivities = [],
   manualPairs = {},
@@ -67,12 +64,22 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   const countMissed = comparisons.filter(c => c.status === 'MISSED').length;
   const countUnplanned = comparisons.filter(c => c.status === 'UNPLANNED').length;
   const countPending = comparisons.filter(c => c.status === 'PENDING').length;
+  const profile = getDynamicAthleteProfile(availableGarminActivities, athlete);
 
   // Filtrage selon le statut actif
   const displayedComparisons = comparisons.filter(c => {
     if (statusFilter === 'ALL') return true;
     return c.status === statusFilter;
   });
+
+  const filters: { value: StatusFilterType; label: string; count: number }[] = [
+    { value: 'ALL', label: 'Toutes', count: countAll },
+    { value: 'COMPLIANT', label: 'Conformes', count: countCompliant },
+    { value: 'PARTIAL', label: 'Avec écarts', count: countPartial },
+    { value: 'MISSED', label: 'Sans activité liée', count: countMissed },
+    { value: 'UNPLANNED', label: 'Hors plan', count: countUnplanned },
+    { value: 'PENDING', label: 'Aujourd’hui', count: countPending }
+  ];
 
   const getStatusBadge = (status: string, score: number) => {
     switch (status) {
@@ -91,19 +98,19 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
       case 'MISSED':
         return (
           <span className="status-pill status-missed">
-            <XCircle size={12} /> Non réalisée
+            <XCircle size={12} /> Sans activité liée
           </span>
         );
       case 'UNPLANNED':
         return (
           <span className="status-pill status-unplanned">
-            <PlusCircle size={12} /> Bonus
+            <PlusCircle size={12} /> Hors plan
           </span>
         );
       case 'PENDING':
         return (
-          <span className="status-pill" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-            <Clock size={12} /> Aujourd'hui (En attente)
+          <span className="status-pill">
+            <Clock size={12} /> Aujourd’hui
           </span>
         );
       default:
@@ -162,105 +169,20 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      {/* Barre d'Informations Supérieure */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '10px',
-          padding: '10px 16px',
-          background: 'rgba(255, 255, 255, 0.02)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: '0.78rem'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Activity size={15} color="var(--primary)" />
-          <span>
-            <strong style={{ color: '#fff' }}>Télémétrie Garmin</strong>
-            <span className="desktop-only"> : {displayedComparisons.length} sur {countAll} séance(s)</span>
-          </span>
+    <div className="sessions-page">
+      <div className="surface-panel sessions-toolbar">
+        <label>Statut
+          <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as StatusFilterType)}>
+            {filters.map(filter => <option key={filter.value} value={filter.value}>{filter.label} ({filter.count})</option>)}
+          </select>
+        </label>
+        <div className="sessions-actions">
+          <button type="button" onClick={() => setViewMode(viewMode === 'table' ? 'cards' : 'table')} className="btn-secondary">
+            {viewMode === 'table' ? <LayoutGrid size={16} aria-hidden="true" /> : <FileSpreadsheet size={16} aria-hidden="true" />}
+            {viewMode === 'table' ? 'Cartes' : 'Tableau'}
+          </button>
+          <button type="button" onClick={onOpenGarminSync} className="btn-secondary">Réglages Garmin</button>
         </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <button
-            onClick={() => setViewMode(viewMode === 'table' ? 'cards' : 'table')}
-            className="btn-secondary"
-            style={{ padding: '4px 8px', fontSize: '0.74rem' }}
-          >
-            {viewMode === 'table' ? <LayoutGrid size={12} /> : <FileSpreadsheet size={12} />}
-            <span>{viewMode === 'table' ? 'Vue Cartes' : 'Vue Tableau Pro'}</span>
-          </button>
-
-          <button
-            onClick={onOpenGarminSync}
-            className="btn-secondary"
-            style={{ padding: '4px 8px', fontSize: '0.74rem' }}
-          >
-            <RefreshCw size={12} />
-            <span>Synchro Garmin</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Boutons de Filtre par Statut (Ruban Défilable) */}
-      <div className="filter-chips-scroll">
-        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-          <Filter size={12} /> Statut :
-        </span>
-
-        <button
-          className={`chip-btn ${statusFilter === 'ALL' ? 'active' : ''}`}
-          onClick={() => setStatusFilter('ALL')}
-        >
-          Toutes ({countAll})
-        </button>
-
-        <button
-          className={`chip-btn ${statusFilter === 'COMPLIANT' ? 'active' : ''}`}
-          onClick={() => setStatusFilter('COMPLIANT')}
-          style={statusFilter === 'COMPLIANT' ? { borderColor: '#10b981', color: '#34d399' } : undefined}
-        >
-          ✅ Conformes ({countCompliant})
-        </button>
-
-        <button
-          className={`chip-btn ${statusFilter === 'PARTIAL' ? 'active' : ''}`}
-          onClick={() => setStatusFilter('PARTIAL')}
-          style={statusFilter === 'PARTIAL' ? { borderColor: '#f59e0b', color: '#fbbf24' } : undefined}
-        >
-          ⚠️ Écarts ({countPartial})
-        </button>
-
-        <button
-          className={`chip-btn ${statusFilter === 'MISSED' ? 'active' : ''}`}
-          onClick={() => setStatusFilter('MISSED')}
-          style={statusFilter === 'MISSED' ? { borderColor: '#ef4444', color: '#f87171' } : undefined}
-        >
-          ❌ Manquées ({countMissed})
-        </button>
-
-        <button
-          className={`chip-btn ${statusFilter === 'UNPLANNED' ? 'active' : ''}`}
-          onClick={() => setStatusFilter('UNPLANNED')}
-          style={statusFilter === 'UNPLANNED' ? { borderColor: '#38bdf8', color: '#38bdf8' } : undefined}
-        >
-          ➕ Bonus ({countUnplanned})
-        </button>
-
-        {countPending > 0 && (
-          <button
-            className={`chip-btn ${statusFilter === 'PENDING' ? 'active' : ''}`}
-            onClick={() => setStatusFilter('PENDING')}
-            style={statusFilter === 'PENDING' ? { borderColor: '#818cf8', color: '#a5b4fc' } : undefined}
-          >
-            ⏳ Aujourd'hui ({countPending})
-          </button>
-        )}
       </div>
 
       {/* État vide si aucune séance ne correspond */}
@@ -271,11 +193,11 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           </div>
           <div>
             <h3 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.05rem', fontWeight: 800, color: '#fff', marginBottom: 4 }}>
-              {statusFilter === 'ALL' ? 'Aucune activité disponible' : `Aucune séance trouvée avec le statut "${statusFilter.toLowerCase()}"`}
+              {statusFilter === 'ALL' ? 'Aucune activité disponible' : 'Aucune séance pour ce filtre'}
             </h3>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto' }}>
               {statusFilter === 'ALL'
-                ? 'Synchronise avec Garmin Connect ou importe une trace GPX pour activer la comparaison télémétrique.'
+                ? 'Importe tes activités Garmin ou une trace GPX pour les comparer au plan.'
                 : 'Sélectionne un autre filtre ci-dessus ou réinitialise à "Toutes".'}
             </p>
           </div>
@@ -286,7 +208,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           ) : (
             <button className="btn-primary" onClick={onOpenGarminSync} style={{ padding: '9px 16px', marginTop: 4 }}>
               <RefreshCw size={14} />
-              <span>⚡ Connecter un compte Garmin</span>
+              <span>Réglages Garmin</span>
             </button>
           )}
         </div>
@@ -296,14 +218,14 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
           <table className="pro-table">
             <thead>
               <tr>
-                <th>Date & Séance Prévue</th>
-                <th>Activité Enregistrée Garmin</th>
+                <th>Séance prévue</th>
+                <th>Activité enregistrée</th>
                 <th>Durée</th>
-                <th>Fréquence Cardiaque</th>
-                <th>Dénivelé D+</th>
-                <th>Charge TRIMP</th>
+                <th>FC</th>
+                <th>Dénivelé +</th>
+                <th>Charge</th>
                 <th>Concordance</th>
-                <th>Actions & Évaluation</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -320,7 +242,6 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 const planId = comp.plannedEvent?.id;
                 const isManuallyPaired = Boolean(planId && manualPairs[planId]);
 
-                const profile = getDynamicAthleteProfile(availableGarminActivities, athlete);
                 const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
                   comp.actualActivity.durationMinutes,
                   comp.actualActivity.activityType,
@@ -364,7 +285,11 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           </span>
                           <div>
                             <div style={{ fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span>{comp.plannedEvent?.title.replace(/^[^a-zA-Z0-9\[]*/, '') || 'Activité Bonus'}</span>
+                              <button type="button" className="session-table-toggle" aria-expanded={isExpanded}
+                                onClick={event => { event.stopPropagation(); setExpandedId(isExpanded ? null : comp.id); }}>
+                                {comp.plannedEvent?.title.replace(/^[^\p{L}\p{N}]+/u, '') || 'Activité hors plan'}
+                                <ChevronDown size={14} aria-hidden="true" />
+                              </button>
                               {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
                                 <span
                                   style={{
@@ -846,7 +771,6 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
             const planId = comp.plannedEvent?.id;
             const isManuallyPaired = Boolean(planId && manualPairs[planId]);
 
-            const profile = getDynamicAthleteProfile(availableGarminActivities, athlete);
             const actualTrimp = comp.actualActivity ? calculateSessionTrimp(
               comp.actualActivity.durationMinutes,
               comp.actualActivity.activityType,
@@ -862,71 +786,24 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
               }
             ) : null;
 
-            const plannedTrimp = comp.plannedEvent ? calculateSessionTrimp(
-              comp.plannedEvent.durationMinutes,
-              comp.plannedEvent.sportType || comp.plannedEvent.title,
-              comp.plannedEvent.title,
-              null,
-              {
-                elevationGainM: comp.plannedEvent.metadata?.targetElevationM,
-                targetHeartRateRange: comp.plannedEvent.metadata?.targetHeartRateRange,
-                targetHeartRate: comp.plannedEvent.metadata?.targetHeartRate,
-                athleteFcMax: profile.fcMax,
-                athleteFcRest: profile.fcRest
-              }
-            ) : null;
-
             return (
-              <div
-                key={comp.id}
-                className="glass-panel"
-                style={{
-                  padding: '12px 16px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px',
-                  borderLeft: comp.status === 'MISSED' ? '3px solid #ef4444' : comp.status === 'COMPLIANT' ? '3px solid #10b981' : undefined
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '1.3rem' }}>{comp.plannedEvent?.emoji || '⌚'}</span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>{formatGarminActivityName(comp.actualActivity?.activityName, comp.plannedEvent?.title, comp.actualActivity?.activityType)}</span>
-                        {getActivityTypeBadge(comp.actualActivity?.activityType)}
-                        {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
-                          <span
-                            style={{
-                              fontSize: '0.65rem',
-                              padding: '1px 6px',
-                              borderRadius: 4,
-                              background: 'rgba(245, 158, 11, 0.15)',
-                              color: '#fbbf24',
-                              border: '1px solid rgba(245, 158, 11, 0.35)',
-                              fontWeight: 700,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3
-                            }}
-                            title={`Consolidation de ${comp.subActivities.length} activités du même jour`}
-                          >
-                            ⚡ {comp.subActivities.length} {isTrailOrRunning(comp.actualActivity) ? 'sorties combinées' : 'séances combinées'}
-                          </span>
-                        )}
-                        {comp.isPostponedCatchup && comp.scheduledDate && (
-                          <span style={{ fontSize: '0.65rem', padding: '1px 6px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
-                            🔄 Remplacée / Reportée du {parseLocalDate(comp.scheduledDate).toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                        {comp.date} {comp.plannedEvent && `• Prescrit : ${comp.plannedEvent.title}`}
-                      </div>
-                    </div>
+              <article key={comp.id} className="surface-panel session-card">
+                <div className="session-card-heading">
+                  <div>
+                    <h2>{comp.actualActivity
+                      ? formatGarminActivityName(comp.actualActivity.activityName, comp.plannedEvent?.title, comp.actualActivity.activityType)
+                      : comp.plannedEvent?.title.replace(/^[^\p{L}\p{N}]+/u, '')}</h2>
+                    <p>
+                      {parseLocalDate(comp.date).toLocaleDateString('fr-CA', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 &&
+                        ` · ${comp.subActivities.length} activités combinées`}
+                      {comp.isPostponedCatchup && comp.scheduledDate &&
+                        ` · prévue le ${parseLocalDate(comp.scheduledDate).toLocaleDateString('fr-CA', { month: 'short', day: 'numeric' })}`}
+                    </p>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {getStatusBadge(comp.status, comp.complianceScore)}
+                  {getStatusBadge(comp.status, comp.complianceScore)}
+                </div>
+                <div className="session-card-actions">
 
                     {comp.plannedEvent && (comp.status === 'MISSED' || comp.status === 'PENDING') && onPostponeWorkout && (
                       <button
@@ -941,7 +818,6 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                           }
                           onPostponeWorkout(comp.plannedEvent!.id, origDate, targetDate, 'Reporté depuis la télémétrie');
                         }}
-                        style={{ padding: '5px 10px', fontSize: '0.74rem', minHeight: '32px', color: 'var(--primary)', borderColor: 'var(--primary-border)', display: 'flex', alignItems: 'center', gap: 4 }}
                         title="Reporter cette séance"
                       >
                         <CalendarClock size={12} /> Reporter
@@ -953,8 +829,8 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         <button
                           className="btn-secondary"
                           onClick={() => onManualUnpair && onManualUnpair(planId)}
-                          style={{ padding: '5px 8px', fontSize: '0.74rem', minHeight: '32px', color: '#f87171' }}
                           title="Délier l'activité"
+                          aria-label="Délier l’activité"
                         >
                           <Unlink size={12} />
                         </button>
@@ -962,57 +838,43 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                         <button
                           className="btn-secondary"
                           onClick={() => setPairingForPlanId(pairingForPlanId === planId ? null : planId)}
-                          style={{ padding: '5px 10px', fontSize: '0.74rem', minHeight: '32px', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 4 }}
                           title="Associer avec une activité Garmin"
                         >
                           <Link2 size={12} /> Lier
                         </button>
                       )
                     )}
-                  </div>
                 </div>
 
-                {comp.actualActivity ? (
-                  <div style={{ display: 'flex', gap: '14px', fontSize: '0.78rem', flexWrap: 'wrap', borderTop: '1px solid rgba(255, 255, 255, 0.04)', paddingTop: 6 }}>
-                    <div>
-                      <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
-                      Durée : <strong>{comp.actualActivity.durationMinutes} min</strong> {comp.plannedEvent && `(écart ${comp.durationDeltaMinutes > 0 ? '+' : ''}${comp.durationDeltaMinutes}m)`}
+                <dl className="session-card-metrics">
+                  {(comp.actualActivity || comp.plannedEvent) && (
+                    <div><dt>Durée {comp.actualActivity ? 'réalisée' : 'prévue'}</dt>
+                      <dd>{comp.actualActivity?.durationMinutes ?? comp.plannedEvent?.durationMinutes} min
+                        {comp.actualActivity && comp.plannedEvent && <small>/ {comp.plannedEvent.durationMinutes} min prévues</small>}
+                      </dd>
                     </div>
-                    {comp.actualActivity.avgPaceMinKm && (
-                      <div style={{ color: 'var(--accent-blue)', fontWeight: 600 }}>
-                        ⚡ Allure : <strong>{comp.actualActivity.avgPaceMinKm}</strong>
-                      </div>
-                    )}
-                    {comp.actualActivity.avgHeartRate && (
-                      <div>
-                        <Heart size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        FC : <strong>{comp.actualActivity.avgHeartRate} bpm</strong> (max {comp.actualActivity.maxHeartRate})
-                      </div>
-                    )}
-                    {comp.actualActivity.elevationGainM !== undefined && (
-                      <div>
-                        <Compass size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        D+ / D- : <strong>+{comp.actualActivity.elevationGainM}m</strong> {comp.actualActivity.elevationLossM ? <span style={{ color: 'var(--accent-blue)' }}>(-{comp.actualActivity.elevationLossM}m)</span> : null}
-                      </div>
-                    )}
-                    {actualTrimp && (
-                      <div style={{ color: actualTrimp.isRealTelemetry ? '#38bdf8' : 'var(--text-primary)', fontWeight: 600 }}>
-                        <Zap size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        Charge : <strong>{actualTrimp.trimp} TRIMP</strong> {plannedTrimp && <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Prévu {plannedTrimp.trimp})</span>}
-                      </div>
-                    )}
-                    {comp.actualActivity.trainingEffectLabel && (
-                      <div style={{ color: 'var(--primary)', fontWeight: 600 }}>
-                        <Zap size={11} style={{ display: 'inline', marginRight: 3 }} />
-                        {comp.actualActivity.trainingEffectLabel} {comp.actualActivity.trainingLoad ? `(Load ${comp.actualActivity.trainingLoad})` : ''}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: '0.75rem', color: comp.status === 'MISSED' ? '#f87171' : 'var(--accent-blue)', fontStyle: 'italic' }}>
-                    {comp.status === 'MISSED' ? 'Séance prescrite mais non enregistrée sur la montre.' : 'Prévue aujourd\'hui — synchroniser la montre après la séance.'}
-                  </div>
+                  )}
+                  {comp.actualActivity?.distanceKm != null && (
+                    <div><dt>Distance</dt><dd>{comp.actualActivity.distanceKm.toLocaleString('fr-CA', { maximumFractionDigits: 1 })} km</dd></div>
+                  )}
+                  {comp.actualActivity?.elevationGainM != null && (
+                    <div><dt>Dénivelé +</dt><dd>{comp.actualActivity.elevationGainM.toLocaleString('fr-CA')} m</dd></div>
+                  )}
+                </dl>
+                {comp.actualActivity && (comp.actualActivity.avgHeartRate || comp.actualActivity.avgPaceMinKm || actualTrimp) && (
+                  <details className="session-card-detail">
+                    <summary>Mesures de la séance</summary>
+                    <dl className="session-card-metrics">
+                      {comp.actualActivity.avgPaceMinKm && <div><dt>Allure</dt><dd>{comp.actualActivity.avgPaceMinKm}</dd></div>}
+                      {comp.actualActivity.avgHeartRate && <div><dt>FC moyenne</dt><dd>{comp.actualActivity.avgHeartRate} bpm
+                        {comp.actualActivity.maxHeartRate && <small>Max. {comp.actualActivity.maxHeartRate} bpm</small>}</dd></div>}
+                      {comp.actualActivity.trainingLoad != null
+                        ? <div><dt>Charge Garmin</dt><dd>{comp.actualActivity.trainingLoad}</dd></div>
+                        : actualTrimp && <div><dt>Charge estimée</dt><dd>{actualTrimp.trimp} TRIMP</dd></div>}
+                    </dl>
+                  </details>
                 )}
+
 
                 {comp.isMergedExecution && comp.subActivities && comp.subActivities.length > 1 && (
                   <div style={{
@@ -1062,7 +924,7 @@ export const ComparisonDashboard: React.FC<ComparisonDashboardProps> = ({
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'rgba(255, 255, 255, 0.02)', padding: '6px 10px', borderRadius: 4 }}>
                   {comp.feedbackNotes[0]}
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>

@@ -1,6 +1,5 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
-import etsIcalHandler from './api/ets-ical';
 import garminSyncHandler from './api/garmin-sync';
 
 export default defineConfig(({ mode }) => {
@@ -17,14 +16,13 @@ export default defineConfig(({ mode }) => {
       {
         name: 'api-proxy-handlers',
         configureServer(server) {
-          server.middlewares.use('/api/ets-ical', (req, res) => etsIcalHandler(req, res));
           server.middlewares.use('/api/garmin-sync', (req, res) => garminSyncHandler(req, res));
         }
       }
     ],
     server: {
       port: 5173,
-      host: true
+      host: env.GARMIN_PERSONAL_OWNER_ID === 'local-development' ? '127.0.0.1' : true
     }
   };
 });

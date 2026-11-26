@@ -1,0 +1,43 @@
+.sessions-page { display: grid; gap: 12px; }
+.sessions-toolbar { display: flex; justify-content: space-between; align-items: end; gap: 12px; padding: 12px; flex-wrap: wrap; }
+.sessions-toolbar label { display: grid; gap: 4px; color: var(--text-secondary); font-size: .82rem; }
+.sessions-toolbar select {
+  min-height: 40px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  color-scheme: dark;
+  font: inherit;
+}
+.sessions-actions, .session-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.sessions-actions button { min-height: 40px; }
+.session-card { display: grid; gap: 12px; padding: 16px; }
+.session-card-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.session-card-heading h2 { font: 600 1rem/1.35 var(--font-heading); overflow-wrap: anywhere; }
+.session-card-heading p { color: var(--text-secondary); font-size: .8rem; margin-top: 4px; }
+.session-card-metrics { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.session-card-metrics dt { color: var(--text-secondary); font-size: .8rem; }
+.session-card-metrics dd { color: var(--text-primary); margin: 4px 0 0; font-weight: 600; }
+.session-card-metrics small { display: block; color: var(--text-secondary); font-weight: 400; }
+.session-card-detail { border-top: 1px solid var(--border-color); }
+.session-card-detail summary { padding-block: 8px; cursor: pointer; color: var(--text-primary); }
+.session-card-actions:empty { display: none; }
+.session-card-actions button { min-height: 40px; }
+.session-table-toggle {
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-align: left;
+}
+.session-table-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+@media (max-width: 520px) {
+  .sessions-toolbar { align-items: stretch; }
+  .sessions-toolbar label { width: 100%; }
+}

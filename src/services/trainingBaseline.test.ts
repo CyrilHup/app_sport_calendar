@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GarminActivity } from '../types/garmin';
 import { capLongRunToRecentHistory, recentRunBaseline } from './trainingBaseline';
-import { buildCompleteCalendar } from './icsParser';
+import { buildTrainingCalendar } from './calendarBuilder';
 import { GLOBAL_APP_CONFIG } from './periodizationEngine';
 
 const run = (id: string, day: number, durationMinutes: number, distanceKm: number): GarminActivity => ({
@@ -29,7 +29,7 @@ describe('history based long-run guard', () => {
 
   it('applies the guard to the near-term calendar and labels the foundation Sunday optional', () => {
     const runs = [run('1', 7, 42, 7), run('2', 12, 52, 8), run('3', 18, 60, 9), run('4', 24, 77, 11)];
-    const calendar = buildCompleteCalendar([], new Date('2026-09-28T12:00:00'), 7,
+    const calendar = buildTrainingCalendar(new Date('2026-09-28T12:00:00'), 7,
       GLOBAL_APP_CONFIG, runs, new Date('2026-09-26T12:00:00'));
     const saturday = calendar.allEvents.find(event => event.id === 'SPORT_WORKOUT_2026-10-03');
     const sunday = calendar.allEvents.find(event => event.id === 'SPORT_WORKOUT_2026-10-04');

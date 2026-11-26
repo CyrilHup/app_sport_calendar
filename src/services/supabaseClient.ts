@@ -127,7 +127,6 @@ export interface UserProfile {
   fcMax?: number;
   raceName?: string;
   raceDate?: string;
-  icalUrl?: string;
   shareSlug?: string;
   isPublic?: boolean;
 }
@@ -157,7 +156,6 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
       fcMax: data.fc_max,
       raceName: data.race_name,
       raceDate: data.race_date,
-      icalUrl: data.ical_url,
       shareSlug: data.share_slug,
       isPublic: data.is_public ?? false
     };
@@ -186,7 +184,6 @@ export async function upsertUserProfile(profile: Partial<UserProfile> & { id: st
     if (profile.fcMax !== undefined) row.fc_max = profile.fcMax;
     if (profile.raceName !== undefined) row.race_name = profile.raceName;
     if (profile.raceDate !== undefined) row.race_date = profile.raceDate;
-    if (profile.icalUrl !== undefined) row.ical_url = profile.icalUrl;
     if (profile.shareSlug !== undefined) row.share_slug = profile.shareSlug;
     if (profile.isPublic !== undefined) row.is_public = profile.isPublic;
 
@@ -364,33 +361,7 @@ export async function fetchGarminRunRegistry(userId: string): Promise<GarminRunR
   }
 }
 
-export async function saveGarminRunRegistryEntry(userId: string, entry: GarminRunRegistryEntry): Promise<boolean> {
-  if (!isSupabaseConfigured() || !userId) return false;
-  try {
-    const { error } = await supabase.from('garmin_run_registry').upsert({
-      user_id: userId,
-      event_id: entry.eventId,
-      workout_date: entry.workoutDate,
-      workout_id: entry.workoutId,
-      signature: entry.signature,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'user_id,workout_date' });
-    if (error) console.warn('Could not save exact Garmin workout ID to cloud:', error);
-    return !error;
-  } catch (error) {
-    console.warn('Could not save exact Garmin workout ID to cloud:', error);
-    return false;
-  }
-}
-
-/**
- * Atomically persists a two-day session exchange (A on dateB, B on dateA).
- * Sequential upserts can never express this swap: primary key
- * (user_id, event_id) plus unique (user_id, workout_date) and unique
- * (user_id, workout_id) make the first swapped write collide with the row
- * that still holds the old date/ID. Prefer the server transaction; fall back
- * to delete-then-insert when the migration has not been applied yet.
- */
+/** Persist an exchange transactionally; an RPC failure leaves both rows intact. */
 export async function exchangeGarminRunRegistryEntries(
   userId: string,
   a: GarminRunRegistryEntry,
@@ -398,7 +369,7 @@ export async function exchangeGarminRunRegistryEntries(
 ): Promise<boolean> {
   if (!isSupabaseConfigured() || !userId) return false;
   try {
-    const { error } = await supabase.rpc('exchange_garmin_run_registry_entries', {
+    const { data, error } = await supabase.rpc('exchange_garmin_run_registry_entries', {
       p_a_event_id: a.eventId,
       p_a_workout_date: a.workoutDate,
       p_a_workout_id: a.workoutId,
@@ -408,42 +379,10 @@ export async function exchangeGarminRunRegistryEntries(
       p_b_workout_id: b.workoutId,
       p_b_signature: b.signature
     });
-    if (!error) return true;
-    console.warn('Atomic Garmin registry exchange unavailable, using delete/insert fallback:', error);
+    if (error) console.warn('Atomic Garmin registry exchange failed; records preserved:', error);
+    return !error && data === true;
   } catch (error) {
-    console.warn('Atomic Garmin registry exchange unavailable, using delete/insert fallback:', error);
-  }
-  try {
-    const { error: deleteError } = await supabase.from('garmin_run_registry')
-      .delete()
-      .eq('user_id', userId)
-      .in('event_id', [a.eventId, b.eventId]);
-    if (deleteError) {
-      console.warn('Could not clear exchanged Garmin workout IDs from cloud:', deleteError);
-      return false;
-    }
-    const { error: insertError } = await supabase.from('garmin_run_registry').insert([
-      {
-        user_id: userId,
-        event_id: a.eventId,
-        workout_date: a.workoutDate,
-        workout_id: a.workoutId,
-        signature: a.signature,
-        updated_at: new Date().toISOString()
-      },
-      {
-        user_id: userId,
-        event_id: b.eventId,
-        workout_date: b.workoutDate,
-        workout_id: b.workoutId,
-        signature: b.signature,
-        updated_at: new Date().toISOString()
-      }
-    ]);
-    if (insertError) console.warn('Could not save exchanged Garmin workout IDs to cloud:', insertError);
-    return !insertError;
-  } catch (error) {
-    console.warn('Could not save exchanged Garmin workout IDs to cloud:', error);
+    console.warn('Atomic Garmin registry exchange failed; records preserved:', error);
     return false;
   }
 }

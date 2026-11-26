@@ -35,8 +35,7 @@ const KEY_RUNS = new Set<SportType>(['TRAIL_LONG', 'TRAIL_INTENSE', 'RACE_DAY'])
 
 function dayScore(day: DailySchedule, slot: StrengthSlot, week: DailySchedule[], usedDates: Set<string>): number {
   const dayRuns = day.events.filter(event => event.category === 'sport' && event.sportType !== 'CALISTHENICS' && event.sportType !== 'GYM_FORCE');
-  const courseMinutes = day.events.filter(event => event.category === 'course').reduce((sum, event) => sum + event.durationMinutes, 0);
-  let score = Math.abs(day.dayOfWeek - slot.preferredDay) * 8 + courseMinutes / 45;
+  let score = Math.abs(day.dayOfWeek - slot.preferredDay) * 8;
   if (usedDates.has(day.date)) score += 100;
   if (dayRuns.some(event => event.sportType === 'RACE_DAY')) score += 1000;
   if (slot.key === 'lower') {
@@ -53,7 +52,7 @@ function dayScore(day: DailySchedule, slot: StrengthSlot, week: DailySchedule[],
 }
 
 function recommendedStart(day: DailySchedule, minutes: number): Date {
-  const busy = day.events.filter(event => event.category === 'course' || event.category === 'sport');
+  const busy = day.events.filter(event => event.category === 'sport');
   for (const [hour, minute] of [[18, 30], [7, 30], [12, 30], [20, 0]]) {
     const start = parseLocalDate(day.date);
     start.setHours(hour, minute, 0, 0);
@@ -65,7 +64,7 @@ function recommendedStart(day: DailySchedule, minutes: number): Date {
   return fallback;
 }
 
-/** Visible initial suggestions, selected around the generated run and course calendar. */
+/** Visible initial suggestions, selected around the generated run schedule. */
 export function addRecommendedStrengthSessions(
   schedules: DailySchedule[],
   allEvents: CalendarEvent[],
@@ -104,7 +103,7 @@ export function addRecommendedStrengthSessions(
         startDate: start.toISOString(),
         endDate: new Date(start.getTime() + minutes * 60000).toISOString(),
         location: slot.sportType === 'GYM_FORCE' ? 'Salle ou domicile' : 'Domicile ou salle',
-        description: `${slot.description}\nJour et horaire recommandés, déplaçables selon cours, course, fatigue et douleurs.${strengthSessionsLast28d !== undefined && strengthSessionsLast28d < 4 ? '\nHistorique de renforcement récent faible : format court conseillé, sans rechercher l’échec musculaire.' : ''}${day.periodContext.isDeload ? '\nSemaine allégée : éviter toute nouvelle charge lourde.' : ''}`,
+        description: `${slot.description}\nJour et horaire recommandés, déplaçables selon la course, la fatigue et les douleurs.${strengthSessionsLast28d !== undefined && strengthSessionsLast28d < 4 ? '\nHistorique de renforcement récent faible : format court conseillé, sans rechercher l’échec musculaire.' : ''}${day.periodContext.isDeload ? '\nSemaine allégée : éviter toute nouvelle charge lourde.' : ''}`,
         emoji: slot.sportType === 'GYM_FORCE' ? '💪' : '🤸',
         colorId: '4',
         colorHex: slot.sportType === 'GYM_FORCE' ? '#a78bfa' : '#c084fc',

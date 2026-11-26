@@ -100,19 +100,6 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
   const isRunning = discipline === 'RUNNING';
   const isStrength = discipline === 'STRENGTH_TRAINING';
 
-  // Thème de bordure et de fond
-  let borderColor = '#f97316';
-  let bgGradient = 'var(--bg-card)';
-  if (group.hasValidated) {
-    borderColor = '#10b981';
-    bgGradient = isMerged
-      ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(56, 189, 248, 0.06) 100%)'
-      : 'rgba(16, 185, 129, 0.04)';
-  } else if (group.hasUnplannedBonus && !group.hasPlanned) {
-    borderColor = '#f59e0b';
-    bgGradient = 'rgba(245, 158, 11, 0.07)';
-  }
-
   // Horaires
   const startTimeFormatted = group.earliestStartTime ? formatTime(group.earliestStartTime) : null;
   const endTimeFormatted = group.latestEndTime ? formatTime(group.latestEndTime) : null;
@@ -124,10 +111,17 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
 
   const mainEv = group.mainPlannedEvent || items[0]?.plannedEvent;
   const canDrag = Boolean(isDraggable && mainEv && !group.hasValidated);
+  const status = [
+    group.hasValidated ? 'Enregistrée' : group.hasUnplannedBonus ? 'Hors plan' : undefined,
+    group.hasPostponedCatchup ? 'Reportée' : undefined,
+    mainEv?.metadata?.isAdapted ? 'Adaptée' : undefined,
+    isStrength && mainEv?.metadata?.isOptional ? 'Facultative' : undefined
+  ].filter(Boolean).join(' · ');
+
 
   return (
     <div
-      className={`event-card sport ${canDrag ? 'draggable-sport' : ''}`}
+      className={`event-card sport workout-card ${canDrag ? 'draggable-sport' : ''}`}
       onClick={() => onSelect(group)}
       draggable={canDrag}
       onDragStart={(e) => {
@@ -138,146 +132,17 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
         ? `${group.title} (${items.length} activités unifiées)\nCliquer pour voir les statistiques globales et séparées.`
         : `${group.title}\nCliquer pour voir les détails.`}
       style={{
-        borderLeftColor: borderColor,
-        background: bgGradient,
         cursor: canDrag ? 'grab' : 'pointer',
         padding: isList ? '10px 12px' : isSingleDayView ? '10px 14px' : '8px 10px',
         position: 'relative'
       }}
     >
-      {/* En-tête : Titre & Badges */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', flex: 1 }}>
-          <span style={{ fontSize: isSingleDayView ? '1.05rem' : '0.9rem' }}>{group.emoji}</span>
-          <span style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: isList ? 'normal' : 'nowrap',
-            fontSize: isSingleDayView ? '0.88rem' : '0.8rem',
-            fontWeight: 700,
-            color: '#ffffff'
-          }}>
+      <div className="workout-card-heading">
+        <div className="workout-card-copy">
+          <button type="button" className="workout-card-title" onClick={event => { event.stopPropagation(); onSelect(group); }}>
             {group.title}
-          </span>
-
-          {/* Badge Unifiée */}
-          {isMerged && (
-            <span
-              style={{
-                fontSize: '0.66rem',
-                fontWeight: 800,
-                background: 'rgba(56, 189, 248, 0.16)',
-                color: '#38bdf8',
-                border: '1px solid rgba(56, 189, 248, 0.35)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 3,
-                flexShrink: 0
-              }}
-              title={`${items.length} activités unifiées pour cette discipline`}
-            >
-              <Layers size={10} />
-              <span>{items.length} {isRunning ? 'sorties' : 'séances'}</span>
-            </span>
-          )}
-
-          {/* Badge Validée Garmin */}
-          {group.hasValidated && (
-            <span
-              style={{
-                fontSize: '0.66rem',
-                fontWeight: 700,
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#34d399',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 3,
-                flexShrink: 0
-              }}
-            >
-              <CheckCircle2 size={10} />
-              <span>Validée Garmin</span>
-            </span>
-          )}
-
-          {/* Badge Bonus Garmin */}
-          {!group.hasValidated && group.hasUnplannedBonus && (
-            <span
-              style={{
-                fontSize: '0.66rem',
-                fontWeight: 700,
-                background: 'rgba(245, 158, 11, 0.15)',
-                color: '#f59e0b',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                flexShrink: 0
-              }}
-            >
-              ⚡ Bonus Garmin
-            </span>
-          )}
-
-          {/* Badge Reportée */}
-          {group.hasPostponedCatchup && (
-            <span
-              style={{
-                fontSize: '0.66rem',
-                fontWeight: 700,
-                background: 'rgba(56, 189, 248, 0.15)',
-                color: '#38bdf8',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                flexShrink: 0
-              }}
-            >
-              🔄 Reportée
-            </span>
-          )}
-
-          {/* Badge Adapté */}
-          {mainEv?.metadata?.isAdapted && (
-            <span
-              style={{
-                fontSize: '0.66rem',
-                fontWeight: 800,
-                background: 'rgba(56, 189, 248, 0.18)',
-                color: '#38bdf8',
-                border: '1px solid rgba(56, 189, 248, 0.4)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                flexShrink: 0
-              }}
-              title={`Séance adaptée : ${mainEv.metadata.adaptationReason || ''}`}
-            >
-              🛡️ Adapté
-            </span>
-          )}
-
-          {/* Badge Indicatif pour renforcement / musculation */}
-          {isStrength && (
-            <span
-              style={{
-                fontSize: '0.66rem',
-                fontWeight: 700,
-                background: 'rgba(168, 85, 247, 0.15)',
-                color: '#c084fc',
-                border: '1px solid rgba(168, 85, 247, 0.3)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                flexShrink: 0
-              }}
-              title={mainEv?.metadata?.isOptional ? 'Séance facultative : son absence ne compte pas comme un entraînement manqué' : mainEv?.metadata?.isRecommendedStrength ? 'Jour conseillé : déplaçable selon fatigue, douleurs et séances de course' : 'Séance de renforcement hors plan de course'}
-            >
-              💪 {mainEv?.metadata?.isOptional ? 'Facultative' : mainEv?.metadata?.isRecommendedStrength ? 'Conseillée' : 'Indicatif'}
-            </span>
-          )}
+          </button>
+          {status && <span className="workout-card-status" title={mainEv?.metadata?.adaptationReason}>{status}</span>}
         </div>
 
         {/* Boutons d'action à droite (+1j ou Accordéon) */}
@@ -343,15 +208,15 @@ const UnifiedWorkoutGroupCard: React.FC<UnifiedWorkoutGroupCardProps> = ({
       <div className="event-meta" style={{ fontSize: isSingleDayView ? '0.76rem' : '0.7rem', marginTop: 4 }}>
         {timeDisplay && (
           <>
-            <span style={{ color: group.hasValidated ? '#10b981' : undefined, fontWeight: group.hasValidated ? 600 : undefined }}>
+            <span >
               <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
               {timeDisplay}
             </span>
             <span>•</span>
           </>
         )}
-        <span style={{ fontWeight: 700, color: group.hasValidated ? '#10b981' : undefined }}>
-          {group.totalDurationMinutes}m {group.hasValidated || group.hasUnplannedBonus ? 'réelles' : ''}
+        <span className="workout-duration">
+          {group.totalDurationMinutes} min {group.hasValidated || group.hasUnplannedBonus ? 'réelles' : ''}
         </span>
         {mainEv?.location && (
           <span style={{ color: 'var(--text-secondary)' }}>
@@ -619,6 +484,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [todayKey, currentWeekOffset, currentTodayIndex, hasInitializedOffset, schedules.length, weekOffset]);
 
   const todayWellness = getWellnessForDate(todayKey);
+  const garminReadinessScore = todayWellness?.trainingReadinessScore;
+  const garminReadinessBadge = garminReadinessScore !== undefined && (
+    <span className="today-readiness-chip" title={`Score de préparation Garmin · ${garminReadinessScore}/100`}>
+      Garmin {garminReadinessScore}/100
+    </span>
+  );
   const todayContext = selectDayActivityContext(todayKey, garminActivities, comparisons);
   const readiness = calculateReadinessScore(
     todayWellness,
@@ -785,9 +656,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // Compteurs pour la semaine affichée
   const currentWeekEvents = displayedDays.flatMap(d => d.events);
   const countSport = currentWeekEvents.filter(e => e.category === 'sport').length;
-  const countCourse = currentWeekEvents.filter(e => e.category === 'course').length;
   const countMobility = currentWeekEvents.filter(e => e.category === 'mobility').length;
-  const countAll = countSport + countCourse + countMobility;
+  const countAll = countSport + countMobility;
   const recommendedStrength = currentWeekEvents.filter(e => e.metadata?.isRecommendedStrength && !e.metadata?.isPostponedPlaceholder);
   const coreStrength = recommendedStrength.filter(event => !event.metadata?.isOptional);
   const completedStrength = coreStrength.filter(event => completedIds.has(event.id)).length;
@@ -842,36 +712,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {/* View Mode & Quick Actions */}
           <div className="calendar-actions-group">
             {/* View Mode Pills (Jour / Grille / Liste) */}
-            <div className="view-mode-segmented">
+            <div className="view-mode-segmented" role="group" aria-label="Vue du planning">
               <button
                 type="button"
                 onClick={() => setViewMode('day')}
                 className={`view-mode-btn ${viewMode === 'day' ? 'active' : ''}`}
-                title="Affichage par Jour (Mobile)"
-                aria-label="Affichage par Jour"
+                aria-pressed={viewMode === 'day'}
               >
                 <Calendar size={13} />
-                <span className="desktop-only">Jour</span>
+                <span>Jour</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
                 className={`view-mode-btn ${viewMode === 'grid' ? 'active' : ''}`}
-                title="Grille Hebdomadaire"
-                aria-label="Grille Hebdomadaire"
+                aria-pressed={viewMode === 'grid'}
               >
                 <LayoutGrid size={13} />
-                <span className="desktop-only">Grille</span>
+                <span>Grille</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('list')}
                 className={`view-mode-btn ${viewMode === 'list' ? 'active' : ''}`}
-                title="Vue Liste"
-                aria-label="Vue Liste"
+                aria-pressed={viewMode === 'list'}
               >
                 <ListFilter size={13} />
-                <span className="desktop-only">Liste</span>
+                <span>Liste</span>
               </button>
             </div>
           </div>
@@ -879,43 +746,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
         {/* Integrated Filter Chips & Weather Strip */}
         <div className="calendar-subbar-strip">
-          {/* Compact Mont-Royal Weather */}
+          <div className="calendar-category-filters" role="group" aria-label="Types de séances">
+            <button
+              type="button"
+              className={`chip-btn ${filter === 'all' ? 'active' : ''}`}
+              onClick={() => setFilter('all')}
+              aria-pressed={filter === 'all'}
+            >
+              Tous ({countAll})
+            </button>
+            <button
+              type="button"
+              className={`chip-btn ${filter === 'sport' ? 'active' : ''}`}
+              onClick={() => setFilter('sport')}
+              aria-pressed={filter === 'sport'}
+            >
+              Séances ({countSport})
+            </button>
+            <button
+              type="button"
+              className={`chip-btn ${filter === 'mobility' ? 'active' : ''}`}
+              onClick={() => setFilter('mobility')}
+              aria-pressed={filter === 'mobility'}
+            >
+              Mobilité ({countMobility})
+            </button>
+          </div>
           <WeatherWidget compact />
-
-          <div style={{ width: 1, height: 18, background: 'var(--border-color)', margin: '0 4px', flexShrink: 0 }} />
-
-          {/* Category Filters */}
-          <button
-            className={`chip-btn ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
-          >
-            Tous ({countAll})
-          </button>
-
-          <button
-            className={`chip-btn ${filter === 'sport' ? 'active' : ''}`}
-            onClick={() => setFilter('sport')}
-            style={filter === 'sport' ? { borderColor: 'var(--primary)', color: 'var(--primary)' } : undefined}
-          >
-            🏔️ Séances ({countSport})
-          </button>
-
-          <button
-            className={`chip-btn ${filter === 'course' ? 'active' : ''}`}
-            onClick={() => setFilter('course')}
-            style={filter === 'course' ? { borderColor: '#3b82f6', color: '#60a5fa' } : undefined}
-          >
-            🏛️ Cours ({countCourse})
-          </button>
-
-          <button
-            className={`chip-btn ${filter === 'mobility' ? 'active' : ''}`}
-            onClick={() => setFilter('mobility')}
-            style={filter === 'mobility' ? { borderColor: '#10b981', color: '#34d399' } : undefined}
-          >
-            🧘 Mobilité ({countMobility})
-          </button>
-
         </div>
       </div>
 
@@ -928,7 +785,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           <div className="weekly-strength-sessions">
             {recommendedStrength.map(event => (
               <button key={event.id} type="button" aria-label={`${event.title}, ${new Date(event.startDate).toLocaleDateString('fr-CA', { weekday: 'long', day: 'numeric', month: 'long' })}`} onClick={() => { setSelectedEvent(event); setSelectedComparison(comparisons.find(c => c.plannedEvent?.id === event.id) || null); setSelectedUnifiedGroup(null); }}>
-                <span>{event.emoji} {event.id.endsWith('_upper') ? 'Haut du corps' : event.id.endsWith('_control') ? 'Tronc' : event.id.endsWith('_lower') ? 'Jambes' : 'Bonus'}</span>
+                <span>{event.id.endsWith('_upper') ? 'Haut du corps' : event.id.endsWith('_control') ? 'Tronc' : event.id.endsWith('_lower') ? 'Jambes' : 'Bonus'}</span>
                 <strong>{new Date(event.startDate).toLocaleDateString('fr-CA', { weekday: 'short', day: 'numeric' })}{completedIds.has(event.id) ? ' ✓' : ''}</strong>
               </button>
             ))}
@@ -940,7 +797,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         <span>Ressenti · 7 jours</span>
         <strong>{subjectiveSignals.ratedSessions} séance{subjectiveSignals.ratedSessions > 1 ? 's' : ''} notée{subjectiveSignals.ratedSessions > 1 ? 's' : ''}</strong>
         <span>{subjectiveSignals.totalSessionRpeLoad} unités de charge ressentie</span>
-        <small>Évolution détaillée dans Statistiques</small>
+        <small>Voir l’onglet Progression</small>
       </div>}
       {subjectiveSignals.repeatedLowFeeling && <div role="status" style={{ padding: '8px 12px', marginBottom: 10, border: '1px solid #f59e0b', borderRadius: 6, fontSize: '0.78rem' }}>
         Deux séances ou plus ont été notées « faible » cette semaine : réévaluez l'intensité prévue et votre récupération, même si le calendrier de la semaine est déjà figé.
@@ -1148,7 +1005,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       {(() => {
         const renderDayEventsContent = (day: DailySchedule, isSingleDayView: boolean = false) => {
           const {
-            courseEvents,
             mobilityEvent,
             ghostEvents,
             catchupExecutedElsewhere,
@@ -1164,60 +1020,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </div>
               ) : (
                 <>
-                  {/* Événements de cours */}
-                  {(filter === 'all' || filter === 'course') && courseEvents.map(ev => {
-                    const hasAller = ev.metadata?.commuteAller;
-                    const hasRetour = ev.metadata?.commuteRetour;
-
-                    return (
-                      <div
-                        key={ev.id}
-                        className="event-card course"
-                        onClick={() => {
-                          setSelectedEvent(ev);
-                          setSelectedComparison(null);
-                          setSelectedUnifiedGroup(null);
-                        }}
-                        style={{ padding: isSingleDayView ? '10px 14px' : undefined }}
-                      >
-                        <div className="event-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                            <span style={{ fontSize: isSingleDayView ? '1.05rem' : '0.9rem' }}>{ev.emoji}</span>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: isSingleDayView ? '0.88rem' : '0.8rem' }}>
-                              {ev.title}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="event-meta" style={{ fontSize: isSingleDayView ? '0.76rem' : '0.7rem' }}>
-                          <span>
-                            <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
-                            {formatTime(ev.startDate)} – {formatTime(ev.endDate)}
-                          </span>
-                          <span>•</span>
-                          <span>{ev.durationMinutes}m</span>
-                          {ev.metadata?.room && (
-                            <span style={{ color: ev.metadata?.isDistanciel ? 'var(--accent-purple)' : 'var(--accent-blue)', fontWeight: 600 }}>
-                              <MapPin size={10} style={{ display: 'inline', marginRight: 2 }} />
-                              {ev.metadata.room}
-                            </span>
-                          )}
-                        </div>
-
-                        {(hasAller || hasRetour) && (
-                          <div className="journey-strip" style={{ fontSize: isSingleDayView ? '0.72rem' : '0.68rem', padding: '5px 8px' }}>
-                            <Bus size={12} color="var(--text-muted)" style={{ flexShrink: 0 }} />
-                            <span>
-                              {hasAller && `Départ : ${formatTime(hasAller.departureTime)} (${hasAller.durationMinutes}m)`}
-                              {hasAller && hasRetour && ' • '}
-                              {hasRetour && `Retour ~${formatTime(hasRetour.arrivalTime)}`}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
                   {/* Groupes sportifs unifiés */}
                   {(filter === 'all' || filter === 'sport') && (
                     <>
@@ -1364,7 +1166,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   const isSelected = idx === activeDayIndex;
                   const shortNames = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
                   const hasSport = day.events.some(e => e.category === 'sport');
-                  const hasCourse = day.events.some(e => e.category === 'course');
                   const hasMobility = day.events.some(e => e.category === 'mobility');
 
                   return (
@@ -1379,7 +1180,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <span className="mobile-day-num">{dayObj.getDate()}</span>
                       <div className="mobile-day-dots">
                         {hasSport && <span className="mobile-dot sport" />}
-                        {hasCourse && <span className="mobile-dot course" />}
                         {hasMobility && <span className="mobile-dot mobility" />}
                       </div>
                     </button>
@@ -1400,17 +1200,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           <span className="today-badge">
                             Aujourd'hui
                           </span>
-                          <span
-                            className="today-readiness-chip"
-                            style={{
-                              background: `${readiness.badgeColorHex}18`,
-                              color: readiness.badgeColorHex,
-                              border: `1px solid ${readiness.badgeColorHex}40`
-                            }}
-                            title={`Score Garmin Readiness : ${readiness.score}/100 • ${readiness.statusLabel}`}
-                          >
-                            {readiness.badgeEmoji} {readiness.score}
-                          </span>
+                          {garminReadinessBadge}
                         </div>
                       )}
                     </div>
@@ -1485,17 +1275,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {isToday && (
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                             <span className="today-indicator">Aujourd'hui</span>
-                            <span
-                              className="today-readiness-chip"
-                              style={{
-                                background: `${readiness.badgeColorHex}18`,
-                                color: readiness.badgeColorHex,
-                                border: `1px solid ${readiness.badgeColorHex}40`
-                              }}
-                              title={`Score Garmin Readiness : ${readiness.score}/100 • ${readiness.statusLabel}`}
-                            >
-                              {readiness.badgeEmoji} {readiness.score}
-                            </span>
+                            {garminReadinessBadge}
                           </div>
                         )}
                       </div>
@@ -1517,7 +1297,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             const isToday = day.date === todayKey;
 
             const {
-              courseEvents,
               mobilityEvent,
               ghostEvents,
               catchupExecutedElsewhere,
@@ -1544,17 +1323,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     {isToday && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span className="today-indicator">Aujourd'hui</span>
-                        <span
-                          className="today-readiness-chip"
-                          style={{
-                            background: `${readiness.badgeColorHex}18`,
-                            color: readiness.badgeColorHex,
-                            border: `1px solid ${readiness.badgeColorHex}40`
-                          }}
-                          title={`Score Garmin Readiness : ${readiness.score}/100 • ${readiness.statusLabel}`}
-                        >
-                          {readiness.badgeEmoji} {readiness.score}
-                        </span>
+                        {garminReadinessBadge}
                       </div>
                     )}
                   </div>
@@ -1569,42 +1338,6 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '8px' }}>
-                    {/* Cours */}
-                    {(filter === 'all' || filter === 'course') && courseEvents.map(ev => (
-                      <div
-                        key={ev.id}
-                        className="event-card course"
-                        onClick={() => {
-                          setSelectedEvent(ev);
-                          setSelectedComparison(null);
-                          setSelectedUnifiedGroup(null);
-                        }}
-                        style={{ padding: '10px 12px' }}
-                      >
-                        <div className="event-title" style={{ fontSize: '0.84rem' }}>
-                          <span>{ev.emoji}</span>
-                          <span>{ev.title}</span>
-                        </div>
-                        <div className="event-meta" style={{ fontSize: '0.74rem' }}>
-                          <span>
-                            <Clock size={11} style={{ display: 'inline', marginRight: 3 }} />
-                            {formatTime(ev.startDate)} – {formatTime(ev.endDate)} ({ev.durationMinutes}m)
-                          </span>
-                        </div>
-                        {ev.metadata?.room && (
-                          <div style={{ fontSize: '0.72rem', color: ev.metadata?.isDistanciel ? 'var(--accent-purple)' : 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                            <MapPin size={11} /> {ev.metadata.room}
-                          </div>
-                        )}
-                        {ev.metadata?.commuteAller && (
-                          <div className="journey-strip">
-                            <Bus size={11} />
-                            <span>Trajet : {formatTime(ev.metadata.commuteAller.departureTime)} ➔ {formatTime(ev.metadata.commuteAller.arrivalTime)} ({ev.metadata.commuteAller.durationMinutes}m)</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
                     {/* Séances sportives unifiées */}
                     {(filter === 'all' || filter === 'sport') && (
                       <>

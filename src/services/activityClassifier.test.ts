@@ -11,9 +11,6 @@ import {
   isWalking
 } from './activityClassifier';
 import { getPeriodizationContext } from './periodizationEngine';
-import { parseICSString } from './icsParser';
-import { generateICSContent } from './googleCalendarService';
-import { CalendarEvent } from '../types/calendar';
 
 describe('Activity Classifier', () => {
   it('correctly classifies running keywords', () => {
@@ -108,49 +105,7 @@ describe('Periodization Engine', () => {
   });
 });
 
-describe('Calendar ICS Generation', () => {
-  it('generates valid RFC 5545 iCalendar content', () => {
-    const sampleEvent: CalendarEvent = {
-      id: 'SPORT_TEST_1',
-      category: 'sport',
-      sportType: 'TRAIL_LONG',
-      title: '🏔️ Trail Long',
-      startDate: '2026-09-05T14:00:00.000Z',
-      endDate: '2026-09-05T16:00:00.000Z',
-      location: 'Mont-Royal',
-      description: 'Test workout',
-      emoji: '🏔️',
-      colorId: '6',
-      colorHex: '#ff6b35',
-      durationMinutes: 120
-    };
-
-    const ics = generateICSContent([sampleEvent]);
-    expect(ics).toContain('BEGIN:VCALENDAR');
-    expect(ics).toContain('BEGIN:VEVENT');
-    expect(ics).toContain('SUMMARY:🏔️ Trail Long');
-    expect(ics).toContain('END:VCALENDAR');
-  });
-
-  it('parses basic ICS string', () => {
-    const icsRaw = `BEGIN:VCALENDAR
-VERSION:2.0
-BEGIN:VEVENT
-UID:test-uid-123
-SUMMARY:LOG792 - Projet
-LOCATION:A-1234
-DTSTART:20260908T133000Z
-DTEND:20260908T170000Z
-DESCRIPTION:Cours magistral
-END:VEVENT
-END:VCALENDAR`;
-
-    const parsed = parseICSString(icsRaw);
-    expect(parsed.length).toBe(1);
-    expect(parsed[0].summary).toBe('LOG792 - Projet');
-    expect(parsed[0].location).toBe('A-1234');
-  });
-
+describe('Activity classifiers', () => {
   it('correctly evaluates centralized activity predicates', () => {
     // Strength & Calisthenics
     expect(isStrengthOrCalisthenics('CALISTHENICS', 'Calisthenics 1 (Push & Core)')).toBe(true);

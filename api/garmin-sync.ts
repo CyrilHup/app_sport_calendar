@@ -5,10 +5,11 @@ import path from 'path';
 import os from 'os';
 import { normalizeGarminActivities } from '../src/server/garminActivityNormalizer.js';
 import { extractGarminFeedback } from '../src/services/activityFeedback.js';
-import { fetchGarminWellness, getGarminLocalDate } from '../src/server/garminWellness.js';
+import { fetchGarminWellness, fetchPersonalGarminWellness, getGarminLocalDate } from '../src/server/garminWellness.js';
 import { sanitizeGarminText } from '../src/services/garminText.js';
 import { GARMIN_TRAINING_POLICY, isValidGarminMaxHeartRate, isValidRecordedHeartRatePeak } from '../src/services/garminTrainingPolicy.js';
-import { applyApiCors, ensureResponseHelpers, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
+import { applyApiCors, ensureResponseHelpers, isLocalGarminPersonalRequest, requireAuthenticatedUser } from '../src/server/requestSecurity.js';
+import { GarminPersonalApi } from '../src/server/garminPersonalApi.js';
 import { validateGarminRequest } from '../src/server/garminRequest.js';
 import { fetchGarminActivityBatch } from '../src/server/garminPagination.js';
 import { claimGarminRunLease, isRegisteredGarminRun, markRegisteredGarminRunCancelled } from '../src/server/garminRunLease.js';
@@ -171,43 +172,51 @@ export default async function handler(req: any, res: any) {
   const username = body.email;
   const password = body.password;
   const action = body.action;
+  const owner = process.env.GARMIN_PERSONAL_OWNER_ID?.trim();
+  const personalKey = process.env.GARMIN_PERSONAL_API_KEY?.trim();
+  const personalAvailable = Boolean(personalKey && owner && owner === apiUser.id &&
+    (owner !== 'local-development' || isLocalGarminPersonalRequest(req)));
+
+  if (action === 'connection-status') {
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({ personalApi: personalAvailable });
+    return;
+  }
+
+  const isWriteAction = action === 'push-workout' || action === 'cancel-workout';
+  const personal = personalAvailable && !isWriteAction && personalKey ? new GarminPersonalApi(personalKey) : null;
+  if (personal) res.setHeader('Cache-Control', 'no-store');
 
   try {
-    let gc = new GarminConnect({ username: username || 'user', password: password || 'pass' });
-    const cached = loadCachedSession(apiUser.id);
-    let isAuthenticated = false;
-
-    // 1. Try reusing cached OAuth tokens
-    if (cached?.tokens?.oauth1 && cached?.tokens?.oauth2 && (!username || cached.username === username)) {
-      try {
-        gc.loadToken(cached.tokens.oauth1, cached.tokens.oauth2);
-        isAuthenticated = true;
-      } catch (tokenErr) {
-        console.warn('Cached Garmin token expired or invalid, will re-authenticate:', tokenErr);
-        isAuthenticated = false;
+    let gc: any;
+    if (!personal) {
+      const cached = loadCachedSession(apiUser.id);
+      if (cached?.tokens?.oauth1 && cached?.tokens?.oauth2 && (!username || cached.username === username)) {
+        try {
+          gc = new GarminConnect({ username: cached.username, password: password || 'unused' });
+          gc.loadToken(cached.tokens.oauth1, cached.tokens.oauth2);
+        } catch {
+          gc = undefined;
+        }
       }
-    }
-
-    // 2. Authenticate if no valid cached session
-    if (!isAuthenticated) {
-      if (!username || !password) {
+      if (!gc && (!username || !password)) {
         res.status(400).json({
           code: 'GARMIN_AUTH_REQUIRED',
           error: 'Veuillez renseigner votre email et mot de passe Garmin Connect.'
         });
         return;
       }
-
-      gc = new GarminConnect({ username, password });
-      await gc.login();
-
-      try {
-        const tokens = gc.exportToken();
-        saveCachedSession(apiUser.id, username, tokens);
-      } catch (tokenExportErr) {
-        console.warn('Could not export tokens:', tokenExportErr);
+      if (!gc) {
+        gc = new GarminConnect({ username, password });
+        await gc.login();
+        try {
+          saveCachedSession(apiUser.id, username, gc.exportToken());
+        } catch (tokenExportErr) {
+          console.warn('Could not export tokens:', tokenExportErr);
+        }
       }
     }
+    const readClient = personal ?? gc;
 
     // ----------------------------------------------------
     // ACTION: PUSH WORKOUT TO GARMIN CONNECT & SCHEDULE
@@ -215,7 +224,7 @@ export default async function handler(req: any, res: any) {
     if (action === 'get-activity-feedback') {
       const results = await Promise.all((body.activityIds || []).map(async activityId => {
         try {
-          const detail = await within(gc.getActivity({ activityId }), 6000);
+          const detail = await within(readClient.getActivity({ activityId }), 6000);
           return { activityId, checked: true, feedback: extractGarminFeedback(detail) };
         } catch (error) {
           console.warn('Could not read Garmin subjective feedback for activity', activityId, error);
@@ -251,7 +260,10 @@ export default async function handler(req: any, res: any) {
       }
 
       const runLease = workout.sportType === 'RUNNING'
-        ? await claimGarminRunLease(req, workout.scheduledDate, workout.replaceWorkoutId)
+        ? await claimGarminRunLease(
+          req, workout.scheduledDate, workout.replaceWorkoutId,
+          workout.replaceWorkoutDate || workout.scheduledDate
+        )
         : null;
       let pushResponse: Record<string, unknown>;
       try {
@@ -279,13 +291,14 @@ export default async function handler(req: any, res: any) {
           gc,
           workout.scheduledDate,
           workout.sportType,
-          workout.replaceWorkoutId
+          workout.replaceWorkoutId,
+          workout.replaceWorkoutDate || workout.scheduledDate
         );
       } catch (lookupError: any) {
         if (lookupError?.code === 'GARMIN_REPLACE_MISSING') {
           // No workout was created; the date lease is released below so a
-          // later reconciliation can proceed. The client uses the reported
-          // schedule to adopt an exchange Garmin already applied.
+          // later reconciliation can proceed. Only the server-confirmed
+          // registry signature can establish a previously applied exchange.
           try { await runLease?.release(); } catch {}
           res.status(200).json({
             success: false,
@@ -379,9 +392,14 @@ export default async function handler(req: any, res: any) {
         createdWorkoutId,
         workout.scheduledDate,
         previousWorkoutIds,
-        getGarminSportTypeKeysForWorkout(workout.sportType)
+        getGarminSportTypeKeysForWorkout(workout.sportType),
+        workout.replaceWorkoutDate || workout.scheduledDate
       );
-      await runLease?.confirm(createdWorkoutId);
+      await runLease?.confirm(
+        createdWorkoutId,
+        workout.eventId || `garmin-date:${workout.scheduledDate}`,
+        workout.syncSignature || 'pending-server-confirmation'
+      );
 
       pushResponse = {
         success: true,
@@ -424,7 +442,7 @@ export default async function handler(req: any, res: any) {
       if (action === 'get-wellness') return [];
       if (syncMode === 'full') {
         const batch = await fetchGarminActivityBatch<any>(
-          (offset, limit) => requiredWithin<any[]>(gc.getActivities(offset, limit), 15_000),
+          (offset, limit) => requiredWithin<any[]>(readClient.getActivities(offset, limit), 15_000),
           body.offset
         );
         nextOffset = batch.nextOffset;
@@ -432,13 +450,16 @@ export default async function handler(req: any, res: any) {
         return batch.activities;
       } else {
         const limit = body.limit;
-        return (await requiredWithin<any[]>(gc.getActivities(0, limit), 15000)) || [];
+        const page = await requiredWithin<unknown>(readClient.getActivities(0, limit), 15_000);
+        if (!Array.isArray(page)) throw new Error('Invalid Garmin activity page.');
+        return page;
       }
     };
 
     const includeWellness = action === 'get-wellness' || syncMode !== 'full' || body.offset === 0;
     const [wellnessResult, acts] = await Promise.all([
-      includeWellness ? fetchGarminWellness(gc, todayStr) : Promise.resolve(null),
+      includeWellness ? (personal ? fetchPersonalGarminWellness(personal, todayStr) : fetchGarminWellness(gc, todayStr)) :
+        Promise.resolve(null),
       fetchActs()
     ]);
     wellness = wellnessResult;
@@ -453,7 +474,7 @@ export default async function handler(req: any, res: any) {
     let athleteMaxHr: number | undefined = undefined;
     if (syncMode !== 'full' || body.offset === 0) {
       try {
-        const userSettings: any = await requiredWithin(gc.getUserSettings(), 5_000);
+        const userSettings: any = await requiredWithin(readClient.getUserSettings(), 5_000);
         const settingsMax = userSettings?.userData?.maxHeartRate || userSettings?.userProfile?.maxHeartRate || userSettings?.maxHeartRate;
         if (isValidGarminMaxHeartRate(settingsMax)) {
           athleteMaxHr = Math.round(settingsMax);

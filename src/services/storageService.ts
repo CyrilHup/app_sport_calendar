@@ -18,11 +18,10 @@ export const STORAGE_KEYS = {
   GARMIN_ATHLETE_BASE_PACE: 'garmin_athlete_base_pace',
   ATHLETE_FC_MAX: 'athlete_fc_max',
 
-  // Entraînement et Calendrier
+  // Entraînement
   POSTPONE_OVERRIDES: 'sport_calendar_postponed_workouts',
   ADAPTIVE_OVERRIDES: 'sport_calendar_adaptive_overrides',
   AUTO_ADAPT_ENABLED: 'sport_calendar_auto_adapt_enabled',
-  CACHED_ETS_ICS: 'cached_ets_ics',
   SYNC_METADATA: 'sport_calendar_sync_metadata_v1',
   ACCOUNT_DATA_OWNER: 'sport_calendar_account_data_owner_v1',
 
@@ -30,10 +29,8 @@ export const STORAGE_KEYS = {
   WELLNESS_HISTORY: 'garmin_wellness_history',
   WEATHER_CACHE: 'mont_royal_weather_cache_v2',
 
-  // Alarmes et Google Calendar
-  ALARMS: 'app_scheduled_run_alarms',
-  GCAL_EVENT_MAP: 'gcal_synced_events_map_v1',
-  GCAL_CLIENT_ID: 'gcal_oauth_client_id'
+  // Notifications
+  ALARMS: 'app_scheduled_run_alarms'
 } as const;
 
 /**

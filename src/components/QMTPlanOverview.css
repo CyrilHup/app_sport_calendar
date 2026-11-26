@@ -1,0 +1,566 @@
+.qmt-plan-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.qmt-plan-overview .glass-panel {
+  background: var(--bg-surface, #131720);
+  border-color: var(--border-color, #30353f);
+  box-shadow: none;
+}
+
+.qmt-plan-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color, #30353f);
+}
+
+.qmt-plan-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 8px;
+  background: var(--bg-surface, #131720);
+  color: var(--text-secondary, #a6afbd);
+  font: inherit;
+  font-size: 0.88rem;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.qmt-plan-tab span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.qmt-plan-tab svg {
+  flex: 0 0 auto;
+}
+
+.qmt-plan-tab:hover {
+  border-color: #4b5360;
+  color: var(--text-primary);
+}
+
+.qmt-plan-tab.active {
+  background: var(--bg-surface-elevated, #202630);
+  border-color: var(--primary, #ff936b);
+  color: var(--text-primary);
+}
+
+.qmt-plan-tab:focus-visible,
+.qmt-plan-step:focus-visible {
+  outline: 2px solid var(--primary, #ff936b);
+  outline-offset: 2px;
+}
+
+.qmt-plan-stepper {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+}
+
+.qmt-plan-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+  min-height: 88px;
+  padding: 10px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 8px;
+  background: var(--bg-surface, #131720);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.qmt-plan-step:hover {
+  background: var(--bg-surface-elevated, #202630);
+  border-color: #4b5360;
+}
+
+.qmt-plan-step.active {
+  background: var(--bg-surface-elevated, #202630);
+  border-color: var(--primary, #ff936b);
+}
+
+.qmt-plan-step-meta,
+.qmt-plan-step-volume {
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.qmt-plan-step-title {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.qmt-plan-step.active .qmt-plan-step-title {
+  color: var(--primary, #ff936b);
+}
+
+.qmt-plan-phase-detail {
+  display: grid;
+  gap: 14px;
+}
+
+.qmt-plan-phase-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.12rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.qmt-plan-phase-count {
+  flex-shrink: 0;
+  background: var(--bg-surface-elevated, #202630);
+  color: var(--primary, #ff936b);
+  border: 1px solid var(--border-color, #30353f);
+}
+
+.qmt-plan-phase-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.82rem;
+}
+
+.qmt-plan-phase-meta strong {
+  color: var(--text-primary);
+  font-weight: 550;
+}
+
+.qmt-plan-focus {
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 7px;
+  background: var(--bg-surface-elevated, #202630);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.qmt-plan-purpose,
+.qmt-plan-workout,
+.qmt-plan-fueling {
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 8px;
+  background: var(--bg-surface-elevated, #202630);
+}
+
+.qmt-plan-purpose {
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.qmt-plan-purpose p {
+  margin: 4px 0 0;
+  color: var(--text-secondary, #a6afbd);
+}
+
+.qmt-plan-section-title {
+  margin: 0 0 8px;
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.qmt-plan-workouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 8px;
+}
+
+.qmt-plan-workout {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.qmt-plan-workout > div {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.qmt-plan-workout strong {
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.qmt-plan-workout span {
+  color: var(--primary, #ff936b);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.qmt-plan-workout p {
+  margin: 0;
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.qmt-plan-race-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 10px;
+}
+
+.qmt-plan-race-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.qmt-plan-drop-bag-notes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.qmt-plan-checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 6px;
+}
+
+.qmt-plan-fueling {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px;
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.qmt-plan-fueling strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.qmt-plan-stat-label {
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.74rem;
+}
+
+.qmt-plan-stat-value {
+  margin-top: 2px;
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.qmt-plan-panel-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.qmt-plan-station-name {
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.qmt-plan-station-distance {
+  color: var(--primary, #ff936b);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.qmt-plan-station-notes {
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.qmt-plan-aid-badge {
+  margin-left: auto;
+  border: 1px solid var(--border-color, #30353f);
+  background: var(--bg-surface-elevated, #202630);
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.7rem;
+  font-weight: 550;
+}
+
+.qmt-plan-stage-heading {
+  margin-bottom: 6px;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.qmt-plan-overview .pro-table-wrapper {
+  background: var(--bg-surface, #131720);
+}
+
+.qmt-plan-overview .pro-table th {
+  background: var(--bg-surface-elevated, #202630);
+  color: var(--text-secondary, #a6afbd);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.qmt-plan-overview .pro-table td {
+  border-color: var(--border-color, #30353f);
+}
+
+.qmt-plan-overview .race-timeline {
+  border-left-color: var(--border-color, #30353f);
+}
+
+.qmt-plan-overview .race-timeline-dot,
+.qmt-plan-overview .race-timeline-dot.drop-bag,
+.qmt-plan-overview .race-timeline-dot.finish {
+  border-color: var(--primary, #ff936b);
+  box-shadow: none;
+}
+
+.qmt-plan-overview .race-station-card {
+  background: var(--bg-surface-elevated, #202630);
+  border-color: var(--border-color, #30353f);
+}
+
+.qmt-plan-gear-summary {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 8px;
+  background: var(--bg-surface-elevated, #202630);
+}
+
+.qmt-plan-gear-summary > strong,
+.qmt-plan-gear-title {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.qmt-plan-gear-summary p {
+  margin: 0;
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.qmt-plan-gear-card {
+  padding: 16px;
+}
+
+.qmt-plan-gear-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.qmt-plan-gear-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 8px;
+}
+
+.qmt-plan-gear-title svg {
+  flex: 0 0 auto;
+  color: var(--text-secondary, #a6afbd);
+}
+
+.qmt-plan-gear-card ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.qmt-plan-gear-note {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 7px;
+  background: var(--bg-surface-elevated, #202630);
+  color: var(--text-secondary, #a6afbd);
+  line-height: 1.45;
+}
+
+.qmt-plan-pole-note {
+  padding: 12px 16px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 8px;
+  background: var(--bg-surface, #131720);
+  color: var(--text-secondary, #a6afbd);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.qmt-plan-pole-note strong {
+  color: var(--text-primary);
+}
+
+.qmt-plan-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color, #30353f);
+  border-radius: 7px;
+  background: var(--bg-surface, #131720);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.qmt-plan-checklist-item:hover,
+.qmt-plan-checklist-item.checked {
+  background: var(--bg-surface-elevated, #202630);
+  border-color: #4b5360;
+}
+
+.qmt-plan-checklist-item.checked span {
+  color: var(--text-secondary, #a6afbd);
+  text-decoration: line-through;
+}
+
+.qmt-plan-checklist-item svg {
+  flex: 0 0 auto;
+  color: var(--primary, #ff936b);
+}
+
+.qmt-plan-checklist-item span {
+  overflow-wrap: anywhere;
+}
+
+.qmt-flexible-week {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.qmt-week-panel {
+  min-width: 0;
+  padding: 16px;
+}
+
+.qmt-week-panel h3 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.qmt-week-panel p {
+  margin: 0;
+  color: var(--text-secondary, #a6afbd);
+  line-height: 1.5;
+}
+
+.qmt-week-panel p + p {
+  margin-top: 8px;
+}
+
+.qmt-week-note {
+  color: var(--text-secondary, #a6afbd) !important;
+  font-size: 0.76rem;
+}
+
+.qmt-week-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 10px;
+}
+
+.qmt-week-menu strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.qmt-week-menu p {
+  margin-top: 6px;
+  font-size: 0.82rem;
+}
+
+.qmt-week-panel ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-secondary, #a6afbd);
+  line-height: 1.6;
+}
+
+.qmt-week-caution {
+  background: var(--bg-surface-elevated, #202630);
+}
+
+.qmt-week-caution > strong {
+  color: var(--text-primary);
+}
+
+.qmt-week-caution p {
+  margin-top: 6px;
+}
+
+@media (max-width: 760px) {
+  .qmt-plan-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .qmt-plan-stepper {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 380px) {
+  .qmt-plan-tab {
+    gap: 6px;
+    padding-inline: 6px;
+    font-size: 0.8rem;
+  }
+
+  .qmt-plan-step {
+    min-height: 94px;
+    padding: 8px;
+  }
+
+  .qmt-plan-phase-detail {
+    padding: 14px !important;
+  }
+}
